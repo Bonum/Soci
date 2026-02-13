@@ -1,4 +1,4 @@
-"""LLM client — Claude API wrapper with model routing, cost tracking, and prompt templates."""
+"""LLM client — supports Claude API and Ollama (local LLMs) with model routing and cost tracking."""
 
 from __future__ import annotations
 
@@ -9,15 +9,26 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
-import anthropic
+import httpx
 
 logger = logging.getLogger(__name__)
 
-# Model IDs
+# --- Provider constants ---
+PROVIDER_CLAUDE = "claude"
+PROVIDER_OLLAMA = "ollama"
+
+# Claude model IDs
 MODEL_SONNET = "claude-sonnet-4-5-20250929"
 MODEL_HAIKU = "claude-haiku-4-5-20251001"
 
-# Approximate cost per 1M tokens (USD)
+# Ollama model IDs (popular open-source models)
+MODEL_LLAMA = "llama3.1"
+MODEL_LLAMA_SMALL = "llama3.2"
+MODEL_MISTRAL = "mistral"
+MODEL_QWEN = "qwen2.5"
+MODEL_GEMMA = "gemma2"
+
+# Approximate cost per 1M tokens (USD) — Ollama is free
 COST_PER_1M = {
     MODEL_SONNET: {"input": 3.0, "output": 15.0},
     MODEL_HAIKU: {"input": 0.80, "output": 4.0},
@@ -48,7 +59,7 @@ class LLMUsage:
     def estimated_cost_usd(self) -> float:
         total = 0.0
         for model, tokens in self.tokens_by_model.items():
-            costs = COST_PER_1M.get(model, {"input": 3.0, "output": 15.0})
+            costs = COST_PER_1M.get(model, {"input": 0.0, "output": 0.0})
             total += tokens["input"] / 1_000_000 * costs["input"]
             total += tokens["output"] / 1_000_000 * costs["output"]
         return total
@@ -65,8 +76,35 @@ class LLMUsage:
         return "\n".join(lines)
 
 
+def _parse_json_response(text: str) -> dict:
+    """Extract JSON from an LLM response, handling markdown blocks and extra text."""
+    text = text.strip()
+    # Handle markdown code blocks
+    if text.startswith("```"):
+        lines = text.split("\n")
+        text = "\n".join(lines[1:-1]) if len(lines) > 2 else text
+        text = text.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # Try to find JSON object in the response
+        start = text.find("{")
+        end = text.rfind("}") + 1
+        if start >= 0 and end > start:
+            try:
+                return json.loads(text[start:end])
+            except json.JSONDecodeError:
+                pass
+        logger.warning(f"Failed to parse JSON from LLM response: {text[:200]}")
+        return {}
+
+
+# ============================================================
+# Claude (Anthropic API) Client
+# ============================================================
+
 class ClaudeClient:
-    """Wrapper around the Anthropic Claude API with model routing and retries."""
+    """Wrapper around the Anthropic Claude API."""
 
     def __init__(
         self,
@@ -74,6 +112,7 @@ class ClaudeClient:
         default_model: str = MODEL_HAIKU,
         max_retries: int = 3,
     ) -> None:
+        import anthropic
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
         if not self.api_key:
             raise ValueError(
@@ -83,6 +122,7 @@ class ClaudeClient:
         self.default_model = default_model
         self.max_retries = max_retries
         self.usage = LLMUsage()
+        self.provider = PROVIDER_CLAUDE
 
     async def complete(
         self,
@@ -92,7 +132,7 @@ class ClaudeClient:
         temperature: float = 0.7,
         max_tokens: int = 1024,
     ) -> str:
-        """Send a message to Claude and return the text response."""
+        import anthropic
         model = model or self.default_model
 
         for attempt in range(self.max_retries):
@@ -104,7 +144,6 @@ class ClaudeClient:
                     system=system,
                     messages=[{"role": "user", "content": user_message}],
                 )
-                # Track usage
                 self.usage.record(
                     model=model,
                     input_tokens=response.usage.input_tokens,
@@ -121,7 +160,6 @@ class ClaudeClient:
                 if attempt == self.max_retries - 1:
                     raise
                 time.sleep(1)
-
         return ""
 
     async def complete_json(
@@ -132,8 +170,6 @@ class ClaudeClient:
         temperature: float = 0.7,
         max_tokens: int = 1024,
     ) -> dict:
-        """Send a message and parse the response as JSON."""
-        # Add JSON instruction to the prompt
         json_instruction = (
             "\n\nRespond ONLY with valid JSON. No markdown, no explanation, no extra text. "
             "Just the JSON object."
@@ -145,25 +181,169 @@ class ClaudeClient:
             temperature=temperature,
             max_tokens=max_tokens,
         )
-        # Try to extract JSON from the response
-        text = text.strip()
-        # Handle markdown code blocks
-        if text.startswith("```"):
-            lines = text.split("\n")
-            text = "\n".join(lines[1:-1]) if len(lines) > 2 else text
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            # Try to find JSON in the response
-            start = text.find("{")
-            end = text.rfind("}") + 1
-            if start >= 0 and end > start:
-                try:
-                    return json.loads(text[start:end])
-                except json.JSONDecodeError:
-                    pass
-            logger.warning(f"Failed to parse JSON from LLM response: {text[:200]}")
-            return {}
+        return _parse_json_response(text)
+
+
+# ============================================================
+# Ollama (Local LLM) Client
+# ============================================================
+
+class OllamaClient:
+    """Wrapper around Ollama's local API for running open-source LLMs.
+
+    Ollama serves models locally at http://localhost:11434.
+    Install: https://ollama.com
+    Pull a model: ollama pull llama3.1
+    """
+
+    def __init__(
+        self,
+        base_url: str = "http://localhost:11434",
+        default_model: str = MODEL_LLAMA,
+        max_retries: int = 2,
+    ) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.default_model = default_model
+        self.max_retries = max_retries
+        self.usage = LLMUsage()
+        self.provider = PROVIDER_OLLAMA
+        self._http = httpx.Client(timeout=120.0)
+
+    async def complete(
+        self,
+        system: str,
+        user_message: str,
+        model: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
+    ) -> str:
+        """Send a message to the local Ollama model."""
+        model = model or self.default_model
+        # Map Claude model names to Ollama models
+        model = self._map_model(model)
+
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_message},
+            ],
+            "stream": False,
+            "options": {
+                "temperature": temperature,
+                "num_predict": max_tokens,
+            },
+        }
+
+        for attempt in range(self.max_retries):
+            try:
+                response = self._http.post(
+                    f"{self.base_url}/api/chat",
+                    json=payload,
+                )
+                response.raise_for_status()
+                data = response.json()
+
+                # Track usage
+                input_tokens = data.get("prompt_eval_count", 0)
+                output_tokens = data.get("eval_count", 0)
+                self.usage.record(model, input_tokens, output_tokens)
+
+                return data.get("message", {}).get("content", "")
+
+            except httpx.ConnectError:
+                msg = (
+                    f"Cannot connect to Ollama at {self.base_url}. "
+                    "Make sure Ollama is running: 'ollama serve'"
+                )
+                logger.error(msg)
+                if attempt == self.max_retries - 1:
+                    raise ConnectionError(msg)
+                time.sleep(1)
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 404:
+                    msg = (
+                        f"Model '{model}' not found in Ollama. "
+                        f"Pull it first: 'ollama pull {model}'"
+                    )
+                    logger.error(msg)
+                    raise ValueError(msg)
+                logger.error(f"Ollama API error: {e}")
+                if attempt == self.max_retries - 1:
+                    raise
+                time.sleep(1)
+            except Exception as e:
+                logger.error(f"Ollama error: {e}")
+                if attempt == self.max_retries - 1:
+                    raise
+                time.sleep(1)
+        return ""
+
+    async def complete_json(
+        self,
+        system: str,
+        user_message: str,
+        model: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
+    ) -> dict:
+        json_instruction = (
+            "\n\nRespond ONLY with valid JSON. No markdown, no explanation, no extra text. "
+            "Just the JSON object."
+        )
+        text = await self.complete(
+            system=system,
+            user_message=user_message + json_instruction,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        return _parse_json_response(text)
+
+    def _map_model(self, model: str) -> str:
+        """Map Claude model names to Ollama equivalents so existing code works."""
+        mapping = {
+            MODEL_SONNET: self.default_model,  # Use the main local model
+            MODEL_HAIKU: self.default_model,    # Same model for both (local is free)
+        }
+        return mapping.get(model, model)
+
+
+# ============================================================
+# Factory — create the right client based on config
+# ============================================================
+
+def create_llm_client(
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    ollama_url: str = "http://localhost:11434",
+) -> ClaudeClient | OllamaClient:
+    """Create an LLM client based on environment or explicit config.
+
+    Provider detection order:
+    1. Explicit provider argument
+    2. LLM_PROVIDER env var
+    3. If ANTHROPIC_API_KEY is set → Claude
+    4. Default → Ollama (free, local)
+    """
+    if provider is None:
+        provider = os.environ.get("LLM_PROVIDER", "").lower()
+
+    if not provider:
+        # Auto-detect: use Claude if key is set, otherwise Ollama
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            provider = PROVIDER_CLAUDE
+        else:
+            provider = PROVIDER_OLLAMA
+
+    if provider == PROVIDER_CLAUDE:
+        default_model = model or MODEL_HAIKU
+        return ClaudeClient(default_model=default_model)
+    elif provider == PROVIDER_OLLAMA:
+        default_model = model or MODEL_LLAMA
+        return OllamaClient(base_url=ollama_url, default_model=default_model)
+    else:
+        raise ValueError(f"Unknown LLM provider: {provider}. Use 'claude' or 'ollama'.")
 
 
 # --- Prompt Templates ---

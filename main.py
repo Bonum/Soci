@@ -27,7 +27,7 @@ from rich.text import Text
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from soci.engine.llm import ClaudeClient
+from soci.engine.llm import create_llm_client
 from soci.engine.simulation import Simulation
 from soci.persistence.database import Database
 from soci.persistence.snapshots import save_simulation, load_simulation
@@ -118,16 +118,21 @@ async def run_simulation(
     max_agents: int = 20,
     tick_delay: float = 0.5,
     resume: bool = False,
+    provider: str = "",
+    model: str = "",
 ) -> None:
     """Run the simulation with a live Rich dashboard."""
     # Initialize
     console.print("[bold blue]Initializing Soci City Simulation...[/]")
 
     try:
-        llm = ClaudeClient()
-    except ValueError as e:
+        llm = create_llm_client(
+            provider=provider or None,
+            model=model or None,
+        )
+        console.print(f"[green]LLM provider: {llm.provider} (model: {llm.default_model})[/]")
+    except (ValueError, ConnectionError) as e:
         console.print(f"[bold red]Error: {e}[/]")
-        console.print("Copy .env.example to .env and add your ANTHROPIC_API_KEY.")
         return
 
     db = Database()
@@ -212,6 +217,10 @@ def main():
     parser.add_argument("--agents", type=int, default=20, help="Max number of agents (default: 20)")
     parser.add_argument("--speed", type=float, default=0.5, help="Delay between ticks in seconds (default: 0.5)")
     parser.add_argument("--resume", action="store_true", help="Resume from last save")
+    parser.add_argument("--provider", type=str, default="", choices=["", "claude", "ollama"],
+                        help="LLM provider: claude or ollama (default: auto-detect)")
+    parser.add_argument("--model", type=str, default="",
+                        help="Model name (e.g. llama3.1, mistral, qwen2.5)")
     args = parser.parse_args()
 
     Path("data").mkdir(exist_ok=True)
@@ -226,6 +235,8 @@ def main():
         max_agents=args.agents,
         tick_delay=args.speed,
         resume=args.resume,
+        provider=args.provider,
+        model=args.model,
     ))
 
 

@@ -11,7 +11,7 @@ from typing import Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from soci.engine.llm import ClaudeClient
+from soci.engine.llm import create_llm_client
 from soci.engine.simulation import Simulation
 from soci.persistence.database import Database
 from soci.persistence.snapshots import load_simulation, save_simulation
@@ -63,7 +63,7 @@ async def lifespan(app: FastAPI):
 
     # Start up
     logger.info("Starting Soci API server...")
-    llm = ClaudeClient()
+    llm = create_llm_client()
     db = Database()
     await db.connect()
     _database = db
