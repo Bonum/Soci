@@ -199,7 +199,22 @@ class Simulation:
 
         plan = result.get("plan", ["Go about my day"])
         if isinstance(plan, list):
-            agent.set_daily_plan(plan, self.clock.day, self.clock.total_ticks, self.clock.time_str)
+            # Normalize: local LLMs sometimes return dicts or nested structures
+            clean_plan = []
+            for item in plan:
+                if isinstance(item, str):
+                    clean_plan.append(item)
+                elif isinstance(item, dict):
+                    # Try common keys: description, activity, task, text, name
+                    for key in ("description", "activity", "task", "text", "name", "item"):
+                        if key in item:
+                            clean_plan.append(str(item[key]))
+                            break
+                    else:
+                        clean_plan.append(str(item))
+                else:
+                    clean_plan.append(str(item))
+            agent.set_daily_plan(clean_plan, self.clock.day, self.clock.total_ticks, self.clock.time_str)
 
     async def _decide_action(self, agent: Agent) -> Optional[AgentAction]:
         """Ask the LLM what action an agent should take next."""
@@ -416,8 +431,15 @@ class Simulation:
 
         reflections = result.get("reflections", [])
         mood_shift = result.get("mood_shift", 0.0)
+        # Clamp mood_shift to valid range
+        try:
+            mood_shift = max(-0.3, min(0.3, float(mood_shift)))
+        except (TypeError, ValueError):
+            mood_shift = 0.0
 
         for ref_text in reflections:
+            if not isinstance(ref_text, str):
+                ref_text = str(ref_text)
             agent.add_reflection(
                 tick=self.clock.total_ticks,
                 day=self.clock.day,
