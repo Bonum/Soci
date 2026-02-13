@@ -1,0 +1,27 @@
+[project]
+name = "soci"
+version = "0.1.0"
+description = "LLM-powered city population simulator — simulate a diverse population of AI people living in a city"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "anthropic>=0.40.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "aiosqlite>=0.20.0",
+    "pyyaml>=6.0",
+    "rich>=13.9.0",
+    "websockets>=13.0",
+    "pydantic>=2.9.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.scripts]
+soci = "soci.cli:main"
+
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[tool.setuptools.packages.find]
+where = ["src"]

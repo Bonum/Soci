@@ -1,0 +1,91 @@
+name: Soci City
+
+locations:
+  # --- Residential ---
+  - id: home_north
+    name: Northside Apartments
+    zone: residential
+    description: A modern apartment complex with balconies overlooking the park. Home to several young professionals and families.
+    capacity: 10
+    connected_to: [park, cafe, grocery, street_north]
+
+  - id: home_south
+    name: Southside Houses
+    zone: residential
+    description: A quiet street of cozy row houses with small gardens. A mix of longtime residents and newcomers.
+    capacity: 10
+    connected_to: [bar, gym, library, street_south]
+
+  # --- Commercial ---
+  - id: cafe
+    name: The Daily Grind
+    zone: commercial
+    description: A warm, bustling cafe with mismatched furniture and the aroma of fresh coffee. The local gossip hub.
+    capacity: 15
+    connected_to: [home_north, park, office, street_north]
+
+  - id: grocery
+    name: Green Basket Market
+    zone: commercial
+    description: A neighborhood grocery store with fresh produce and a friendly owner who knows everyone by name.
+    capacity: 12
+    connected_to: [home_north, street_north, street_south]
+
+  - id: bar
+    name: The Rusty Anchor
+    zone: commercial
+    description: A dimly lit bar with a jukebox, pool table, and regulars who've been coming for years. Lively at night.
+    capacity: 15
+    connected_to: [home_south, restaurant, street_south]
+
+  - id: restaurant
+    name: Mama Rosa's Kitchen
+    zone: commercial
+    description: A family-run Italian restaurant with checkered tablecloths and the best pasta in town.
+    capacity: 12
+    connected_to: [bar, office, street_south, street_north]
+
+  # --- Work ---
+  - id: office
+    name: The Hive Coworking
+    zone: work
+    description: An open-plan coworking space with standing desks, meeting rooms, and a perpetually broken printer.
+    capacity: 20
+    connected_to: [cafe, restaurant, street_north]
+
+  # --- Public ---
+  - id: park
+    name: Willow Park
+    zone: public
+    description: A green park with old willow trees, a pond, benches, and a small playground. Popular for morning jogs and evening walks.
+    capacity: 30
+    connected_to: [home_north, cafe, gym, library, street_north]
+
+  - id: gym
+    name: Iron & Grit Gym
+    zone: public
+    description: A no-nonsense gym with free weights, treadmills, and a boxing ring in the back. Smells like determination.
+    capacity: 12
+    connected_to: [home_south, park, street_south]
+
+  - id: library
+    name: Soci Public Library
+    zone: public
+    description: A quiet library with tall shelves, reading nooks, and a community board. Hosts book clubs and events.
+    capacity: 15
+    connected_to: [home_south, park, street_south]
+
+  # --- Connectors ---
+  - id: street_north
+    name: North Main Street
+    zone: public
+    description: The main street running through the northern part of town. Shops, cafes, and foot traffic.
+    capacity: 40
+    connected_to: [home_north, cafe, grocery, office, park, street_south]
+
+  - id: street_south
+    name: South Main Street
+    zone: public
+    description: The southern stretch of main street. More residential, with the bar and gym nearby.
+    capacity: 40
+    connected_to: [home_south, bar, grocery, gym, library, restaurant, street_north]
