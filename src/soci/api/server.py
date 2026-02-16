@@ -28,6 +28,8 @@ logger = logging.getLogger(__name__)
 _simulation: Optional[Simulation] = None
 _database: Optional[Database] = None
 _sim_task: Optional[asyncio.Task] = None
+_sim_paused: bool = False
+_sim_speed: float = 1.0  # 1.0 = normal, 0.5 = fast, 2.0 = slow
 
 
 def get_simulation() -> Simulation:
@@ -42,13 +44,17 @@ def get_database() -> Database:
 
 async def simulation_loop(sim: Simulation, db: Database, tick_delay: float = 2.0) -> None:
     """Background task that runs the simulation continuously."""
+    global _sim_paused, _sim_speed
     while True:
         try:
+            if _sim_paused:
+                await asyncio.sleep(0.5)
+                continue
             await sim.tick()
             # Auto-save every 24 ticks
             if sim.clock.total_ticks % 24 == 0:
                 await save_simulation(sim, db, "autosave")
-            await asyncio.sleep(tick_delay)
+            await asyncio.sleep(tick_delay * _sim_speed)
         except asyncio.CancelledError:
             logger.info("Simulation loop cancelled")
             await save_simulation(sim, db, "autosave")

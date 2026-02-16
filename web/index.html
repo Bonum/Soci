@@ -131,6 +131,18 @@
   .rel-mini-bar { flex: 1; height: 4px; background: #0f3460; border-radius: 2px; overflow: hidden; }
   .rel-mini-fill { height: 100%; border-radius: 2px; }
 
+  /* CONTROLS */
+  .controls { display: flex; align-items: center; gap: 4px; }
+  .ctrl-btn {
+    background: #0f3460; border: 1px solid #1a3a6e; color: #a0a0c0;
+    padding: 3px 8px; border-radius: 3px; cursor: pointer; font-size: 11px;
+    transition: all 0.15s;
+  }
+  .ctrl-btn:hover { background: #1a4a80; color: #fff; }
+  .ctrl-btn.active { background: #4ecca3; color: #1a1a2e; border-color: #4ecca3; }
+  .ctrl-btn.paused { background: #e94560; color: #fff; border-color: #e94560; }
+  .speed-label { font-size: 10px; color: #666; margin-left: 2px; }
+
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: #1a1a2e; }
   ::-webkit-scrollbar-thumb { background: #0f3460; border-radius: 3px; }
@@ -144,6 +156,13 @@
     <span><span id="weather-icon"></span> <span id="weather">Sunny</span></span>
     <span id="agent-count"><span class="dot green"></span> 0 agents</span>
     <span id="conv-count">0 convos</span>
+    <span class="controls">
+      <button class="ctrl-btn" id="btn-pause" onclick="togglePause()" title="Pause/Resume">&#x23EF;</button>
+      <button class="ctrl-btn" id="btn-fast" onclick="setSpeed(0.25)" title="Fast">&#x23E9;</button>
+      <button class="ctrl-btn active" id="btn-normal" onclick="setSpeed(1.0)" title="Normal">1x</button>
+      <button class="ctrl-btn" id="btn-slow" onclick="setSpeed(3.0)" title="Slow">&#x1F422;</button>
+      <span class="speed-label" id="speed-label">1x</span>
+    </span>
     <span id="api-calls">API: 0</span>
     <span id="cost">$0.00</span>
     <span id="status"><span class="dot yellow"></span> Connecting...</span>
@@ -1109,11 +1128,66 @@ async function fetchState() {
 }
 
 // ============================================================
+// CONTROLS
+// ============================================================
+let simPaused = false;
+let simSpeed = 1.0;
+
+async function togglePause() {
+  try {
+    const endpoint = simPaused ? 'resume' : 'pause';
+    const res = await fetch(`${API_BASE}/controls/${endpoint}`, { method: 'POST' });
+    if (res.ok) {
+      const data = await res.json();
+      simPaused = data.paused;
+      updateControlsUI();
+    }
+  } catch(e) {}
+}
+
+async function setSpeed(mult) {
+  try {
+    const res = await fetch(`${API_BASE}/controls/speed?multiplier=${mult}`, { method: 'POST' });
+    if (res.ok) {
+      const data = await res.json();
+      simSpeed = data.speed;
+      updateControlsUI();
+    }
+  } catch(e) {}
+}
+
+function updateControlsUI() {
+  const pauseBtn = document.getElementById('btn-pause');
+  pauseBtn.className = 'ctrl-btn' + (simPaused ? ' paused' : '');
+  pauseBtn.title = simPaused ? 'Resume' : 'Pause';
+
+  document.getElementById('btn-fast').className = 'ctrl-btn' + (simSpeed <= 0.3 ? ' active' : '');
+  document.getElementById('btn-normal').className = 'ctrl-btn' + (simSpeed > 0.3 && simSpeed <= 1.5 ? ' active' : '');
+  document.getElementById('btn-slow').className = 'ctrl-btn' + (simSpeed > 1.5 ? ' active' : '');
+
+  const label = simPaused ? 'PAUSED' : (simSpeed <= 0.3 ? '4x' : (simSpeed <= 0.6 ? '2x' : (simSpeed <= 1.5 ? '1x' : '0.3x')));
+  document.getElementById('speed-label').textContent = label;
+}
+
+async function fetchControls() {
+  try {
+    const res = await fetch(`${API_BASE}/controls`);
+    if (res.ok) {
+      const data = await res.json();
+      simPaused = data.paused;
+      simSpeed = data.speed;
+      updateControlsUI();
+    }
+  } catch(e) {}
+}
+
+// ============================================================
 // INIT
 // ============================================================
 initCanvas();
 showDefaultDetail();
 fetchState();
+fetchControls();
 setInterval(fetchState, POLL_INTERVAL);
 </script>
 </body>

@@ -300,6 +300,37 @@ async def get_events(limit: int = 50):
     return {"events": events}
 
 
+@router.get("/controls")
+async def get_controls():
+    """Get current simulation control state."""
+    from soci.api.server import _sim_paused, _sim_speed
+    return {"paused": _sim_paused, "speed": _sim_speed}
+
+
+@router.post("/controls/pause")
+async def pause_simulation():
+    """Pause the simulation."""
+    import soci.api.server as srv
+    srv._sim_paused = True
+    return {"paused": True}
+
+
+@router.post("/controls/resume")
+async def resume_simulation():
+    """Resume the simulation."""
+    import soci.api.server as srv
+    srv._sim_paused = False
+    return {"paused": False}
+
+
+@router.post("/controls/speed")
+async def set_speed(multiplier: float = 1.0):
+    """Set simulation speed. 0.25=fast, 1.0=normal, 3.0=slow."""
+    import soci.api.server as srv
+    srv._sim_speed = max(0.1, min(5.0, multiplier))
+    return {"speed": srv._sim_speed}
+
+
 @router.post("/save")
 async def save_state(name: str = "manual_save"):
     """Manually save the simulation state."""
