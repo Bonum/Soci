@@ -47,6 +47,8 @@ class Simulation:
         self.events = EventSystem()
         self.entropy = EntropyManager()
         self.active_conversations: dict[str, Conversation] = {}
+        self.conversation_history: list[dict] = []  # Finished conversations for API
+        self._max_conversation_history: int = 50
         self._conversation_counter: int = 0
         self._max_concurrent = max_concurrent_llm
         self._tick_log: list[str] = []  # Log of events this tick
@@ -410,6 +412,11 @@ class Simulation:
                 location=conv.location,
                 involved_agents=other_ids,
             )
+
+        # Store in conversation history for API
+        self.conversation_history.append(conv.to_dict())
+        if len(self.conversation_history) > self._max_conversation_history:
+            self.conversation_history = self.conversation_history[-self._max_conversation_history:]
 
         self._emit(
             f"  [CONV END] Conversation about '{conv.topic}' between "

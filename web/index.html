@@ -30,37 +30,107 @@
   #main { display: flex; height: calc(100vh - 50px); }
   #canvas-container { flex: 1; position: relative; min-width: 0; }
   #cityCanvas { width: 100%; height: 100%; display: block; }
+
+  /* SIDEBAR */
   #sidebar {
-    width: 340px; background: #16213e; border-left: 2px solid #0f3460;
+    width: 380px; background: #16213e; border-left: 2px solid #0f3460;
     display: flex; flex-direction: column; overflow: hidden;
   }
-  #agent-detail {
-    padding: 12px; border-bottom: 1px solid #0f3460;
-    min-height: 240px; max-height: 50%; overflow-y: auto;
+  .sidebar-tabs {
+    display: flex; border-bottom: 2px solid #0f3460; flex-shrink: 0;
   }
+  .sidebar-tab {
+    flex: 1; padding: 8px 4px; text-align: center; font-size: 11px; font-weight: bold;
+    color: #666; cursor: pointer; border-bottom: 2px solid transparent;
+    transition: all 0.2s; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .sidebar-tab:hover { color: #a0a0c0; background: rgba(255,255,255,0.02); }
+  .sidebar-tab.active { color: #4ecca3; border-bottom-color: #4ecca3; }
+  .tab-content { display: none; flex: 1; overflow-y: auto; }
+  .tab-content.active { display: flex; flex-direction: column; }
+
+  /* AGENT DETAIL TAB */
+  #agent-detail { padding: 12px; flex: 1; overflow-y: auto; }
   #agent-detail h2 { font-size: 16px; color: #4ecca3; margin-bottom: 8px; }
-  #agent-detail .subtitle { font-size: 12px; color: #a0a0c0; margin-bottom: 10px; }
-  .bar-container { margin: 4px 0; }
+  #agent-detail .subtitle { font-size: 12px; color: #a0a0c0; margin-bottom: 6px; }
+  .bar-container { margin: 3px 0; }
   .bar-label { font-size: 11px; color: #a0a0c0; display: flex; justify-content: space-between; }
-  .bar-bg { height: 8px; background: #0f3460; border-radius: 4px; overflow: hidden; margin-top: 2px; }
-  .bar-fill { height: 100%; border-radius: 4px; transition: width 0.5s ease; }
+  .bar-bg { height: 6px; background: #0f3460; border-radius: 3px; overflow: hidden; margin-top: 1px; }
+  .bar-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
   .bar-fill.green { background: #4ecca3; } .bar-fill.yellow { background: #f0c040; }
   .bar-fill.red { background: #e94560; } .bar-fill.blue { background: #4e9eca; }
   .bar-fill.purple { background: #9b59b6; } .bar-fill.orange { background: #e67e22; }
   .bar-fill.pink { background: #e91e90; }
   .memory-item { font-size: 11px; color: #c0c0d0; padding: 3px 0; border-bottom: 1px solid #0f346030; }
   .memory-time { color: #666; font-size: 10px; }
-  #event-log { flex: 1; padding: 8px 12px; overflow-y: auto; font-size: 11px; line-height: 1.5; }
-  #event-log h3 { font-size: 13px; color: #e94560; margin-bottom: 6px; position: sticky; top: 0; background: #16213e; padding: 4px 0; z-index: 1; }
+  .agent-list-item {
+    font-size: 11px; padding: 5px 6px; cursor: pointer; display: flex; align-items: center; gap: 6px;
+    border-bottom: 1px solid #0f346020; transition: background 0.15s;
+  }
+  .agent-list-item:hover { background: rgba(78,204,163,0.08); }
+  .agent-list-item .agent-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .agent-list-item .agent-info { flex: 1; min-width: 0; }
+  .agent-list-item .agent-name { font-weight: 600; }
+  .agent-list-item .agent-action { color: #666; font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* CONVERSATIONS TAB */
+  #conversations-panel { padding: 0; flex: 1; overflow-y: auto; }
+  .conv-card {
+    margin: 8px; padding: 10px; background: #1a1a2e; border-radius: 6px;
+    border: 1px solid #0f3460;
+  }
+  .conv-card.active-conv { border-color: #4ecca3; }
+  .conv-header {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;
+  }
+  .conv-topic { font-size: 12px; color: #4ecca3; font-weight: 600; }
+  .conv-badge {
+    font-size: 9px; padding: 2px 6px; border-radius: 3px; font-weight: bold;
+    text-transform: uppercase;
+  }
+  .conv-badge.live { background: #4ecca3; color: #1a1a2e; }
+  .conv-badge.ended { background: #333; color: #888; }
+  .conv-participants { font-size: 10px; color: #888; margin-bottom: 6px; }
+  .conv-turn {
+    padding: 4px 0; font-size: 11px; line-height: 1.4;
+  }
+  .conv-speaker { font-weight: 600; }
+  .conv-message { color: #d0d0e0; }
+  .conv-empty { padding: 20px; text-align: center; color: #555; font-size: 12px; }
+
+  /* EVENT LOG TAB */
+  #event-log-panel { padding: 8px 12px; flex: 1; overflow-y: auto; font-size: 11px; line-height: 1.5; }
   .event-line { padding: 2px 0; color: #b0b0c0; border-bottom: 1px solid #0f346020; }
   .event-line.plan { color: #4ecca3; } .event-line.conv { color: #f0c040; }
   .event-line.event { color: #e94560; } .event-line.time { color: #666; font-weight: bold; margin-top: 6px; }
   .event-line.romance { color: #e91e90; }
+  .event-line.move { color: #4e9eca; }
+  .event-line.reflect { color: #9b59b6; }
+
+  /* TOOLTIP */
   #tooltip {
     position: absolute; background: #16213eee; border: 1px solid #4ecca3;
     border-radius: 6px; padding: 8px 12px; font-size: 12px;
     pointer-events: none; display: none; z-index: 100; max-width: 250px;
   }
+  /* Section headers */
+  .section-header {
+    font-size: 12px; color: #4ecca3; margin: 10px 0 4px 0; font-weight: 600;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .section-header::after {
+    content: ''; flex: 1; height: 1px; background: #0f3460;
+  }
+  /* Relationship bars */
+  .rel-item {
+    font-size: 11px; padding: 4px 0; border-bottom: 1px solid #0f346020; cursor: pointer;
+  }
+  .rel-item:hover { background: rgba(78,204,163,0.05); }
+  .rel-name { font-weight: 600; color: #d0d0e0; }
+  .rel-bars { display: flex; gap: 4px; margin-top: 2px; }
+  .rel-mini-bar { flex: 1; height: 4px; background: #0f3460; border-radius: 2px; overflow: hidden; }
+  .rel-mini-fill { height: 100%; border-radius: 2px; }
+
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: #1a1a2e; }
   ::-webkit-scrollbar-thumb { background: #0f3460; border-radius: 3px; }
@@ -73,6 +143,7 @@
     <span id="clock">Day 1, 06:00</span>
     <span><span id="weather-icon"></span> <span id="weather">Sunny</span></span>
     <span id="agent-count"><span class="dot green"></span> 0 agents</span>
+    <span id="conv-count">0 convos</span>
     <span id="api-calls">API: 0</span>
     <span id="cost">$0.00</span>
     <span id="status"><span class="dot yellow"></span> Connecting...</span>
@@ -84,13 +155,19 @@
     <div id="tooltip"></div>
   </div>
   <div id="sidebar">
-    <div id="agent-detail">
-      <h2>Select an Agent</h2>
-      <p class="subtitle">Click on any agent in the city to see their details</p>
+    <div class="sidebar-tabs">
+      <div class="sidebar-tab active" data-tab="agents" onclick="switchTab('agents')">Agents</div>
+      <div class="sidebar-tab" data-tab="conversations" onclick="switchTab('conversations')">Chat</div>
+      <div class="sidebar-tab" data-tab="events" onclick="switchTab('events')">Events</div>
     </div>
-    <div id="event-log">
-      <h3>Event Log</h3>
-      <div id="events-container"></div>
+    <div id="tab-agents" class="tab-content active">
+      <div id="agent-detail"></div>
+    </div>
+    <div id="tab-conversations" class="tab-content">
+      <div id="conversations-panel"></div>
+    </div>
+    <div id="tab-events" class="tab-content">
+      <div id="event-log-panel"></div>
     </div>
   </div>
 </div>
@@ -100,9 +177,8 @@
 // ============================================================
 const API_BASE = window.location.origin + '/api';
 const POLL_INTERVAL = 2000;
-const HORIZON = 0.18; // Sky is top 18%
+const HORIZON = 0.18;
 
-// All locations below the horizon
 const LOCATION_POSITIONS = {
   home_north:   { x: 0.07, y: 0.28 },
   park:         { x: 0.40, y: 0.22 },
@@ -152,7 +228,6 @@ const SKY = {
   night:     { top:'#060610', bot:'#101028', stars:true,  sun:'moon' },
 };
 
-// Ground tint per time (r,g,b multipliers)
 const GROUND_TINT = {
   dawn:      { base:'#3a5a2a', shade: 0.7 },
   morning:   { base:'#4a7a38', shade: 1.0 },
@@ -167,10 +242,11 @@ const GROUND_TINT = {
 let canvas, ctx;
 let locations = {};
 let agents = {};
-let agentPositions = {};   // current animated {x,y}
-let agentTargets = {};     // target {x,y} from data
+let agentPositions = {};
+let agentTargets = {};
 let selectedAgentId = null;
 let eventLog = [];
+let conversationData = { active: [], recent: [] };
 let connected = false;
 let hoveredAgent = null;
 let currentTimeOfDay = 'morning';
@@ -179,6 +255,8 @@ let animFrame = 0;
 let raindrops = [];
 let clouds = [];
 let stars = [];
+let activeTab = 'agents';
+let agentIdxMap = {};  // id -> stable index for consistent coloring
 
 function initParticles() {
   for (let i = 0; i < 120; i++)
@@ -187,6 +265,16 @@ function initParticles() {
     clouds.push({x:Math.random(), y:0.02+Math.random()*0.10, w:60+Math.random()*50, speed:0.00005+Math.random()*0.0001});
   for (let i = 0; i < 70; i++)
     stars.push({x:Math.random(), y:Math.random()*HORIZON, size:0.5+Math.random()*1.5, tw:Math.random()*6.28});
+}
+
+// ============================================================
+// TABS
+// ============================================================
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.toggle('active', t.id === 'tab-' + tab));
+  if (tab === 'conversations') fetchConversations();
 }
 
 // ============================================================
@@ -210,7 +298,6 @@ function resizeCanvas() {
 
 function animate() {
   animFrame++;
-  // Lerp agent positions toward targets
   for (const [id, target] of Object.entries(agentTargets)) {
     if (!agentPositions[id]) { agentPositions[id] = {...target}; continue; }
     const p = agentPositions[id];
@@ -235,33 +322,34 @@ function draw() {
 
   for (const [id, loc] of Object.entries(locations)) drawBuilding(id, loc, W, H);
 
-  // Compute agent layout targets
   const byLoc = {};
   for (const [id, a] of Object.entries(agents)) {
     const loc = a.location || 'home_north';
     if (!byLoc[loc]) byLoc[loc] = [];
     byLoc[loc].push({id, ...a});
   }
-  let idx = 0;
   for (const [id, a] of Object.entries(agents)) {
-    computeAgentTarget(id, a, idx, byLoc, W, H);
-    idx++;
+    computeAgentTarget(id, a, getAgentIdx(id), byLoc, W, H);
   }
 
-  // Draw couple lines first (behind agents)
   drawCoupleLines(W, H);
+  drawConversationBubbles(W, H);
 
-  idx = 0;
   for (const [id, a] of Object.entries(agents)) {
-    drawPerson(id, a, idx, W, H);
-    idx++;
+    drawPerson(id, a, getAgentIdx(id), W, H);
   }
 
-  // Fog overlay
   if (currentWeather === 'foggy') {
     ctx.fillStyle = `rgba(180,190,200,${0.30 + Math.sin(animFrame*0.015)*0.08})`;
     ctx.fillRect(0, 0, W, H);
   }
+}
+
+function getAgentIdx(id) {
+  if (!(id in agentIdxMap)) {
+    agentIdxMap[id] = Object.keys(agentIdxMap).length;
+  }
+  return agentIdxMap[id];
 }
 
 // ============================================================
@@ -311,14 +399,11 @@ function drawMoon(x, y, r) {
 }
 
 // ============================================================
-// GROUND — color changes with time & weather
+// GROUND
 // ============================================================
 function drawGround(W, H) {
   const hLine = H * HORIZON;
   const gt = GROUND_TINT[currentTimeOfDay] || GROUND_TINT.morning;
-  const shade = gt.shade;
-
-  // Base ground gradient
   const grad = ctx.createLinearGradient(0, hLine, 0, H);
   const bc = hexToRgb(gt.base);
   grad.addColorStop(0, `rgb(${bc.r+20},${bc.g+30},${bc.b+10})`);
@@ -326,13 +411,11 @@ function drawGround(W, H) {
   ctx.fillStyle = grad;
   ctx.fillRect(0, hLine, W, H - hLine);
 
-  // Weather tint overlay
   if (currentWeather === 'rainy' || currentWeather === 'stormy') {
     ctx.fillStyle = `rgba(40, 50, 70, ${currentWeather === 'stormy' ? 0.35 : 0.2})`;
     ctx.fillRect(0, hLine, W, H - hLine);
   }
 
-  // Subtle grass dots
   ctx.fillStyle = `rgba(${60+bc.r*0.3},${90+bc.g*0.3},${40+bc.b*0.2}, 0.15)`;
   for (let i = 0; i < 80; i++) {
     const gx = (i*37+13)%W;
@@ -340,7 +423,6 @@ function drawGround(W, H) {
     ctx.fillRect(gx, gy, 2, 3);
   }
 
-  // Horizon line — soft blend
   const horizGrad = ctx.createLinearGradient(0, hLine-4, 0, hLine+6);
   const s = SKY[currentTimeOfDay] || SKY.morning;
   horizGrad.addColorStop(0, s.bot);
@@ -405,7 +487,6 @@ function drawRoads(W, H) {
       ctx.beginPath(); ctx.moveTo(p.x*W,p.y*H); ctx.lineTo(cp.x*W,cp.y*H); ctx.stroke();
     }
   }
-  // Center dashes
   ctx.strokeStyle=isNight?'rgba(80,70,55,0.25)':'rgba(200,190,150,0.30)';
   ctx.lineWidth=1; ctx.setLineDash([5,7]);
   drawn.clear();
@@ -437,7 +518,6 @@ function drawBuilding(id, loc, W, H) {
   else if (type==='shop') drawShop(x,y,colors,isDark);
   else drawOffice(x,y,colors,isDark);
 
-  // Label
   if (type!=='park'&&type!=='street') {
     const name=loc.name||id;
     const short=name.length>18?name.slice(0,16)+'..':name;
@@ -447,7 +527,6 @@ function drawBuilding(id, loc, W, H) {
     ctx.fillStyle=isDark?'#a0a8c0':'#fff'; ctx.fillText(short,x,ly);
   }
 
-  // Occupant badge
   const occ=(loc.occupants||[]).length;
   if (occ>0) {
     const bx=x+32, by=y-20;
@@ -532,12 +611,10 @@ function drawCoupleLines(W, H) {
     drawn.add(id); drawn.add(a.partner_id);
     const p1 = agentPositions[id], p2 = agentPositions[a.partner_id];
     if (!p1 || !p2) continue;
-    // Pink dashed line between partners
     ctx.strokeStyle = 'rgba(233, 30, 144, 0.4)';
     ctx.lineWidth = 1.5; ctx.setLineDash([4,4]);
     ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
     ctx.setLineDash([]);
-    // Heart at midpoint
     const mx = (p1.x+p2.x)/2, my = (p1.y+p2.y)/2 - 10;
     drawHeart(mx, my + Math.sin(animFrame*0.05)*3, 6, 'rgba(233,30,144,0.7)');
   }
@@ -552,6 +629,42 @@ function drawHeart(x, y, s, color) {
   ctx.bezierCurveTo(x, y + s, x + s, y + s*0.6, x + s, y + s*0.1);
   ctx.bezierCurveTo(x + s, y - s*0.5, x, y - s*0.2, x, y + s*0.4);
   ctx.fill();
+}
+
+// ============================================================
+// CONVERSATION BUBBLES on canvas
+// ============================================================
+function drawConversationBubbles(W, H) {
+  if (!conversationData.active) return;
+  for (const conv of conversationData.active) {
+    if (!conv.turns || conv.turns.length === 0) continue;
+    const lastTurn = conv.turns[conv.turns.length - 1];
+    const speakerId = lastTurn.speaker_id;
+    const pos = agentPositions[speakerId];
+    if (!pos) continue;
+
+    const msg = (lastTurn.message || '').slice(0, 40) + (lastTurn.message.length > 40 ? '...' : '');
+    ctx.font = '9px Segoe UI';
+    const tw = ctx.measureText(msg).width;
+    const bw = tw + 14, bh = 18;
+    const bx = pos.x - bw/2, by = pos.y - 48;
+
+    // Bubble background
+    ctx.fillStyle = 'rgba(240,192,64,0.9)';
+    ctx.beginPath();
+    ctx.roundRect(bx, by, bw, bh, 4);
+    ctx.fill();
+    // Pointer
+    ctx.beginPath();
+    ctx.moveTo(pos.x - 4, by + bh);
+    ctx.lineTo(pos.x, by + bh + 6);
+    ctx.lineTo(pos.x + 4, by + bh);
+    ctx.fill();
+    // Text
+    ctx.fillStyle = '#1a1a2e';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(msg, pos.x, by + bh/2);
+  }
 }
 
 // ============================================================
@@ -591,7 +704,6 @@ function drawPerson(id, agent, globalIdx, W, H) {
   const isMoving = agent.state === 'moving';
   const isSleeping = agent.state === 'sleeping';
 
-  // Check if actually animating (position differs from target)
   const tgt = agentTargets[id];
   const moving = tgt && Math.hypot(ax-tgt.x, ay-tgt.y) > 3;
 
@@ -605,7 +717,7 @@ function drawPerson(id, agent, globalIdx, W, H) {
   const armSwing = (isMoving||moving) ? Math.sin(animFrame*0.15)*8 : 0;
   const legSwing = (isMoving||moving) ? Math.sin(animFrame*0.15)*5 : 0;
 
-  // Shadow on ground
+  // Shadow
   ctx.fillStyle = 'rgba(0,0,0,0.15)';
   ctx.beginPath(); ctx.ellipse(0, 13, 7, 3, 0, 0, 6.28); ctx.fill();
 
@@ -670,7 +782,6 @@ function drawPerson(id, agent, globalIdx, W, H) {
     ctx.globalAlpha=1;
   }
 
-  // Heart above head if has partner
   if (agent.partner_id) {
     drawHeart(0, -30+bounce+Math.sin(animFrame*0.04)*2, 4, 'rgba(233,30,144,0.7)');
   }
@@ -703,8 +814,14 @@ function onCanvasClick(e) {
     const d=Math.hypot(mx-pos.x,my-pos.y);
     if(d<minD){minD=d;clicked=id;}
   }
-  if(clicked){selectedAgentId=clicked;fetchAgentDetail(clicked);}
-  else{selectedAgentId=null;showDefaultDetail();}
+  if(clicked){
+    selectedAgentId=clicked;
+    switchTab('agents');
+    fetchAgentDetail(clicked);
+  } else {
+    selectedAgentId=null;
+    showDefaultDetail();
+  }
 }
 
 function onCanvasMouseMove(e) {
@@ -734,22 +851,35 @@ function onCanvasMouseMove(e) {
 }
 
 // ============================================================
-// AGENT DETAIL PANEL
+// AGENT DETAIL (Agents Tab)
 // ============================================================
 function showDefaultDetail() {
-  document.getElementById('agent-detail').innerHTML = `
-    <h2>Select an Agent</h2>
-    <p class="subtitle">Click on any agent in the city to see their details</p>
-    <div style="margin-top:12px">
-      <h3 style="font-size:13px;color:#a0a0c0;margin-bottom:8px">Population</h3>
-      ${Object.entries(agents).map(([aid,a],i) => `
-        <div style="font-size:11px;padding:3px 0;cursor:pointer;color:${AGENT_COLORS[i%AGENT_COLORS.length]};display:flex;align-items:center;gap:6px"
-             onclick="selectedAgentId='${aid}';fetchAgentDetail(selectedAgentId);">
-          <span style="font-size:14px">${a.gender==='female'?'\uD83D\uDC69':a.gender==='male'?'\uD83D\uDC68':'\uD83E\uDDD1'}</span>
-          <span>${a.name}${a.partner_id&&agents[a.partner_id]?' \u2764 '+agents[a.partner_id].name:''} &mdash; <span style="color:#888">${a.action||'idle'}</span></span>
-        </div>
-      `).join('')}
-    </div>`;
+  const el = document.getElementById('agent-detail');
+  // Sort agents: those in conversation first, then by name
+  const sorted = Object.entries(agents).sort((a,b) => {
+    const aConv = a[1].state === 'in_conversation' ? 0 : 1;
+    const bConv = b[1].state === 'in_conversation' ? 0 : 1;
+    if (aConv !== bConv) return aConv - bConv;
+    return (a[1].name || '').localeCompare(b[1].name || '');
+  });
+
+  el.innerHTML = `
+    <div class="section-header">Population (${Object.keys(agents).length})</div>
+    ${sorted.map(([aid,a]) => {
+      const color = AGENT_COLORS[getAgentIdx(aid) % AGENT_COLORS.length];
+      const gi = a.gender==='female'?'\uD83D\uDC69':a.gender==='male'?'\uD83D\uDC68':'\uD83E\uDDD1';
+      const stateIcon = a.state==='in_conversation'?' \uD83D\uDCAC':(a.state==='sleeping'?' \uD83D\uDCA4':(a.state==='moving'?' \uD83D\uDEB6':''));
+      const partner = a.partner_id && agents[a.partner_id] ? ` \u2764\uFE0F ${agents[a.partner_id].name.split(' ')[0]}` : '';
+      return `
+        <div class="agent-list-item" onclick="selectedAgentId='${aid}';fetchAgentDetail('${aid}');">
+          <span class="agent-dot" style="background:${color}"></span>
+          <span style="font-size:13px">${gi}</span>
+          <div class="agent-info">
+            <div class="agent-name" style="color:${color}">${a.name}${partner}${stateIcon}</div>
+            <div class="agent-action">${esc(a.action||'idle')}</div>
+          </div>
+        </div>`;
+    }).join('')}`;
 }
 
 async function fetchAgentDetail(agentId) {
@@ -774,18 +904,21 @@ function renderAgentDetail(data) {
   const moodColor=moodPct>60?'green':(moodPct>30?'yellow':'red');
   const moodLabel=mood>0.3?'Happy':(mood>-0.3?'Okay':'Unhappy');
   const gi=data.gender==='female'?'\uD83D\uDC69':data.gender==='male'?'\uD83D\uDC68':'\uD83E\uDDD1';
-  const memories=(data.recent_memories||[]).slice(-5).reverse();
-
-  // Find romance info from relationships
+  const memories=(data.recent_memories||[]).slice(-6).reverse();
   const romanceRels=(data.relationships||[]).filter(r=>r.relationship_status&&r.relationship_status!=='none');
+  const locName = data.location ? (typeof data.location === 'object' ? data.location.name : data.location) : '?';
 
   document.getElementById('agent-detail').innerHTML=`
+    <div style="margin-bottom:6px">
+      <span style="cursor:pointer;color:#888;font-size:11px" onclick="selectedAgentId=null;showDefaultDetail();">&larr; All Agents</span>
+    </div>
     <h2>${gi} ${data.name||'?'}</h2>
-    <p class="subtitle">${data.age||'?'} y/o ${data.occupation||''} &mdash; ${data.traits||''}</p>
-    <p class="subtitle" style="color:#e0e0e0">${esc(data.action||'idle')}</p>
+    <p class="subtitle">${data.age||'?'} y/o ${data.occupation||''}</p>
+    <p class="subtitle" style="color:#888;font-size:10px">${data.traits||''}</p>
+    <p class="subtitle" style="color:#e0e0e0">@ ${esc(locName)} &mdash; ${esc(data.action||'idle')}</p>
 
-    ${romanceRels.length>0?`<div style="margin:4px 0;padding:4px 8px;background:rgba(233,30,144,0.1);border-radius:4px;font-size:11px;color:#e91e90">
-      ${romanceRels.map(r=>`\u2764 ${r.relationship_status} with ${r.name} (love: ${(r.romantic_interest*100).toFixed(0)}%)`).join('<br>')}
+    ${romanceRels.length>0?`<div style="margin:6px 0;padding:4px 8px;background:rgba(233,30,144,0.1);border:1px solid rgba(233,30,144,0.2);border-radius:4px;font-size:11px;color:#e91e90">
+      ${romanceRels.map(r=>`\u2764 ${r.relationship_status} with ${r.name} (${(r.romantic_interest*100).toFixed(0)}%)`).join('<br>')}
     </div>`:''}
 
     <div class="bar-container">
@@ -801,45 +934,109 @@ function renderAgentDetail(data) {
       </div>`;
     }).join('')}
 
-    <div style="margin-top:8px">
-      <div style="font-size:11px;color:#a0a0c0">Plan: ${esc((data.daily_plan||[]).slice(0,3).join('; ')||'None yet')}</div>
-    </div>
-
     <div style="margin-top:6px">
-      <div style="font-size:12px;color:#4ecca3;margin-bottom:4px">Recent Memories</div>
-      ${memories.map(m=>`<div class="memory-item"><span class="memory-time">${m.time||''}</span> ${esc(m.content||'')}</div>`).join('')||'<div class="memory-item">No memories yet</div>'}
+      <div style="font-size:10px;color:#888">Plan: ${esc((data.daily_plan||[]).slice(0,3).join('; ')||'None yet')}</div>
     </div>
 
     ${(data.relationships||[]).length>0?`
-    <div style="margin-top:6px">
-      <div style="font-size:12px;color:#4ecca3;margin-bottom:4px">Relationships</div>
-      ${data.relationships.slice(0,5).map(r=>`
-        <div style="font-size:11px;color:#b0b0c0;padding:1px 0">
-          ${esc(r.name)}: closeness ${(r.closeness*100).toFixed(0)}%${r.relationship_status&&r.relationship_status!=='none'?' <span style="color:#e91e90">\u2764 '+r.relationship_status+'</span>':''}
-        </div>
-      `).join('')}
-    </div>`:''}
+    <div class="section-header">Relationships</div>
+    ${data.relationships.slice(0,8).map(r=>{
+      const fam = (r.familiarity||0)*100;
+      const trust = (r.trust||0)*100;
+      const sent = (r.sentiment||0)*100;
+      const rom = (r.romantic_interest||0)*100;
+      const statusBadge = r.relationship_status && r.relationship_status !== 'none'
+        ? `<span style="color:#e91e90;font-size:9px"> \u2764 ${r.relationship_status}</span>` : '';
+      return `
+        <div class="rel-item" onclick="selectedAgentId='${r.agent_id}';fetchAgentDetail('${r.agent_id}');">
+          <div><span class="rel-name">${esc(r.name)}</span>${statusBadge}
+            <span style="color:#555;font-size:9px">(${r.interaction_count||0} talks)</span></div>
+          <div class="rel-bars">
+            <div class="rel-mini-bar" title="Familiarity ${fam.toFixed(0)}%"><div class="rel-mini-fill" style="width:${fam}%;background:#4ecca3"></div></div>
+            <div class="rel-mini-bar" title="Trust ${trust.toFixed(0)}%"><div class="rel-mini-fill" style="width:${trust}%;background:#4e9eca"></div></div>
+            <div class="rel-mini-bar" title="Sentiment ${sent.toFixed(0)}%"><div class="rel-mini-fill" style="width:${sent}%;background:#f0c040"></div></div>
+            ${rom > 0 ? `<div class="rel-mini-bar" title="Romance ${rom.toFixed(0)}%"><div class="rel-mini-fill" style="width:${rom}%;background:#e91e90"></div></div>` : ''}
+          </div>
+        </div>`;
+    }).join('')}`:''}
+
+    <div class="section-header">Recent Memories</div>
+    ${memories.map(m=>`<div class="memory-item"><span class="memory-time">${m.time||''}</span> ${esc(m.content||'')}</div>`).join('')||'<div class="memory-item" style="color:#555">No memories yet</div>'}
   `;
 }
 
 // ============================================================
-// EVENT LOG
+// CONVERSATIONS TAB
 // ============================================================
-function renderEventLog() {
-  const c=document.getElementById('events-container');
-  c.innerHTML=eventLog.slice(-60).map(line=>{
-    let cls='event-line';
-    if(line.includes('[PLAN]')) cls+=' plan';
-    else if(line.includes('[CONV]')) cls+=' conv';
-    else if(line.includes('[ROMANCE]')) cls+=' romance';
-    else if(line.includes('[EVENT]')||line.includes('[ENTROPY]')) cls+=' event';
-    else if(line.startsWith('---')||line.startsWith('\n---')) cls+=' time';
-    return `<div class="${cls}">${esc(line)}</div>`;
-  }).join('');
-  c.scrollTop=c.scrollHeight;
+async function fetchConversations() {
+  try {
+    const res = await fetch(`${API_BASE}/conversations?include_history=true&limit=15`);
+    if (!res.ok) return;
+    conversationData = await res.json();
+    renderConversations();
+  } catch(e) {}
 }
 
-function esc(s){return s?s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'):''}
+function renderConversations() {
+  const panel = document.getElementById('conversations-panel');
+  const all = [
+    ...(conversationData.active||[]).map(c => ({...c, _active: true})),
+    ...(conversationData.recent||[]).map(c => ({...c, _active: false})),
+  ];
+
+  if (all.length === 0) {
+    panel.innerHTML = '<div class="conv-empty">No conversations yet.<br>Agents will start talking when they meet!</div>';
+    return;
+  }
+
+  panel.innerHTML = all.map(conv => {
+    const turns = conv.turns || [];
+    const badge = conv._active
+      ? '<span class="conv-badge live">LIVE</span>'
+      : '<span class="conv-badge ended">ended</span>';
+    const names = (conv.participant_names || []).join(' & ');
+
+    return `
+      <div class="conv-card ${conv._active ? 'active-conv' : ''}">
+        <div class="conv-header">
+          <span class="conv-topic">${esc(conv.topic || 'Chat')}</span>
+          ${badge}
+        </div>
+        <div class="conv-participants">${esc(names)} &mdash; ${esc(conv.location || '')}</div>
+        ${turns.slice(-6).map(t => `
+          <div class="conv-turn">
+            <span class="conv-speaker" style="color:${getAgentColor(t.speaker_id)}">${esc(t.speaker_name)}:</span>
+            <span class="conv-message">${esc(t.message)}</span>
+          </div>
+        `).join('')}
+      </div>`;
+  }).join('');
+}
+
+function getAgentColor(agentId) {
+  return AGENT_COLORS[getAgentIdx(agentId) % AGENT_COLORS.length];
+}
+
+// ============================================================
+// EVENT LOG TAB
+// ============================================================
+function renderEventLog() {
+  const c = document.getElementById('event-log-panel');
+  c.innerHTML = eventLog.slice(-80).map(line => {
+    let cls = 'event-line';
+    if (line.includes('[PLAN]')) cls += ' plan';
+    else if (line.includes('[CONV]')) cls += ' conv';
+    else if (line.includes('[ROMANCE]')) cls += ' romance';
+    else if (line.includes('[MOVE]')) cls += ' move';
+    else if (line.includes('[REFLECT]')) cls += ' reflect';
+    else if (line.includes('[EVENT]') || line.includes('[ENTROPY]')) cls += ' event';
+    else if (line.startsWith('---') || line.startsWith('\n---')) cls += ' time';
+    return `<div class="${cls}">${esc(line)}</div>`;
+  }).join('');
+  c.scrollTop = c.scrollHeight;
+}
+
+function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
 
 // ============================================================
 // DATA FETCHING
@@ -853,39 +1050,61 @@ async function fetchState() {
     const data = await res.json();
     if (!connected) { connected=true; document.getElementById('status').innerHTML='<span class="dot green"></span> Connected'; }
 
-    const clock=data.clock||{};
-    currentTimeOfDay=clock.time_of_day||'morning';
-    currentWeather=(data.weather||'sunny').toLowerCase();
+    const clock = data.clock || {};
+    currentTimeOfDay = clock.time_of_day || 'morning';
+    currentWeather = (data.weather || 'sunny').toLowerCase();
 
-    document.getElementById('clock').textContent=`Day ${clock.day||1}, ${clock.time_str||'??:??'} (${currentTimeOfDay})`;
-    document.getElementById('weather-icon').textContent=WEATHER_ICONS[currentWeather]||'\u2600\uFE0F';
-    document.getElementById('weather').textContent=currentWeather;
-    document.getElementById('agent-count').innerHTML=`<span class="dot green"></span> ${Object.keys(data.agents||{}).length} agents`;
+    document.getElementById('clock').textContent = `Day ${clock.day||1}, ${clock.time_str||'??:??'} (${currentTimeOfDay})`;
+    document.getElementById('weather-icon').textContent = WEATHER_ICONS[currentWeather] || '\u2600\uFE0F';
+    document.getElementById('weather').textContent = currentWeather;
+    document.getElementById('agent-count').innerHTML = `<span class="dot green"></span> ${Object.keys(data.agents||{}).length} agents`;
+    document.getElementById('conv-count').textContent = `${data.active_conversations||0} convos`;
 
-    const usage=data.llm_usage||'';
-    const cm=usage.match(/calls:\s*(\d+)/i), $m=usage.match(/\$([0-9.]+)/);
-    document.getElementById('api-calls').textContent=`API: ${cm?cm[1]:'0'}`;
-    document.getElementById('cost').textContent=$m?`$${$m[1]}`:'$0.00';
+    const usage = data.llm_usage || '';
+    const cm = usage.match(/calls:\s*(\d+)/i), $m = usage.match(/\$([0-9.]+)/);
+    document.getElementById('api-calls').textContent = `API: ${cm?cm[1]:'0'}`;
+    document.getElementById('cost').textContent = $m ? `$${$m[1]}` : '$0.00';
 
-    agents=data.agents||{};
+    agents = data.agents || {};
 
-    const locRes=await fetch(`${API_BASE}/city/locations`);
-    if(locRes.ok) locations=await locRes.json();
+    const locRes = await fetch(`${API_BASE}/city/locations`);
+    if (locRes.ok) locations = await locRes.json();
 
-    const tick=clock.total_ticks||0;
-    if(tick!==lastTick){
-      try{
-        const er=await fetch(`${API_BASE}/events`);
-        if(er.ok){const d2=await er.json(); eventLog=(d2.events||[]).map(e=>e.message||'').filter(m=>m.trim()); renderEventLog();}
-      }catch(e){}
+    const tick = clock.total_ticks || 0;
+    if (tick !== lastTick) {
+      // Fetch events
+      try {
+        const er = await fetch(`${API_BASE}/events`);
+        if (er.ok) {
+          const d2 = await er.json();
+          eventLog = (d2.events||[]).map(e => e.message||'').filter(m => m.trim());
+          if (activeTab === 'events') renderEventLog();
+        }
+      } catch(e) {}
+
+      // Fetch conversations
+      if (activeTab === 'conversations') {
+        fetchConversations();
+      } else {
+        // Still fetch for canvas bubbles
+        try {
+          const cr = await fetch(`${API_BASE}/conversations?include_history=false`);
+          if (cr.ok) {
+            const cd = await cr.json();
+            conversationData.active = cd.active || [];
+          }
+        } catch(e) {}
+      }
     }
-    lastTick=tick;
+    lastTick = tick;
 
-    if(selectedAgentId) fetchAgentDetail(selectedAgentId);
-    else showDefaultDetail();
+    if (activeTab === 'agents') {
+      if (selectedAgentId) fetchAgentDetail(selectedAgentId);
+      else showDefaultDetail();
+    }
 
-  } catch(e){
-    if(connected){connected=false;document.getElementById('status').innerHTML='<span class="dot red"></span> Disconnected';}
+  } catch(e) {
+    if (connected) { connected=false; document.getElementById('status').innerHTML='<span class="dot red"></span> Disconnected'; }
   }
 }
 

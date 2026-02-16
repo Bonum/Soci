@@ -62,6 +62,7 @@ async def get_agents():
             "state": a.state.value,
             "mood": round(a.mood, 2),
             "action": a.current_action.detail if a.current_action else "idle",
+            "partner_id": a.partner_id,
             "is_player": a.is_player,
         }
         for aid, a in sim.agents.items()
@@ -92,11 +93,18 @@ async def get_agent(agent_id: str):
         "needs_description": agent.needs.describe(),
         "action": agent.current_action.detail if agent.current_action else "idle",
         "daily_plan": agent.daily_plan,
+        "partner_id": agent.partner_id,
         "relationships": [
             {
                 "agent_id": rel.agent_id,
                 "name": rel.agent_name,
                 "closeness": round(rel.closeness, 2),
+                "romantic_interest": round(rel.romantic_interest, 2),
+                "relationship_status": rel.relationship_status,
+                "trust": round(rel.trust, 2),
+                "sentiment": round(rel.sentiment, 2),
+                "familiarity": round(rel.familiarity, 2),
+                "interaction_count": rel.interaction_count,
                 "description": rel.describe(),
             }
             for rel in agent.relationships.get_closest(10)
@@ -136,21 +144,42 @@ async def get_agent_memories(agent_id: str, limit: int = 20):
 
 
 @router.get("/conversations")
-async def get_active_conversations():
-    """Get all active conversations."""
+async def get_conversations(include_history: bool = True, limit: int = 20):
+    """Get active and recent conversations with full dialogue."""
     from soci.api.server import get_simulation
     sim = get_simulation()
-    return {
-        cid: {
-            "participants": [
-                sim.agents[p].name for p in c.participants if p in sim.agents
-            ],
-            "topic": c.topic,
-            "turns": len(c.turns),
-            "latest": c.turns[-1].message if c.turns else "",
+
+    def format_conv(conv_data, active=False):
+        """Format a conversation (dict or Conversation object)."""
+        if hasattr(conv_data, 'to_dict'):
+            d = conv_data.to_dict()
+        else:
+            d = conv_data
+        participant_names = [
+            sim.agents[p].name for p in d.get("participants", []) if p in sim.agents
+        ]
+        return {
+            "id": d.get("id", ""),
+            "participants": d.get("participants", []),
+            "participant_names": participant_names,
+            "topic": d.get("topic", ""),
+            "location": d.get("location", ""),
+            "turns": d.get("turns", []),
+            "is_active": active,
         }
-        for cid, c in sim.active_conversations.items()
+
+    result = {
+        "active": [
+            format_conv(c, active=True)
+            for c in sim.active_conversations.values()
+        ],
+        "recent": [],
     }
+    if include_history:
+        result["recent"] = [
+            format_conv(c) for c in sim.conversation_history[-limit:]
+        ][::-1]  # Most recent first
+    return result
 
 
 @router.get("/stats")
@@ -227,6 +256,39 @@ async def player_action(player_id: str, request: PlayerActionRequest):
         "action": action.to_dict(),
         "location": agent.location,
     }
+
+
+@router.get("/relationships")
+async def get_relationships():
+    """Get the full relationship graph — all agent-to-agent connections."""
+    from soci.api.server import get_simulation
+    sim = get_simulation()
+    edges = []
+    seen = set()
+    for aid, agent in sim.agents.items():
+        for rel in agent.relationships.get_closest(20):
+            pair = tuple(sorted([aid, rel.agent_id]))
+            if pair in seen:
+                continue
+            seen.add(pair)
+            other_rel = None
+            other = sim.agents.get(rel.agent_id)
+            if other:
+                other_rel = other.relationships.get(aid)
+            edges.append({
+                "source": aid,
+                "target": rel.agent_id,
+                "source_name": agent.name,
+                "target_name": rel.agent_name,
+                "familiarity": round(rel.familiarity, 2),
+                "trust": round(rel.trust, 2),
+                "sentiment": round(rel.sentiment, 2),
+                "romantic_interest": round(rel.romantic_interest, 2),
+                "relationship_status": rel.relationship_status,
+                "mutual_romantic": round(other_rel.romantic_interest, 2) if other_rel else 0,
+                "interaction_count": rel.interaction_count,
+            })
+    return {"edges": edges}
 
 
 @router.get("/events")
