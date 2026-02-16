@@ -111,8 +111,26 @@
   #tooltip {
     position: absolute; background: #16213eee; border: 1px solid #4ecca3;
     border-radius: 6px; padding: 8px 12px; font-size: 12px;
-    pointer-events: none; display: none; z-index: 100; max-width: 250px;
+    pointer-events: none; display: none; z-index: 100; max-width: 280px;
   }
+  /* NOTIFICATION TOASTS */
+  #toast-container {
+    position: absolute; bottom: 12px; left: 12px; z-index: 200;
+    display: flex; flex-direction: column-reverse; gap: 6px;
+    pointer-events: none; max-width: 360px;
+  }
+  .toast {
+    background: #16213eee; border-radius: 6px; padding: 8px 14px;
+    font-size: 12px; color: #e0e0e0; border-left: 3px solid #4ecca3;
+    animation: toastIn 0.3s ease, toastOut 0.5s ease 4.5s forwards;
+    backdrop-filter: blur(4px); line-height: 1.4;
+  }
+  .toast.romance { border-left-color: #e91e90; }
+  .toast.event { border-left-color: #e94560; }
+  .toast.conv { border-left-color: #f0c040; }
+  .toast.gossip { border-left-color: #9b59b6; }
+  @keyframes toastIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes toastOut { from { opacity: 1; } to { opacity: 0; } }
   /* Section headers */
   .section-header {
     font-size: 12px; color: #4ecca3; margin: 10px 0 4px 0; font-weight: 600;
@@ -172,6 +190,7 @@
   <div id="canvas-container">
     <canvas id="cityCanvas"></canvas>
     <div id="tooltip"></div>
+    <div id="toast-container"></div>
   </div>
   <div id="sidebar">
     <div class="sidebar-tabs">
@@ -846,26 +865,59 @@ function onCanvasClick(e) {
 function onCanvasMouseMove(e) {
   const rect=canvas.getBoundingClientRect();
   const mx=e.clientX-rect.left, my=e.clientY-rect.top;
-  let found=null;
+  const W=canvas.width, H=canvas.height;
+  const tt=document.getElementById('tooltip');
+
+  // Check agents first
+  let foundAgent=null;
   for (const [id,pos] of Object.entries(agentPositions)) {
-    if(Math.hypot(mx-pos.x,my-pos.y)<22){found=id;break;}
+    if(Math.hypot(mx-pos.x,my-pos.y)<22){foundAgent=id;break;}
   }
-  if(found!==hoveredAgent){
-    hoveredAgent=found;
-    canvas.style.cursor=found?'pointer':'default';
-    const tt=document.getElementById('tooltip');
-    if(found&&agents[found]){
-      const a=agents[found];
+
+  // Check locations if no agent
+  let foundLoc=null;
+  if (!foundAgent) {
+    for (const [id, pos] of Object.entries(LOCATION_POSITIONS)) {
+      const lx=pos.x*W, ly=pos.y*H;
+      if(Math.hypot(mx-lx,my-ly)<35){foundLoc=id;break;}
+    }
+  }
+
+  if(foundAgent!==hoveredAgent){
+    hoveredAgent=foundAgent;
+    canvas.style.cursor=(foundAgent||foundLoc)?'pointer':'default';
+    if(foundAgent&&agents[foundAgent]){
+      const a=agents[foundAgent];
       let extra='';
       if(a.partner_id&&agents[a.partner_id]) extra=`<br><span style="color:#e91e90">Partner: ${agents[a.partner_id].name}</span>`;
       tt.innerHTML=`<b>${a.name}</b><br><span style="color:#a0a0c0">${a.action||'idle'}</span>${extra}`;
       tt.style.display='block';
-    } else tt.style.display='none';
+    } else if (!foundLoc) {
+      tt.style.display='none';
+    }
   }
-  if(found){
-    const tt=document.getElementById('tooltip');
-    tt.style.left=(e.clientX-canvas.getBoundingClientRect().left+15)+'px';
-    tt.style.top=(e.clientY-canvas.getBoundingClientRect().top+15)+'px';
+
+  // Location tooltip
+  if (!foundAgent && foundLoc && locations[foundLoc]) {
+    const loc = locations[foundLoc];
+    const occ = (loc.occupants||[]);
+    const occNames = occ.map(o => (typeof o === 'object' ? o.name : (agents[o]?.name || o))).slice(0, 8);
+    const hasConv = conversationData.active?.some(c => c.location === foundLoc);
+    tt.innerHTML = `<b>${loc.name||foundLoc}</b> <span style="color:#666">(${loc.zone||''})</span>
+      ${loc.description ? `<br><span style="color:#888;font-size:10px">${esc(loc.description)}</span>` : ''}
+      <br><span style="color:#a0a0c0">${occ.length} occupant${occ.length!==1?'s':''}</span>
+      ${occNames.length > 0 ? `<br><span style="font-size:10px;color:#b0b0c0">${occNames.join(', ')}${occ.length>8?'...':''}</span>` : ''}
+      ${hasConv ? '<br><span style="color:#f0c040;font-size:10px">Active conversation here</span>' : ''}`;
+    tt.style.display = 'block';
+    canvas.style.cursor = 'pointer';
+  } else if (!foundAgent && !foundLoc) {
+    canvas.style.cursor = 'default';
+    if (!hoveredAgent) tt.style.display = 'none';
+  }
+
+  if(foundAgent||foundLoc){
+    tt.style.left=(e.clientX-rect.left+15)+'px';
+    tt.style.top=(e.clientY-rect.top+15)+'px';
   }
 }
 
@@ -1107,6 +1159,7 @@ async function fetchSecondaryData() {
     if (er.ok) {
       const d2 = await er.json();
       eventLog = (d2.events||[]).map(e => e.message||'').filter(m => m.trim());
+      checkForNotableEvents();
       if (activeTab === 'events') renderEventLog();
     }
   } catch(e) {}
@@ -1142,6 +1195,7 @@ function connectWebSocket() {
       } else if (msg.type === 'event') {
         eventLog.push(msg.message);
         if (eventLog.length > 200) eventLog = eventLog.slice(-200);
+        checkForNotableEvents();
         if (activeTab === 'events') renderEventLog();
       }
     } catch(e) {}
@@ -1230,6 +1284,41 @@ async function fetchControls() {
       updateControlsUI();
     }
   } catch(e) {}
+}
+
+// ============================================================
+// TOAST NOTIFICATIONS
+// ============================================================
+let lastEventCount = 0;
+
+function showToast(message, type='info') {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className = 'toast ' + type;
+  toast.textContent = message;
+  container.appendChild(toast);
+  // Remove after animation
+  setTimeout(() => toast.remove(), 5000);
+  // Max 5 toasts at once
+  while (container.children.length > 5) container.firstChild.remove();
+}
+
+function checkForNotableEvents() {
+  if (eventLog.length <= lastEventCount) return;
+  const newEvents = eventLog.slice(lastEventCount);
+  lastEventCount = eventLog.length;
+
+  for (const msg of newEvents) {
+    if (msg.includes('[ROMANCE]')) {
+      showToast(msg.replace(/\s*\[ROMANCE\]\s*/, ''), 'romance');
+    } else if (msg.includes('[EVENT]') && !msg.includes('Weather')) {
+      showToast(msg.replace(/\s*\[EVENT\]\s*/, ''), 'event');
+    } else if (msg.includes('[GOSSIP]')) {
+      showToast(msg.replace(/\s*\[GOSSIP\]\s*/, ''), 'gossip');
+    } else if (msg.includes('[CONV]') && msg.includes('starts talking')) {
+      showToast(msg.replace(/\s*\[CONV\]\s*/, ''), 'conv');
+    }
+  }
 }
 
 // ============================================================
