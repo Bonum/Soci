@@ -315,8 +315,9 @@ class Simulation:
 
     async def _handle_social_interactions(self, agents: list[Agent]) -> None:
         """Check if any idle co-located agents should start conversations."""
-        # Don't flood with conversations
-        if len(self.active_conversations) >= 3:
+        # Don't flood with conversations — scale with population
+        max_convos = max(3, len(self.agents) // 5)
+        if len(self.active_conversations) >= max_convos:
             return
 
         for agent in agents:
@@ -422,6 +423,51 @@ class Simulation:
             f"  [CONV END] Conversation about '{conv.topic}' between "
             f"{', '.join(self.agents[p].name for p in conv.participants if p in self.agents)} ended."
         )
+
+        # Gossip: chance of mentioning a third person both know
+        self._maybe_gossip(conv)
+
+    def _maybe_gossip(self, conv: Conversation) -> None:
+        """After a conversation, participants might share info about a third person."""
+        if len(conv.participants) < 2 or random.random() > 0.35:
+            return
+
+        from soci.actions.social import propagate_gossip
+
+        p1 = self.agents.get(conv.participants[0])
+        p2 = self.agents.get(conv.participants[1])
+        if not p1 or not p2:
+            return
+
+        # Find a third person both know
+        p1_known = {r.agent_id for r in p1.relationships.get_closest(10) if r.familiarity > 0.2}
+        p2_known = {r.agent_id for r in p2.relationships.get_closest(10) if r.familiarity > 0.2}
+        mutual = (p1_known & p2_known) - {p1.id, p2.id}
+
+        if not mutual:
+            return
+
+        about_id = random.choice(list(mutual))
+        about = self.agents.get(about_id)
+        if not about:
+            return
+
+        # Speaker shares their impression
+        speaker, listener = (p1, p2) if random.random() < 0.5 else (p2, p1)
+        rel = speaker.relationships.get(about_id)
+        if not rel:
+            return
+
+        # Generate gossip note based on sentiment
+        if rel.sentiment > 0.7:
+            note = f"{about.name} is really great, always so helpful"
+        elif rel.sentiment < 0.3:
+            note = f"I've had some issues with {about.name} lately"
+        else:
+            note = f"I ran into {about.name} the other day"
+
+        propagate_gossip(speaker, listener, about_id, about.name, note, self.clock.total_ticks)
+        self._emit(f"  [GOSSIP] {speaker.name} told {listener.name} about {about.name}")
 
     async def _generate_reflection(self, agent: Agent) -> None:
         """Generate a reflection for an agent about recent experiences."""

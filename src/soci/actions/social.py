@@ -19,14 +19,19 @@ def should_initiate_conversation(agent: Agent, other_id: str, clock: SimClock) -
     # Extraversion drives conversation initiation
     base_chance = agent.persona.extraversion / 20.0  # 0.05 to 0.5
 
-    # Boost if social need is low
+    # Boost if social need is low (lonely agents seek conversation)
     if agent.needs.social < 0.3:
         base_chance += 0.2
+    if agent.needs.social < 0.15:
+        base_chance += 0.15  # Very lonely — even introverts will try
 
     # Boost if we know the person
     rel = agent.relationships.get(other_id)
     if rel and rel.familiarity > 0.3:
         base_chance += 0.15
+    # Strong boost for romantic partners
+    if rel and agent.partner_id == other_id:
+        base_chance += 0.3
 
     # Reduce if we recently talked to them
     if rel and rel.last_interaction_tick > 0:
@@ -53,6 +58,11 @@ def pick_conversation_partner(agent: Agent, others_at_location: list[str], clock
         if rel:
             # Prefer people we know and like
             score += rel.closeness * 2.0
+            # Strong pull toward romantic partners
+            if rel.romantic_interest > 0.3:
+                score += rel.romantic_interest * 3.0
+            if agent.partner_id == other_id:
+                score += 4.0  # Partners strongly prefer each other
             # But also have some chance of talking to strangers (curiosity)
             ticks_since = clock.total_ticks - rel.last_interaction_tick
             if ticks_since < 8:
