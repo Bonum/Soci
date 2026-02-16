@@ -74,6 +74,8 @@ class Agent:
         self._last_llm_tick: int = -1
         # Whether this agent is a human player
         self.is_player: bool = False
+        # Romance: current partner ID (dating/engaged/married)
+        self.partner_id: Optional[str] = None
 
     @property
     def is_busy(self) -> bool:
@@ -242,6 +244,7 @@ class Agent:
             "has_plan_today": self._has_plan_today,
             "last_llm_tick": self._last_llm_tick,
             "is_player": self.is_player,
+            "partner_id": self.partner_id,
         }
 
     @classmethod
@@ -261,4 +264,5 @@ class Agent:
         agent._has_plan_today = data["has_plan_today"]
         agent._last_llm_tick = data["last_llm_tick"]
         agent.is_player = data["is_player"]
+        agent.partner_id = data.get("partner_id")
         return agent

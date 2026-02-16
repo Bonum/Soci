@@ -56,6 +56,7 @@ async def get_agents():
         aid: {
             "name": a.name,
             "age": a.persona.age,
+            "gender": a.persona.gender,
             "occupation": a.persona.occupation,
             "location": a.location,
             "state": a.state.value,
@@ -81,6 +82,7 @@ async def get_agent(agent_id: str):
         "id": agent.id,
         "name": agent.name,
         "age": agent.persona.age,
+        "gender": agent.persona.gender,
         "occupation": agent.persona.occupation,
         "traits": agent.persona.trait_summary,
         "location": {"id": agent.location, "name": loc.name if loc else "unknown"},
@@ -225,6 +227,15 @@ async def player_action(player_id: str, request: PlayerActionRequest):
         "action": action.to_dict(),
         "location": agent.location,
     }
+
+
+@router.get("/events")
+async def get_events(limit: int = 50):
+    """Get recent simulation events for the event log."""
+    from soci.api.server import get_simulation
+    sim = get_simulation()
+    events = sim._event_history[-limit:]
+    return {"events": events}
 
 
 @router.post("/save")

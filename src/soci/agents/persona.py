@@ -15,6 +15,7 @@ class Persona:
     name: str
     age: int
     occupation: str
+    gender: str = "unknown"  # male, female, nonbinary
     # Big Five personality traits (1-10 scale)
     openness: int = 5
     conscientiousness: int = 5
@@ -81,6 +82,7 @@ class Persona:
             "name": self.name,
             "age": self.age,
             "occupation": self.occupation,
+            "gender": self.gender,
             "openness": self.openness,
             "conscientiousness": self.conscientiousness,
             "extraversion": self.extraversion,

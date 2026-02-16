@@ -3,6 +3,7 @@ personas:
   - id: elena
     name: Elena Vasquez
     age: 34
+    gender: female
     occupation: software engineer
     openness: 8
     conscientiousness: 7
@@ -26,6 +27,7 @@ personas:
   - id: marcus
     name: Marcus Chen
     age: 28
+    gender: male
     occupation: fitness trainer
     openness: 5
     conscientiousness: 8
@@ -49,6 +51,7 @@ personas:
   - id: helen
     name: Helen Park
     age: 67
+    gender: female
     occupation: retired teacher
     openness: 6
     conscientiousness: 8
@@ -72,6 +75,7 @@ personas:
   - id: kai
     name: Kai Okonkwo
     age: 22
+    gender: nonbinary
     occupation: barista and aspiring musician
     openness: 9
     conscientiousness: 3
@@ -95,6 +99,7 @@ personas:
   - id: diana
     name: Diana Novak
     age: 41
+    gender: female
     occupation: small business owner (grocery store)
     openness: 4
     conscientiousness: 9
@@ -119,6 +124,7 @@ personas:
   - id: james
     name: James "Jimmy" O'Brien
     age: 55
+    gender: male
     occupation: bartender and bar owner
     openness: 5
     conscientiousness: 6
@@ -142,6 +148,7 @@ personas:
   - id: rosa
     name: Rosa Martelli
     age: 62
+    gender: female
     occupation: restaurant owner and chef
     openness: 6
     conscientiousness: 9
@@ -165,6 +172,7 @@ personas:
   - id: devon
     name: Devon Reeves
     age: 30
+    gender: male
     occupation: freelance journalist
     openness: 9
     conscientiousness: 5
@@ -188,6 +196,7 @@ personas:
   - id: yuki
     name: Yuki Tanaka
     age: 26
+    gender: female
     occupation: yoga instructor and massage therapist
     openness: 8
     conscientiousness: 6
@@ -211,6 +220,7 @@ personas:
   - id: theo
     name: Theo Blackwood
     age: 45
+    gender: male
     occupation: construction worker
     openness: 3
     conscientiousness: 7
@@ -235,6 +245,7 @@ personas:
   - id: priya
     name: Priya Sharma
     age: 38
+    gender: female
     occupation: doctor (works at a clinic outside the city, spends free time locally)
     openness: 7
     conscientiousness: 9
@@ -258,6 +269,7 @@ personas:
   - id: omar
     name: Omar Hassan
     age: 50
+    gender: male
     occupation: taxi driver and part-time cook
     openness: 6
     conscientiousness: 6
@@ -281,6 +293,7 @@ personas:
   - id: zoe
     name: Zoe Chen-Williams
     age: 19
+    gender: female
     occupation: college student (home for the semester)
     openness: 8
     conscientiousness: 4
@@ -304,6 +317,7 @@ personas:
   - id: frank
     name: Frank Kowalski
     age: 72
+    gender: male
     occupation: retired mechanic
     openness: 3
     conscientiousness: 7
@@ -327,6 +341,7 @@ personas:
   - id: lila
     name: Lila Santos
     age: 33
+    gender: female
     occupation: artist and part-time art teacher
     openness: 10
     conscientiousness: 3
@@ -351,6 +366,7 @@ personas:
   - id: sam
     name: Sam Nakamura
     age: 40
+    gender: nonbinary
     occupation: librarian
     openness: 7
     conscientiousness: 8
@@ -374,6 +390,7 @@ personas:
   - id: marco
     name: Marco Delgado
     age: 16
+    gender: male
     occupation: high school student (Diana's son)
     openness: 7
     conscientiousness: 4
@@ -398,6 +415,7 @@ personas:
   - id: nina
     name: Nina Volkov
     age: 29
+    gender: female
     occupation: real estate agent
     openness: 5
     conscientiousness: 8
@@ -422,6 +440,7 @@ personas:
   - id: george
     name: George Adeyemi
     age: 47
+    gender: male
     occupation: night shift security guard
     openness: 4
     conscientiousness: 7
@@ -445,6 +464,7 @@ personas:
   - id: alice
     name: Alice Fontaine
     age: 58
+    gender: female
     occupation: retired accountant, amateur baker
     openness: 5
     conscientiousness: 8

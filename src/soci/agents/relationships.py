@@ -14,6 +14,8 @@ class Relationship:
     familiarity: float = 0.0   # 0 (stranger) to 1 (well-known)
     trust: float = 0.5         # 0 (distrust) to 1 (full trust)
     sentiment: float = 0.5     # 0 (dislike) to 1 (like)
+    romantic_interest: float = 0.0  # 0 (none) to 1 (deeply in love)
+    relationship_status: str = "none"  # none, crushing, dating, engaged, married
     interaction_count: int = 0
     last_interaction_tick: int = 0
     # Short notes about the relationship
@@ -50,12 +52,22 @@ class Relationship:
         if self.familiarity < 0.1:
             return f"{self.agent_name} — a stranger"
         parts = [self.agent_name]
-        if self.familiarity > 0.7:
+        if self.relationship_status == "married":
+            parts.append("my spouse")
+        elif self.relationship_status == "engaged":
+            parts.append("my fiance(e)")
+        elif self.relationship_status == "dating":
+            parts.append("someone I'm dating")
+        elif self.relationship_status == "crushing":
+            parts.append("someone I have feelings for")
+        elif self.familiarity > 0.7:
             parts.append("someone I know well")
         elif self.familiarity > 0.3:
             parts.append("an acquaintance")
         else:
             parts.append("someone I've met briefly")
+        if self.romantic_interest > 0.5 and self.relationship_status == "none":
+            parts.append("(I find them attractive)")
         if self.sentiment > 0.7:
             parts.append("(I like them)")
         elif self.sentiment < 0.3:
@@ -76,6 +88,8 @@ class Relationship:
             "familiarity": round(self.familiarity, 3),
             "trust": round(self.trust, 3),
             "sentiment": round(self.sentiment, 3),
+            "romantic_interest": round(self.romantic_interest, 3),
+            "relationship_status": self.relationship_status,
             "interaction_count": self.interaction_count,
             "last_interaction_tick": self.last_interaction_tick,
             "notes": list(self.notes),

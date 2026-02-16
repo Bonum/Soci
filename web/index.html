@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Soci City — Population Simulator</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    overflow: hidden;
+    height: 100vh;
+  }
+  #header {
+    background: #16213e;
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 2px solid #0f3460;
+    height: 50px;
+  }
+  #header h1 { font-size: 18px; color: #e94560; letter-spacing: 2px; }
+  #header .info { display: flex; gap: 20px; font-size: 13px; color: #a0a0c0; }
+  #header .info span { display: flex; align-items: center; gap: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .dot.green { background: #4ecca3; } .dot.yellow { background: #f0c040; } .dot.red { background: #e94560; }
+  #main { display: flex; height: calc(100vh - 50px); }
+  #canvas-container { flex: 1; position: relative; min-width: 0; }
+  #cityCanvas { width: 100%; height: 100%; display: block; }
+  #sidebar {
+    width: 340px; background: #16213e; border-left: 2px solid #0f3460;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  #agent-detail {
+    padding: 12px; border-bottom: 1px solid #0f3460;
+    min-height: 240px; max-height: 50%; overflow-y: auto;
+  }
+  #agent-detail h2 { font-size: 16px; color: #4ecca3; margin-bottom: 8px; }
+  #agent-detail .subtitle { font-size: 12px; color: #a0a0c0; margin-bottom: 10px; }
+  .bar-container { margin: 4px 0; }
+  .bar-label { font-size: 11px; color: #a0a0c0; display: flex; justify-content: space-between; }
+  .bar-bg { height: 8px; background: #0f3460; border-radius: 4px; overflow: hidden; margin-top: 2px; }
+  .bar-fill { height: 100%; border-radius: 4px; transition: width 0.5s ease; }
+  .bar-fill.green { background: #4ecca3; } .bar-fill.yellow { background: #f0c040; }
+  .bar-fill.red { background: #e94560; } .bar-fill.blue { background: #4e9eca; }
+  .bar-fill.purple { background: #9b59b6; } .bar-fill.orange { background: #e67e22; }
+  .bar-fill.pink { background: #e91e90; }
+  .memory-item { font-size: 11px; color: #c0c0d0; padding: 3px 0; border-bottom: 1px solid #0f346030; }
+  .memory-time { color: #666; font-size: 10px; }
+  #event-log { flex: 1; padding: 8px 12px; overflow-y: auto; font-size: 11px; line-height: 1.5; }
+  #event-log h3 { font-size: 13px; color: #e94560; margin-bottom: 6px; position: sticky; top: 0; background: #16213e; padding: 4px 0; z-index: 1; }
+  .event-line { padding: 2px 0; color: #b0b0c0; border-bottom: 1px solid #0f346020; }
+  .event-line.plan { color: #4ecca3; } .event-line.conv { color: #f0c040; }
+  .event-line.event { color: #e94560; } .event-line.time { color: #666; font-weight: bold; margin-top: 6px; }
+  .event-line.romance { color: #e91e90; }
+  #tooltip {
+    position: absolute; background: #16213eee; border: 1px solid #4ecca3;
+    border-radius: 6px; padding: 8px 12px; font-size: 12px;
+    pointer-events: none; display: none; z-index: 100; max-width: 250px;
+  }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: #1a1a2e; }
+  ::-webkit-scrollbar-thumb { background: #0f3460; border-radius: 3px; }
+</style>
+</head>
+<body>
+<div id="header">
+  <h1>SOCI CITY</h1>
+  <div class="info">
+    <span id="clock">Day 1, 06:00</span>
+    <span><span id="weather-icon"></span> <span id="weather">Sunny</span></span>
+    <span id="agent-count"><span class="dot green"></span> 0 agents</span>
+    <span id="api-calls">API: 0</span>
+    <span id="cost">$0.00</span>
+    <span id="status"><span class="dot yellow"></span> Connecting...</span>
+  </div>
+</div>
+<div id="main">
+  <div id="canvas-container">
+    <canvas id="cityCanvas"></canvas>
+    <div id="tooltip"></div>
+  </div>
+  <div id="sidebar">
+    <div id="agent-detail">
+      <h2>Select an Agent</h2>
+      <p class="subtitle">Click on any agent in the city to see their details</p>
+    </div>
+    <div id="event-log">
+      <h3>Event Log</h3>
+      <div id="events-container"></div>
+    </div>
+  </div>
+</div>
+<script>
+// ============================================================
+// CONFIG
+// ============================================================
+const API_BASE = window.location.origin + '/api';
+const POLL_INTERVAL = 2000;
+const HORIZON = 0.18; // Sky is top 18%
+
+// All locations below the horizon
+const LOCATION_POSITIONS = {
+  home_north:   { x: 0.07, y: 0.28 },
+  park:         { x: 0.40, y: 0.22 },
+  cafe:         { x: 0.24, y: 0.40 },
+  street_north: { x: 0.54, y: 0.32 },
+  office:       { x: 0.80, y: 0.26 },
+  grocery:      { x: 0.14, y: 0.56 },
+  restaurant:   { x: 0.84, y: 0.50 },
+  gym:          { x: 0.36, y: 0.66 },
+  library:      { x: 0.60, y: 0.60 },
+  street_south: { x: 0.44, y: 0.82 },
+  bar:          { x: 0.74, y: 0.72 },
+  home_south:   { x: 0.12, y: 0.84 },
+};
+
+const BUILDING_TYPE = {
+  home_north: 'house', home_south: 'house',
+  cafe: 'shop', grocery: 'shop', restaurant: 'shop', bar: 'shop',
+  office: 'office', gym: 'office', library: 'public',
+  park: 'park', street_north: 'street', street_south: 'street',
+};
+
+const ZONE_COLORS = {
+  residential: { main: '#5a8a6a', roof: '#3d6b4a', accent: '#7ab88a' },
+  commercial:  { main: '#c49663', roof: '#9e7040', accent: '#e0b880' },
+  work:        { main: '#5a7a9d', roof: '#3d5a7a', accent: '#80a0c0' },
+  public:      { main: '#6a9a5e', roof: '#4a7a3e', accent: '#90c080' },
+};
+
+const AGENT_COLORS = [
+  '#e94560','#4ecca3','#f0c040','#4e9eca','#9b59b6',
+  '#e67e22','#1abc9c','#e74c3c','#3498db','#2ecc71',
+  '#f39c12','#8e44ad','#16a085','#c0392b','#2980b9',
+  '#27ae60','#d35400','#7d3c98','#148f77','#cb4335',
+];
+
+const WEATHER_ICONS = {
+  sunny:'\u2600\uFE0F', clear:'\u2600\uFE0F', cloudy:'\u2601\uFE0F',
+  rainy:'\uD83C\uDF27\uFE0F', stormy:'\u26C8\uFE0F', foggy:'\uD83C\uDF2B\uFE0F',
+};
+
+const SKY = {
+  dawn:      { top:'#2d1b4e', bot:'#e8a860', stars:false, sun:'low' },
+  morning:   { top:'#4a90c8', bot:'#c8e0f0', stars:false, sun:'mid' },
+  afternoon: { top:'#2878b8', bot:'#88c8e8', stars:false, sun:'high' },
+  evening:   { top:'#1a1040', bot:'#e07840', stars:false, sun:'low' },
+  night:     { top:'#060610', bot:'#101028', stars:true,  sun:'moon' },
+};
+
+// Ground tint per time (r,g,b multipliers)
+const GROUND_TINT = {
+  dawn:      { base:'#3a5a2a', shade: 0.7 },
+  morning:   { base:'#4a7a38', shade: 1.0 },
+  afternoon: { base:'#4a7a38', shade: 1.0 },
+  evening:   { base:'#3a4a28', shade: 0.6 },
+  night:     { base:'#0e1a0e', shade: 0.25 },
+};
+
+// ============================================================
+// STATE
+// ============================================================
+let canvas, ctx;
+let locations = {};
+let agents = {};
+let agentPositions = {};   // current animated {x,y}
+let agentTargets = {};     // target {x,y} from data
+let selectedAgentId = null;
+let eventLog = [];
+let connected = false;
+let hoveredAgent = null;
+let currentTimeOfDay = 'morning';
+let currentWeather = 'sunny';
+let animFrame = 0;
+let raindrops = [];
+let clouds = [];
+let stars = [];
+
+function initParticles() {
+  for (let i = 0; i < 120; i++)
+    raindrops.push({x:Math.random(), y:Math.random(), speed:0.012+Math.random()*0.015, len:8+Math.random()*10});
+  for (let i = 0; i < 5; i++)
+    clouds.push({x:Math.random(), y:0.02+Math.random()*0.10, w:60+Math.random()*50, speed:0.00005+Math.random()*0.0001});
+  for (let i = 0; i < 70; i++)
+    stars.push({x:Math.random(), y:Math.random()*HORIZON, size:0.5+Math.random()*1.5, tw:Math.random()*6.28});
+}
+
+// ============================================================
+// CANVAS
+// ============================================================
+function initCanvas() {
+  canvas = document.getElementById('cityCanvas');
+  ctx = canvas.getContext('2d');
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+  canvas.addEventListener('click', onCanvasClick);
+  canvas.addEventListener('mousemove', onCanvasMouseMove);
+  initParticles();
+  requestAnimationFrame(animate);
+}
+function resizeCanvas() {
+  const c = document.getElementById('canvas-container');
+  canvas.width = c.clientWidth;
+  canvas.height = c.clientHeight;
+}
+
+function animate() {
+  animFrame++;
+  // Lerp agent positions toward targets
+  for (const [id, target] of Object.entries(agentTargets)) {
+    if (!agentPositions[id]) { agentPositions[id] = {...target}; continue; }
+    const p = agentPositions[id];
+    p.x += (target.x - p.x) * 0.06;
+    p.y += (target.y - p.y) * 0.06;
+  }
+  draw();
+  requestAnimationFrame(animate);
+}
+
+// ============================================================
+// DRAWING — MAIN
+// ============================================================
+function draw() {
+  if (!ctx) return;
+  const W = canvas.width, H = canvas.height;
+
+  drawSky(W, H);
+  drawGround(W, H);
+  drawWeather(W, H);
+  drawRoads(W, H);
+
+  for (const [id, loc] of Object.entries(locations)) drawBuilding(id, loc, W, H);
+
+  // Compute agent layout targets
+  const byLoc = {};
+  for (const [id, a] of Object.entries(agents)) {
+    const loc = a.location || 'home_north';
+    if (!byLoc[loc]) byLoc[loc] = [];
+    byLoc[loc].push({id, ...a});
+  }
+  let idx = 0;
+  for (const [id, a] of Object.entries(agents)) {
+    computeAgentTarget(id, a, idx, byLoc, W, H);
+    idx++;
+  }
+
+  // Draw couple lines first (behind agents)
+  drawCoupleLines(W, H);
+
+  idx = 0;
+  for (const [id, a] of Object.entries(agents)) {
+    drawPerson(id, a, idx, W, H);
+    idx++;
+  }
+
+  // Fog overlay
+  if (currentWeather === 'foggy') {
+    ctx.fillStyle = `rgba(180,190,200,${0.30 + Math.sin(animFrame*0.015)*0.08})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+}
+
+// ============================================================
+// SKY
+// ============================================================
+function drawSky(W, H) {
+  const s = SKY[currentTimeOfDay] || SKY.morning;
+  const hLine = H * HORIZON;
+  const grad = ctx.createLinearGradient(0, 0, 0, hLine);
+  grad.addColorStop(0, s.top);
+  grad.addColorStop(1, s.bot);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, hLine);
+
+  if (s.stars) {
+    for (const st of stars) {
+      const tw = 0.3 + 0.7 * Math.abs(Math.sin(animFrame * 0.025 + st.tw));
+      ctx.fillStyle = `rgba(255,255,240,${tw})`;
+      ctx.beginPath(); ctx.arc(st.x*W, st.y*H, st.size, 0, 6.28); ctx.fill();
+    }
+  }
+  if (s.sun === 'moon') drawMoon(W*0.82, hLine*0.35, 18);
+  else if (s.sun === 'high') drawSun(W*0.78, hLine*0.25, 16);
+  else if (s.sun === 'mid') drawSun(W*0.80, hLine*0.45, 16);
+  else if (s.sun === 'low') drawSun(W*0.82, hLine*0.7, 16);
+}
+
+function drawSun(x, y, r) {
+  const glow = ctx.createRadialGradient(x, y, r*0.5, x, y, r*4);
+  glow.addColorStop(0, 'rgba(255,220,100,0.35)');
+  glow.addColorStop(1, 'rgba(255,220,100,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(x-r*4, y-r*4, r*8, r*8);
+  ctx.save(); ctx.translate(x, y); ctx.rotate(animFrame*0.005);
+  for (let i = 0; i < 8; i++) { ctx.rotate(Math.PI/4); ctx.fillStyle='rgba(255,220,100,0.25)'; ctx.fillRect(-1.5,r+3,3,8); }
+  ctx.restore();
+  ctx.fillStyle='#ffe066'; ctx.beginPath(); ctx.arc(x,y,r,0,6.28); ctx.fill();
+}
+
+function drawMoon(x, y, r) {
+  const glow = ctx.createRadialGradient(x,y,r*0.5,x,y,r*3);
+  glow.addColorStop(0,'rgba(200,210,240,0.15)');
+  glow.addColorStop(1,'rgba(200,210,240,0)');
+  ctx.fillStyle=glow; ctx.fillRect(x-r*3,y-r*3,r*6,r*6);
+  ctx.fillStyle='#d8dff0'; ctx.beginPath(); ctx.arc(x,y,r,0,6.28); ctx.fill();
+  ctx.fillStyle=SKY.night.top; ctx.beginPath(); ctx.arc(x+7,y-2,r*0.85,0,6.28); ctx.fill();
+}
+
+// ============================================================
+// GROUND — color changes with time & weather
+// ============================================================
+function drawGround(W, H) {
+  const hLine = H * HORIZON;
+  const gt = GROUND_TINT[currentTimeOfDay] || GROUND_TINT.morning;
+  const shade = gt.shade;
+
+  // Base ground gradient
+  const grad = ctx.createLinearGradient(0, hLine, 0, H);
+  const bc = hexToRgb(gt.base);
+  grad.addColorStop(0, `rgb(${bc.r+20},${bc.g+30},${bc.b+10})`);
+  grad.addColorStop(1, `rgb(${Math.max(0,bc.r-15)},${Math.max(0,bc.g-15)},${Math.max(0,bc.b-10)})`);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, hLine, W, H - hLine);
+
+  // Weather tint overlay
+  if (currentWeather === 'rainy' || currentWeather === 'stormy') {
+    ctx.fillStyle = `rgba(40, 50, 70, ${currentWeather === 'stormy' ? 0.35 : 0.2})`;
+    ctx.fillRect(0, hLine, W, H - hLine);
+  }
+
+  // Subtle grass dots
+  ctx.fillStyle = `rgba(${60+bc.r*0.3},${90+bc.g*0.3},${40+bc.b*0.2}, 0.15)`;
+  for (let i = 0; i < 80; i++) {
+    const gx = (i*37+13)%W;
+    const gy = hLine + 10 + ((i*53+7)%(H-hLine-15));
+    ctx.fillRect(gx, gy, 2, 3);
+  }
+
+  // Horizon line — soft blend
+  const horizGrad = ctx.createLinearGradient(0, hLine-4, 0, hLine+6);
+  const s = SKY[currentTimeOfDay] || SKY.morning;
+  horizGrad.addColorStop(0, s.bot);
+  horizGrad.addColorStop(1, gt.base);
+  ctx.fillStyle = horizGrad;
+  ctx.fillRect(0, hLine-4, W, 10);
+}
+
+function hexToRgb(hex) {
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return {r,g,b};
+}
+
+// ============================================================
+// WEATHER
+// ============================================================
+function drawWeather(W, H) {
+  const w = currentWeather;
+  if (w==='cloudy'||w==='rainy'||w==='stormy') {
+    const op = w==='stormy'?0.65:(w==='rainy'?0.45:0.30);
+    for (const c of clouds) {
+      c.x+=c.speed; if(c.x>1.15) c.x=-0.15;
+      drawCloud(c.x*W, c.y*H, c.w, op);
+    }
+  }
+  if (w==='rainy'||w==='stormy') {
+    ctx.strokeStyle = w==='stormy'?'rgba(180,200,255,0.5)':'rgba(150,180,220,0.35)';
+    ctx.lineWidth=1;
+    for (const r of raindrops) {
+      r.y+=r.speed; if(r.y>1){r.y=-0.03;r.x=Math.random();}
+      const rx=r.x*W, ry=r.y*H;
+      ctx.beginPath(); ctx.moveTo(rx,ry); ctx.lineTo(rx-2,ry+r.len); ctx.stroke();
+    }
+  }
+  if (w==='stormy'&&animFrame%120<3) {
+    ctx.fillStyle=`rgba(255,255,255,${0.12+Math.random()*0.08})`;
+    ctx.fillRect(0,0,W,H);
+  }
+}
+
+function drawCloud(x,y,w,op) {
+  ctx.fillStyle=`rgba(200,210,220,${op})`;
+  const h=w*0.32;
+  ctx.beginPath(); ctx.ellipse(x,y,w*0.5,h*0.6,0,0,6.28); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(x-w*0.25,y+h*0.15,w*0.3,h*0.45,0,0,6.28); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(x+w*0.28,y+h*0.1,w*0.28,h*0.4,0,0,6.28); ctx.fill();
+}
+
+// ============================================================
+// ROADS
+// ============================================================
+function drawRoads(W, H) {
+  const isNight = currentTimeOfDay==='night';
+  ctx.strokeStyle = isNight?'rgba(50,45,40,0.6)':'rgba(110,100,85,0.45)';
+  ctx.lineWidth=6;
+  const drawn = new Set();
+  for (const [id,loc] of Object.entries(locations)) {
+    const p = LOCATION_POSITIONS[id]; if(!p) continue;
+    for (const cid of (loc.connected_to||[])) {
+      const k=[id,cid].sort().join('-'); if(drawn.has(k)) continue; drawn.add(k);
+      const cp=LOCATION_POSITIONS[cid]; if(!cp) continue;
+      ctx.beginPath(); ctx.moveTo(p.x*W,p.y*H); ctx.lineTo(cp.x*W,cp.y*H); ctx.stroke();
+    }
+  }
+  // Center dashes
+  ctx.strokeStyle=isNight?'rgba(80,70,55,0.25)':'rgba(200,190,150,0.30)';
+  ctx.lineWidth=1; ctx.setLineDash([5,7]);
+  drawn.clear();
+  for (const [id,loc] of Object.entries(locations)) {
+    const p=LOCATION_POSITIONS[id]; if(!p) continue;
+    for (const cid of (loc.connected_to||[])) {
+      const k=[id,cid].sort().join('-'); if(drawn.has(k)) continue; drawn.add(k);
+      const cp=LOCATION_POSITIONS[cid]; if(!cp) continue;
+      ctx.beginPath(); ctx.moveTo(p.x*W,p.y*H); ctx.lineTo(cp.x*W,cp.y*H); ctx.stroke();
+    }
+  }
+  ctx.setLineDash([]);
+}
+
+// ============================================================
+// BUILDINGS
+// ============================================================
+function drawBuilding(id, loc, W, H) {
+  const pos=LOCATION_POSITIONS[id]; if(!pos) return;
+  const x=pos.x*W, y=pos.y*H;
+  const zone=loc.zone||'public';
+  const type=BUILDING_TYPE[id]||'office';
+  const colors=ZONE_COLORS[zone]||ZONE_COLORS.public;
+  const isDark = currentTimeOfDay==='night'||currentTimeOfDay==='evening';
+
+  if (type==='park') drawPark(x,y,colors,isDark);
+  else if (type==='street') drawStreetSign(x,y,loc.name||id,isDark);
+  else if (type==='house') drawHouse(x,y,colors,isDark);
+  else if (type==='shop') drawShop(x,y,colors,isDark);
+  else drawOffice(x,y,colors,isDark);
+
+  // Label
+  if (type!=='park'&&type!=='street') {
+    const name=loc.name||id;
+    const short=name.length>18?name.slice(0,16)+'..':name;
+    ctx.font='bold 10px Segoe UI'; ctx.textAlign='center'; ctx.textBaseline='top';
+    const ly = type==='house'?y+20:y+28;
+    ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillText(short,x+1,ly+1);
+    ctx.fillStyle=isDark?'#a0a8c0':'#fff'; ctx.fillText(short,x,ly);
+  }
+
+  // Occupant badge
+  const occ=(loc.occupants||[]).length;
+  if (occ>0) {
+    const bx=x+32, by=y-20;
+    ctx.fillStyle='#e94560'; ctx.beginPath(); ctx.arc(bx,by,9,0,6.28); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.font='bold 9px Segoe UI'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(occ.toString(),bx,by);
+  }
+}
+
+function drawHouse(x,y,c,dk) {
+  const w=48,h=30;
+  ctx.fillStyle=dk?dim(c.main,0.45):c.main;
+  ctx.fillRect(x-w/2,y-h/2,w,h);
+  ctx.fillStyle=dk?dim(c.roof,0.45):c.roof;
+  ctx.beginPath(); ctx.moveTo(x-w/2-5,y-h/2); ctx.lineTo(x,y-h/2-18); ctx.lineTo(x+w/2+5,y-h/2); ctx.closePath(); ctx.fill();
+  ctx.fillStyle=dk?'#3a2a1a':'#6b4226'; ctx.fillRect(x-4,y+h/2-13,8,13);
+  const wc=dk?'rgba(255,210,100,0.75)':'rgba(180,220,255,0.5)';
+  ctx.fillStyle=wc; ctx.fillRect(x-w/2+5,y-h/2+5,9,7); ctx.fillRect(x+w/2-14,y-h/2+5,9,7);
+  ctx.fillStyle=dk?dim(c.roof,0.35):dim(c.roof,0.8); ctx.fillRect(x+10,y-h/2-16,6,10);
+}
+
+function drawShop(x,y,c,dk) {
+  const w=54,h=34;
+  ctx.fillStyle=dk?dim(c.main,0.45):c.main; ctx.fillRect(x-w/2,y-h/2,w,h);
+  ctx.fillStyle=dk?dim(c.roof,0.45):c.roof; ctx.fillRect(x-w/2-2,y-h/2-3,w+4,5);
+  ctx.fillStyle=dk?dim(c.accent,0.45):c.accent;
+  ctx.beginPath(); ctx.moveTo(x-w/2,y-h/2+2); ctx.lineTo(x-w/2-5,y-h/2+13); ctx.lineTo(x+w/2+5,y-h/2+13); ctx.lineTo(x+w/2,y-h/2+2); ctx.closePath(); ctx.fill();
+  ctx.fillStyle=dk?'#2a2a3a':'#4a4a5a'; ctx.fillRect(x-5,y+h/2-14,10,14);
+  const wc=dk?'rgba(255,210,100,0.65)':'rgba(200,230,255,0.5)';
+  ctx.fillStyle=wc; ctx.fillRect(x-w/2+4,y-h/2+15,w/2-10,10); ctx.fillRect(x+5,y-h/2+15,w/2-10,10);
+}
+
+function drawOffice(x,y,c,dk) {
+  const w=50,h=42;
+  ctx.fillStyle=dk?dim(c.main,0.45):c.main; ctx.fillRect(x-w/2,y-h/2,w,h);
+  ctx.fillStyle=dk?dim(c.roof,0.45):c.roof; ctx.fillRect(x-w/2-2,y-h/2-3,w+4,5);
+  ctx.fillStyle=dk?'#2a2a3a':'#4a4a5a'; ctx.fillRect(x-4,y+h/2-13,8,13);
+  const wc=dk?'rgba(255,210,100,0.65)':'rgba(180,220,255,0.5)';
+  ctx.fillStyle=wc;
+  for (let r=0;r<3;r++) for (let col=0;col<3;col++) ctx.fillRect(x-w/2+6+col*15,y-h/2+5+r*11,9,6);
+}
+
+function drawPark(x,y,c,dk) {
+  ctx.fillStyle=dk?'#1a3018':'#4a9040';
+  ctx.beginPath(); ctx.ellipse(x,y,42,22,0,0,6.28); ctx.fill();
+  ctx.strokeStyle=dk?'#2a4a25':'#6ab850'; ctx.lineWidth=2; ctx.stroke();
+  for (let i=-1;i<=1;i++) {
+    const tx=x+i*20;
+    ctx.fillStyle=dk?'#3a2a15':'#6b4226'; ctx.fillRect(tx-2,y-2,4,12);
+    ctx.fillStyle=dk?'#1a4a18':'#3a8a30'; ctx.beginPath(); ctx.arc(tx,y-8,9+Math.abs(i)*2,0,6.28); ctx.fill();
+    ctx.fillStyle=dk?'#2a5a28':'#60b050'; ctx.beginPath(); ctx.arc(tx-2,y-10,4,0,6.28); ctx.fill();
+  }
+  ctx.fillStyle=dk?'#3a2a15':'#7a5a30'; ctx.fillRect(x-10,y+9,20,3); ctx.fillRect(x-8,y+12,2,3); ctx.fillRect(x+6,y+12,2,3);
+  ctx.font='bold 10px Segoe UI'; ctx.textAlign='center'; ctx.textBaseline='top';
+  ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillText('City Park',x+1,y+19);
+  ctx.fillStyle=dk?'#90a880':'#fff'; ctx.fillText('City Park',x,y+18);
+}
+
+function drawStreetSign(x,y,name,dk) {
+  ctx.fillStyle=dk?'#4a4a4a':'#888'; ctx.fillRect(x-1.5,y-6,3,16);
+  const sw=48;
+  ctx.fillStyle=dk?'#1a3a1a':'#2a6a2a'; ctx.fillRect(x-sw/2,y-6-12,sw,12);
+  ctx.fillStyle='#fff'; ctx.font='bold 8px Segoe UI'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  const s=(name||'').length>12?name.slice(0,10)+'..':name;
+  ctx.fillText(s,x,y-6-6);
+}
+
+function dim(hex, f) {
+  const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+  return `rgb(${~~(r*f)},${~~(g*f)},${~~(b*f)})`;
+}
+
+// ============================================================
+// COUPLE LINES (hearts between partners)
+// ============================================================
+function drawCoupleLines(W, H) {
+  const drawn = new Set();
+  for (const [id, a] of Object.entries(agents)) {
+    if (!a.partner_id || drawn.has(id)) continue;
+    const other = agents[a.partner_id];
+    if (!other) continue;
+    drawn.add(id); drawn.add(a.partner_id);
+    const p1 = agentPositions[id], p2 = agentPositions[a.partner_id];
+    if (!p1 || !p2) continue;
+    // Pink dashed line between partners
+    ctx.strokeStyle = 'rgba(233, 30, 144, 0.4)';
+    ctx.lineWidth = 1.5; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+    ctx.setLineDash([]);
+    // Heart at midpoint
+    const mx = (p1.x+p2.x)/2, my = (p1.y+p2.y)/2 - 10;
+    drawHeart(mx, my + Math.sin(animFrame*0.05)*3, 6, 'rgba(233,30,144,0.7)');
+  }
+}
+
+function drawHeart(x, y, s, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x, y + s*0.4);
+  ctx.bezierCurveTo(x, y - s*0.2, x - s, y - s*0.5, x - s, y + s*0.1);
+  ctx.bezierCurveTo(x - s, y + s*0.6, x, y + s, x, y + s*1.2);
+  ctx.bezierCurveTo(x, y + s, x + s, y + s*0.6, x + s, y + s*0.1);
+  ctx.bezierCurveTo(x + s, y - s*0.5, x, y - s*0.2, x, y + s*0.4);
+  ctx.fill();
+}
+
+// ============================================================
+// AGENT TARGET COMPUTATION
+// ============================================================
+function computeAgentTarget(id, agent, globalIdx, byLoc, W, H) {
+  const loc = agent.location || 'home_north';
+  const pos = LOCATION_POSITIONS[loc];
+  if (!pos) return;
+
+  const atLoc = byLoc[loc] || [];
+  const localIdx = atLoc.findIndex(a => a.id === id);
+  const count = atLoc.length;
+
+  const radius = 32 + Math.floor(count/6)*14;
+  const step = Math.PI / Math.max(count+1, 2);
+  const angle = step * (localIdx+1);
+  const ox = Math.cos(angle)*radius - radius/2;
+  const oy = Math.sin(angle)*radius*0.5 + 30;
+
+  agentTargets[id] = { x: pos.x*W + ox, y: pos.y*H + oy };
+  if (!agentPositions[id]) agentPositions[id] = {...agentTargets[id]};
+}
+
+// ============================================================
+// PERSON DRAWING
+// ============================================================
+function drawPerson(id, agent, globalIdx, W, H) {
+  const pos = agentPositions[id];
+  if (!pos) return;
+  const ax = pos.x, ay = pos.y;
+  const color = AGENT_COLORS[globalIdx % AGENT_COLORS.length];
+  const isSel = id === selectedAgentId;
+  const isHov = id === hoveredAgent;
+  const gender = agent.gender || 'unknown';
+  const scale = isSel ? 1.3 : (isHov ? 1.15 : 1.0);
+  const isMoving = agent.state === 'moving';
+  const isSleeping = agent.state === 'sleeping';
+
+  // Check if actually animating (position differs from target)
+  const tgt = agentTargets[id];
+  const moving = tgt && Math.hypot(ax-tgt.x, ay-tgt.y) > 3;
+
+  ctx.save();
+  ctx.translate(ax, ay);
+  ctx.scale(scale, scale);
+
+  if (isSel) { ctx.shadowColor=color; ctx.shadowBlur=16; }
+
+  const bounce = (isMoving||moving) ? Math.sin(animFrame*0.15)*2 : 0;
+  const armSwing = (isMoving||moving) ? Math.sin(animFrame*0.15)*8 : 0;
+  const legSwing = (isMoving||moving) ? Math.sin(animFrame*0.15)*5 : 0;
+
+  // Shadow on ground
+  ctx.fillStyle = 'rgba(0,0,0,0.15)';
+  ctx.beginPath(); ctx.ellipse(0, 13, 7, 3, 0, 0, 6.28); ctx.fill();
+
+  // Head
+  ctx.fillStyle = '#f0d0b0';
+  ctx.beginPath(); ctx.arc(0, -18+bounce, 6.5, 0, 6.28); ctx.fill();
+
+  // Hair
+  ctx.fillStyle = dim(color, 0.55);
+  if (gender==='female') {
+    ctx.beginPath(); ctx.ellipse(0,-21+bounce,7.5,4.5,0,Math.PI,0); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(-4,-16+bounce,2.5,7,0.3,0,6.28); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(4,-16+bounce,2.5,7,-0.3,0,6.28); ctx.fill();
+  } else if (gender==='male') {
+    ctx.beginPath(); ctx.ellipse(0,-21+bounce,7,4,0,Math.PI,0); ctx.fill();
+  } else {
+    ctx.beginPath(); ctx.ellipse(0,-21+bounce,7.5,4.5,0,Math.PI,0); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(-4.5,-17+bounce,2,5,0.2,0,6.28); ctx.fill();
+  }
+
+  // Body
+  if (gender==='female') {
+    ctx.fillStyle=color;
+    ctx.beginPath(); ctx.moveTo(-3,-10+bounce); ctx.lineTo(3,-10+bounce); ctx.lineTo(7,4+bounce); ctx.lineTo(-7,4+bounce); ctx.closePath(); ctx.fill();
+  } else {
+    ctx.fillStyle=color; ctx.fillRect(-4,-10+bounce,8,8);
+    ctx.fillStyle=dim(color,0.6); ctx.fillRect(-4,-2+bounce,3.5,6); ctx.fillRect(0.5,-2+bounce,3.5,6);
+  }
+
+  // Arms
+  ctx.strokeStyle='#f0d0b0'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(-4,-8+bounce); ctx.lineTo(-9,-1+bounce+armSwing); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(4,-8+bounce); ctx.lineTo(9,-1+bounce-armSwing); ctx.stroke();
+
+  // Legs
+  ctx.strokeStyle=gender==='female'?'#f0d0b0':dim(color,0.5); ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(-2.5,4+bounce); ctx.lineTo(-4,11+bounce+legSwing); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(2.5,4+bounce); ctx.lineTo(4,11+bounce-legSwing); ctx.stroke();
+
+  // Feet
+  ctx.fillStyle='#3a3a3a';
+  ctx.fillRect(-5.5,10+bounce+legSwing,3.5,2);
+  ctx.fillRect(1.5,10+bounce-legSwing,3.5,2);
+
+  ctx.shadowColor='transparent'; ctx.shadowBlur=0;
+
+  // State effects
+  if (agent.state==='in_conversation') {
+    ctx.fillStyle='rgba(240,192,64,0.85)';
+    ctx.beginPath(); ctx.ellipse(13,-22+bounce,9,6,0,0,6.28); ctx.fill();
+    ctx.fillStyle='#1a1a2e'; ctx.font='bold 8px Segoe UI'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('...',13,-22+bounce);
+  }
+
+  if (isSleeping) {
+    const t=animFrame*0.04;
+    ctx.font='bold 9px Segoe UI'; ctx.textAlign='left';
+    for (let i=0;i<3;i++) {
+      ctx.globalAlpha=0.3+i*0.25; ctx.fillStyle='#8ab4f8';
+      ctx.fillText('z',9+i*4,-24-i*6+Math.sin(t+i)*2);
+    }
+    ctx.globalAlpha=1;
+  }
+
+  // Heart above head if has partner
+  if (agent.partner_id) {
+    drawHeart(0, -30+bounce+Math.sin(animFrame*0.04)*2, 4, 'rgba(233,30,144,0.7)');
+  }
+
+  ctx.restore();
+
+  // Name label
+  const firstName = (agent.name||id).split(' ')[0];
+  ctx.font=`${isSel?'bold ':''}10px Segoe UI`; ctx.textAlign='center'; ctx.textBaseline='top';
+  ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillText(firstName,ax+1,ay+15*scale+1);
+  ctx.fillStyle=isSel?'#fff':'#d0d0e0'; ctx.fillText(firstName,ax,ay+15*scale);
+
+  // Mood bar
+  const mood=agent.mood||0;
+  const mw=20, mx=ax-mw/2, my=ay+15*scale+13;
+  ctx.fillStyle='rgba(15,52,96,0.5)'; ctx.fillRect(mx,my,mw,3);
+  const mf=(mood+1)/2;
+  ctx.fillStyle=mf>0.6?'#4ecca3':(mf>0.3?'#f0c040':'#e94560');
+  ctx.fillRect(mx,my,mw*mf,3);
+}
+
+// ============================================================
+// INTERACTION
+// ============================================================
+function onCanvasClick(e) {
+  const rect=canvas.getBoundingClientRect();
+  const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+  let clicked=null, minD=24;
+  for (const [id,pos] of Object.entries(agentPositions)) {
+    const d=Math.hypot(mx-pos.x,my-pos.y);
+    if(d<minD){minD=d;clicked=id;}
+  }
+  if(clicked){selectedAgentId=clicked;fetchAgentDetail(clicked);}
+  else{selectedAgentId=null;showDefaultDetail();}
+}
+
+function onCanvasMouseMove(e) {
+  const rect=canvas.getBoundingClientRect();
+  const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+  let found=null;
+  for (const [id,pos] of Object.entries(agentPositions)) {
+    if(Math.hypot(mx-pos.x,my-pos.y)<22){found=id;break;}
+  }
+  if(found!==hoveredAgent){
+    hoveredAgent=found;
+    canvas.style.cursor=found?'pointer':'default';
+    const tt=document.getElementById('tooltip');
+    if(found&&agents[found]){
+      const a=agents[found];
+      let extra='';
+      if(a.partner_id&&agents[a.partner_id]) extra=`<br><span style="color:#e91e90">Partner: ${agents[a.partner_id].name}</span>`;
+      tt.innerHTML=`<b>${a.name}</b><br><span style="color:#a0a0c0">${a.action||'idle'}</span>${extra}`;
+      tt.style.display='block';
+    } else tt.style.display='none';
+  }
+  if(found){
+    const tt=document.getElementById('tooltip');
+    tt.style.left=(e.clientX-canvas.getBoundingClientRect().left+15)+'px';
+    tt.style.top=(e.clientY-canvas.getBoundingClientRect().top+15)+'px';
+  }
+}
+
+// ============================================================
+// AGENT DETAIL PANEL
+// ============================================================
+function showDefaultDetail() {
+  document.getElementById('agent-detail').innerHTML = `
+    <h2>Select an Agent</h2>
+    <p class="subtitle">Click on any agent in the city to see their details</p>
+    <div style="margin-top:12px">
+      <h3 style="font-size:13px;color:#a0a0c0;margin-bottom:8px">Population</h3>
+      ${Object.entries(agents).map(([aid,a],i) => `
+        <div style="font-size:11px;padding:3px 0;cursor:pointer;color:${AGENT_COLORS[i%AGENT_COLORS.length]};display:flex;align-items:center;gap:6px"
+             onclick="selectedAgentId='${aid}';fetchAgentDetail(selectedAgentId);">
+          <span style="font-size:14px">${a.gender==='female'?'\uD83D\uDC69':a.gender==='male'?'\uD83D\uDC68':'\uD83E\uDDD1'}</span>
+          <span>${a.name}${a.partner_id&&agents[a.partner_id]?' \u2764 '+agents[a.partner_id].name:''} &mdash; <span style="color:#888">${a.action||'idle'}</span></span>
+        </div>
+      `).join('')}
+    </div>`;
+}
+
+async function fetchAgentDetail(agentId) {
+  try {
+    const res=await fetch(`${API_BASE}/agents/${agentId}`);
+    if(!res.ok) return;
+    renderAgentDetail(await res.json());
+  } catch(e){}
+}
+
+function renderAgentDetail(data) {
+  const needs=data.needs||{};
+  const needBars=[
+    {name:'Hunger',key:'hunger',color:'orange'},
+    {name:'Energy',key:'energy',color:'blue'},
+    {name:'Social',key:'social',color:'purple'},
+    {name:'Purpose',key:'purpose',color:'green'},
+    {name:'Fun',key:'fun',color:'yellow'},
+  ];
+  const mood=data.mood||0;
+  const moodPct=((mood+1)/2*100).toFixed(0);
+  const moodColor=moodPct>60?'green':(moodPct>30?'yellow':'red');
+  const moodLabel=mood>0.3?'Happy':(mood>-0.3?'Okay':'Unhappy');
+  const gi=data.gender==='female'?'\uD83D\uDC69':data.gender==='male'?'\uD83D\uDC68':'\uD83E\uDDD1';
+  const memories=(data.recent_memories||[]).slice(-5).reverse();
+
+  // Find romance info from relationships
+  const romanceRels=(data.relationships||[]).filter(r=>r.relationship_status&&r.relationship_status!=='none');
+
+  document.getElementById('agent-detail').innerHTML=`
+    <h2>${gi} ${data.name||'?'}</h2>
+    <p class="subtitle">${data.age||'?'} y/o ${data.occupation||''} &mdash; ${data.traits||''}</p>
+    <p class="subtitle" style="color:#e0e0e0">${esc(data.action||'idle')}</p>
+
+    ${romanceRels.length>0?`<div style="margin:4px 0;padding:4px 8px;background:rgba(233,30,144,0.1);border-radius:4px;font-size:11px;color:#e91e90">
+      ${romanceRels.map(r=>`\u2764 ${r.relationship_status} with ${r.name} (love: ${(r.romantic_interest*100).toFixed(0)}%)`).join('<br>')}
+    </div>`:''}
+
+    <div class="bar-container">
+      <div class="bar-label"><span>Mood: ${moodLabel}</span><span>${moodPct}%</span></div>
+      <div class="bar-bg"><div class="bar-fill ${moodColor}" style="width:${moodPct}%"></div></div>
+    </div>
+
+    ${needBars.map(n=>{
+      const v=(needs[n.key]||0)*100;
+      return `<div class="bar-container">
+        <div class="bar-label"><span>${n.name}</span><span>${v.toFixed(0)}%</span></div>
+        <div class="bar-bg"><div class="bar-fill ${n.color}" style="width:${v}%"></div></div>
+      </div>`;
+    }).join('')}
+
+    <div style="margin-top:8px">
+      <div style="font-size:11px;color:#a0a0c0">Plan: ${esc((data.daily_plan||[]).slice(0,3).join('; ')||'None yet')}</div>
+    </div>
+
+    <div style="margin-top:6px">
+      <div style="font-size:12px;color:#4ecca3;margin-bottom:4px">Recent Memories</div>
+      ${memories.map(m=>`<div class="memory-item"><span class="memory-time">${m.time||''}</span> ${esc(m.content||'')}</div>`).join('')||'<div class="memory-item">No memories yet</div>'}
+    </div>
+
+    ${(data.relationships||[]).length>0?`
+    <div style="margin-top:6px">
+      <div style="font-size:12px;color:#4ecca3;margin-bottom:4px">Relationships</div>
+      ${data.relationships.slice(0,5).map(r=>`
+        <div style="font-size:11px;color:#b0b0c0;padding:1px 0">
+          ${esc(r.name)}: closeness ${(r.closeness*100).toFixed(0)}%${r.relationship_status&&r.relationship_status!=='none'?' <span style="color:#e91e90">\u2764 '+r.relationship_status+'</span>':''}
+        </div>
+      `).join('')}
+    </div>`:''}
+  `;
+}
+
+// ============================================================
+// EVENT LOG
+// ============================================================
+function renderEventLog() {
+  const c=document.getElementById('events-container');
+  c.innerHTML=eventLog.slice(-60).map(line=>{
+    let cls='event-line';
+    if(line.includes('[PLAN]')) cls+=' plan';
+    else if(line.includes('[CONV]')) cls+=' conv';
+    else if(line.includes('[ROMANCE]')) cls+=' romance';
+    else if(line.includes('[EVENT]')||line.includes('[ENTROPY]')) cls+=' event';
+    else if(line.startsWith('---')||line.startsWith('\n---')) cls+=' time';
+    return `<div class="${cls}">${esc(line)}</div>`;
+  }).join('');
+  c.scrollTop=c.scrollHeight;
+}
+
+function esc(s){return s?s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'):''}
+
+// ============================================================
+// DATA FETCHING
+// ============================================================
+let lastTick = -1;
+
+async function fetchState() {
+  try {
+    const res = await fetch(`${API_BASE}/city`);
+    if (!res.ok) throw new Error();
+    const data = await res.json();
+    if (!connected) { connected=true; document.getElementById('status').innerHTML='<span class="dot green"></span> Connected'; }
+
+    const clock=data.clock||{};
+    currentTimeOfDay=clock.time_of_day||'morning';
+    currentWeather=(data.weather||'sunny').toLowerCase();
+
+    document.getElementById('clock').textContent=`Day ${clock.day||1}, ${clock.time_str||'??:??'} (${currentTimeOfDay})`;
+    document.getElementById('weather-icon').textContent=WEATHER_ICONS[currentWeather]||'\u2600\uFE0F';
+    document.getElementById('weather').textContent=currentWeather;
+    document.getElementById('agent-count').innerHTML=`<span class="dot green"></span> ${Object.keys(data.agents||{}).length} agents`;
+
+    const usage=data.llm_usage||'';
+    const cm=usage.match(/calls:\s*(\d+)/i), $m=usage.match(/\$([0-9.]+)/);
+    document.getElementById('api-calls').textContent=`API: ${cm?cm[1]:'0'}`;
+    document.getElementById('cost').textContent=$m?`$${$m[1]}`:'$0.00';
+
+    agents=data.agents||{};
+
+    const locRes=await fetch(`${API_BASE}/city/locations`);
+    if(locRes.ok) locations=await locRes.json();
+
+    const tick=clock.total_ticks||0;
+    if(tick!==lastTick){
+      try{
+        const er=await fetch(`${API_BASE}/events`);
+        if(er.ok){const d2=await er.json(); eventLog=(d2.events||[]).map(e=>e.message||'').filter(m=>m.trim()); renderEventLog();}
+      }catch(e){}
+    }
+    lastTick=tick;
+
+    if(selectedAgentId) fetchAgentDetail(selectedAgentId);
+    else showDefaultDetail();
+
+  } catch(e){
+    if(connected){connected=false;document.getElementById('status').innerHTML='<span class="dot red"></span> Disconnected';}
+  }
+}
+
+// ============================================================
+// INIT
+// ============================================================
+initCanvas();
+showDefaultDetail();
+fetchState();
+setInterval(fetchState, POLL_INTERVAL);
+</script>
+</body>
+</html>

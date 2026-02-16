@@ -22,7 +22,7 @@ MODEL_SONNET = "claude-sonnet-4-5-20250929"
 MODEL_HAIKU = "claude-haiku-4-5-20251001"
 
 # Ollama model IDs (popular open-source models)
-MODEL_LLAMA = "llama3.1"
+MODEL_LLAMA = "llama3.2"
 MODEL_LLAMA_SMALL = "llama3.2"
 MODEL_MISTRAL = "mistral"
 MODEL_QWEN = "qwen2.5"

@@ -50,6 +50,8 @@ class Simulation:
         self._conversation_counter: int = 0
         self._max_concurrent = max_concurrent_llm
         self._tick_log: list[str] = []  # Log of events this tick
+        self._event_history: list[dict] = []  # Persistent event log for API
+        self._max_event_history: int = 200
         # Callback for real-time output
         self.on_event: Optional[Callable[[str], None]] = None
 
@@ -69,6 +71,13 @@ class Simulation:
     def _emit(self, message: str) -> None:
         """Emit an event message."""
         self._tick_log.append(message)
+        self._event_history.append({
+            "tick": self.clock.total_ticks,
+            "time": self.clock.datetime_str,
+            "message": message,
+        })
+        if len(self._event_history) > self._max_event_history:
+            self._event_history = self._event_history[-self._max_event_history:]
         if self.on_event:
             self.on_event(message)
 
@@ -173,7 +182,10 @@ class Simulation:
         if reflect_coros:
             await batch_llm_calls(reflect_coros, self._max_concurrent)
 
-        # 9. Advance clock
+        # 9. Romance — develop attractions and relationships
+        self._tick_romance()
+
+        # 10. Advance clock
         self.clock.tick()
 
         return self._tick_log
@@ -453,6 +465,107 @@ class Simulation:
         if reflections:
             self._emit(f"  [REFLECT] {agent.name}: {reflections[0]}")
 
+    def _tick_romance(self) -> None:
+        """Develop romantic attractions between compatible agents at the same location."""
+        agents_list = list(self.agents.values())
+
+        for agent in agents_list:
+            if agent.is_player:
+                continue
+            loc = self.city.get_location(agent.location)
+            if not loc:
+                continue
+
+            for other_id in loc.occupants:
+                if other_id == agent.id or other_id not in self.agents:
+                    continue
+                other = self.agents[other_id]
+
+                rel = agent.relationships.get(other_id)
+                if not rel or rel.familiarity < 0.15:
+                    continue  # Need to know someone a bit first
+
+                # Skip if already married to someone else
+                if agent.partner_id and agent.partner_id != other_id:
+                    continue
+
+                # Attraction grows from positive interactions
+                if rel.sentiment > 0.6 and rel.trust > 0.5:
+                    # Base attraction growth per tick
+                    growth = 0.008
+                    # Boost from high agreeableness and extraversion
+                    growth += (agent.persona.agreeableness / 100.0) * 0.005
+                    # Boost from familiarity
+                    growth += rel.familiarity * 0.005
+                    # Boost when both at same location and interacting
+                    if agent.state.value == "in_conversation":
+                        growth += 0.01
+
+                    rel.romantic_interest = min(1.0, rel.romantic_interest + growth)
+
+                # Relationship status progression (no LLM calls — pure rules)
+                ri = rel.romantic_interest
+                status = rel.relationship_status
+
+                if status == "none" and ri > 0.25:
+                    rel.relationship_status = "crushing"
+                    self._emit(f"  [ROMANCE] {agent.name} has developed a crush on {other.name}!")
+                    agent.add_observation(
+                        tick=self.clock.total_ticks, day=self.clock.day,
+                        time_str=self.clock.time_str,
+                        content=f"I think I'm developing feelings for {other.name}...",
+                        importance=7, involved_agents=[other_id],
+                    )
+
+                elif status == "crushing" and ri > 0.5 and rel.familiarity > 0.4:
+                    # Check if the other person also has feelings
+                    other_rel = other.relationships.get(agent.id)
+                    if other_rel and other_rel.romantic_interest > 0.3:
+                        rel.relationship_status = "dating"
+                        other_rel.relationship_status = "dating"
+                        agent.partner_id = other_id
+                        other.partner_id = agent.id
+                        self._emit(f"  [ROMANCE] {agent.name} and {other.name} have started dating!")
+                        for a, o in [(agent, other), (other, agent)]:
+                            a.add_observation(
+                                tick=self.clock.total_ticks, day=self.clock.day,
+                                time_str=self.clock.time_str,
+                                content=f"I'm now dating {o.name}! I feel excited and nervous.",
+                                importance=9, involved_agents=[o.id],
+                            )
+                        agent.mood = min(1.0, agent.mood + 0.3)
+                        other.mood = min(1.0, other.mood + 0.3)
+
+                elif status == "dating" and ri > 0.75 and rel.familiarity > 0.7:
+                    other_rel = other.relationships.get(agent.id)
+                    if other_rel and other_rel.romantic_interest > 0.65:
+                        rel.relationship_status = "engaged"
+                        other_rel.relationship_status = "engaged"
+                        self._emit(f"  [ROMANCE] {agent.name} and {other.name} got engaged!")
+                        for a, o in [(agent, other), (other, agent)]:
+                            a.add_observation(
+                                tick=self.clock.total_ticks, day=self.clock.day,
+                                time_str=self.clock.time_str,
+                                content=f"{o.name} and I are engaged! This is the happiest day of my life.",
+                                importance=10, involved_agents=[o.id],
+                            )
+                        agent.mood = min(1.0, agent.mood + 0.4)
+                        other.mood = min(1.0, other.mood + 0.4)
+
+                elif status == "engaged" and ri > 0.9 and rel.interaction_count > 15:
+                    other_rel = other.relationships.get(agent.id)
+                    if other_rel and other_rel.romantic_interest > 0.8:
+                        rel.relationship_status = "married"
+                        other_rel.relationship_status = "married"
+                        self._emit(f"  [ROMANCE] {agent.name} and {other.name} got married!")
+                        for a, o in [(agent, other), (other, agent)]:
+                            a.add_observation(
+                                tick=self.clock.total_ticks, day=self.clock.day,
+                                time_str=self.clock.time_str,
+                                content=f"I married {o.name} today. I couldn't be happier.",
+                                importance=10, involved_agents=[o.id],
+                            )
+
     def get_state_summary(self) -> dict:
         """Get a summary of the current simulation state."""
         return {
@@ -462,11 +575,13 @@ class Simulation:
             "agents": {
                 aid: {
                     "name": a.name,
+                    "gender": a.persona.gender,
                     "location": a.location,
                     "state": a.state.value,
                     "mood": round(a.mood, 2),
                     "needs": a.needs.to_dict(),
                     "action": a.current_action.detail if a.current_action else "idle",
+                    "partner_id": a.partner_id,
                 }
                 for aid, a in self.agents.items()
             },

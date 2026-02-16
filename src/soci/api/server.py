@@ -10,6 +10,8 @@ from typing import Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from soci.engine.llm import create_llm_client
 from soci.engine.simulation import Simulation
@@ -117,6 +119,15 @@ def create_app() -> FastAPI:
 
     app.include_router(router, prefix="/api")
     app.include_router(ws_router)
+
+    # Serve web UI
+    web_dir = Path(__file__).parents[3] / "web"
+    if web_dir.exists():
+        @app.get("/")
+        async def serve_index():
+            return FileResponse(web_dir / "index.html")
+
+        app.mount("/static", StaticFiles(directory=str(web_dir)), name="static")
 
     return app
 
