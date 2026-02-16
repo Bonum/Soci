@@ -1,91 +1,157 @@
 name: Soci City
 
 locations:
-  # --- Residential ---
-  - id: home_north
-    name: Northside Apartments
+  # ===================
+  # RESIDENTIAL — 10 individual houses
+  # ===================
+  - id: house_elena
+    name: "Elena & Lila's Apartment"
     zone: residential
-    description: A modern apartment complex with balconies overlooking the park. Home to several young professionals and families.
-    capacity: 10
-    connected_to: [park, cafe, grocery, street_north]
+    description: A bright second-floor apartment with art on every wall and the smell of oil paint and coffee.
+    capacity: 3
+    connected_to: [street_north, park, cafe]
 
-  - id: home_south
-    name: Southside Houses
+  - id: house_marcus
+    name: "Marcus & Zoe's Place"
     zone: residential
-    description: A quiet street of cozy row houses with small gardens. A mix of longtime residents and newcomers.
-    capacity: 10
-    connected_to: [bar, gym, library, street_south]
+    description: A tidy apartment with workout equipment in the living room and Zoe's college textbooks stacked everywhere.
+    capacity: 3
+    connected_to: [street_north, park, gym]
 
-  # --- Commercial ---
+  - id: house_helen
+    name: "Helen & Alice's Cottage"
+    zone: residential
+    description: A warm cottage with a flower garden, bookshelves, and the aroma of freshly baked cookies.
+    capacity: 3
+    connected_to: [street_north, cafe, library]
+
+  - id: house_diana
+    name: "Diana & Marco's House"
+    zone: residential
+    description: A practical family home above the grocery store. Marco's room is covered in game posters.
+    capacity: 3
+    connected_to: [street_north, grocery, cafe]
+
+  - id: house_kai
+    name: "Kai's Studio"
+    zone: residential
+    description: A small studio apartment crammed with musical instruments, vinyl records, and empty coffee cups.
+    capacity: 2
+    connected_to: [street_north, cafe, park]
+
+  - id: house_priya
+    name: "Priya & Nina's Flat"
+    zone: residential
+    description: A modern flat kept immaculately clean. Family photos on one side, property listings on the other.
+    capacity: 3
+    connected_to: [street_north, office, park]
+
+  - id: house_james
+    name: "James & Theo's House"
+    zone: residential
+    description: A worn but comfortable house with a porch. Tools in the garage, beer in the fridge.
+    capacity: 3
+    connected_to: [street_south, bar, gym]
+
+  - id: house_rosa
+    name: "Rosa & Omar's Home"
+    zone: residential
+    description: A cozy home that always smells of cooking. Spices from two continents line the kitchen shelves.
+    capacity: 3
+    connected_to: [street_south, restaurant, grocery]
+
+  - id: house_yuki
+    name: "Yuki & Devon's Apartment"
+    zone: residential
+    description: A minimalist apartment with a meditation corner on one side and newspaper clippings on the other.
+    capacity: 3
+    connected_to: [street_south, gym, library]
+
+  - id: house_frank
+    name: "Frank, George & Sam's Row House"
+    zone: residential
+    description: A row of three connected units on the quiet end of the south side. Frank's garage is always open.
+    capacity: 4
+    connected_to: [street_south, bar, library]
+
+  # ===================
+  # COMMERCIAL
+  # ===================
   - id: cafe
     name: The Daily Grind
     zone: commercial
     description: A warm, bustling cafe with mismatched furniture and the aroma of fresh coffee. The local gossip hub.
     capacity: 15
-    connected_to: [home_north, park, office, street_north]
+    connected_to: [house_elena, house_helen, house_diana, house_kai, street_north, office]
 
   - id: grocery
     name: Green Basket Market
     zone: commercial
     description: A neighborhood grocery store with fresh produce and a friendly owner who knows everyone by name.
     capacity: 12
-    connected_to: [home_north, street_north, street_south]
+    connected_to: [house_diana, house_rosa, street_north, street_south]
 
   - id: bar
     name: The Rusty Anchor
     zone: commercial
     description: A dimly lit bar with a jukebox, pool table, and regulars who've been coming for years. Lively at night.
     capacity: 15
-    connected_to: [home_south, restaurant, street_south]
+    connected_to: [house_james, house_frank, restaurant, street_south]
 
   - id: restaurant
     name: Mama Rosa's Kitchen
     zone: commercial
     description: A family-run Italian restaurant with checkered tablecloths and the best pasta in town.
     capacity: 12
-    connected_to: [bar, office, street_south, street_north]
+    connected_to: [house_rosa, bar, office, street_south]
 
-  # --- Work ---
+  # ===================
+  # WORK
+  # ===================
   - id: office
     name: The Hive Coworking
     zone: work
     description: An open-plan coworking space with standing desks, meeting rooms, and a perpetually broken printer.
     capacity: 20
-    connected_to: [cafe, restaurant, street_north]
+    connected_to: [house_priya, cafe, restaurant, street_north]
 
-  # --- Public ---
+  # ===================
+  # PUBLIC
+  # ===================
   - id: park
     name: Willow Park
     zone: public
     description: A green park with old willow trees, a pond, benches, and a small playground. Popular for morning jogs and evening walks.
     capacity: 30
-    connected_to: [home_north, cafe, gym, library, street_north]
+    connected_to: [house_elena, house_marcus, house_kai, house_priya, gym, library, street_north]
 
   - id: gym
     name: Iron & Grit Gym
     zone: public
-    description: A no-nonsense gym with free weights, treadmills, and a boxing ring in the back. Smells like determination.
+    description: A no-nonsense gym with free weights, treadmills, and a boxing ring in the back.
     capacity: 12
-    connected_to: [home_south, park, street_south]
+    connected_to: [house_marcus, house_james, house_yuki, park, street_south]
 
   - id: library
     name: Soci Public Library
     zone: public
     description: A quiet library with tall shelves, reading nooks, and a community board. Hosts book clubs and events.
     capacity: 15
-    connected_to: [home_south, park, street_south]
+    connected_to: [house_helen, house_yuki, house_frank, park, street_south]
 
-  # --- Connectors ---
+  # ===================
+  # STREETS — connectors
+  # ===================
   - id: street_north
     name: North Main Street
     zone: public
     description: The main street running through the northern part of town. Shops, cafes, and foot traffic.
     capacity: 40
-    connected_to: [home_north, cafe, grocery, office, park, street_south]
+    connected_to: [house_elena, house_marcus, house_helen, house_diana, house_kai, house_priya, cafe, grocery, office, park, street_south]
 
   - id: street_south
     name: South Main Street
     zone: public
     description: The southern stretch of main street. More residential, with the bar and gym nearby.
     capacity: 40
-    connected_to: [home_south, bar, grocery, gym, library, restaurant, street_north]
+    connected_to: [house_james, house_rosa, house_yuki, house_frank, bar, grocery, gym, library, restaurant, street_north]

@@ -219,7 +219,7 @@ async def player_join(request: PlayerJoinRequest):
         age=25,
         occupation="newcomer",
         background=request.background,
-        home_location="home_north",
+        home_location="house_elena",
         work_location="",
     )
     agent = Agent(persona)

@@ -73,7 +73,7 @@ class MockLLM:
             actions = ["work", "eat", "relax", "wander", "move", "exercise"]
             action = random.choice(actions)
             targets = {
-                "move": random.choice(["cafe", "park", "home_north", "office", "grocery"]),
+                "move": random.choice(["cafe", "park", "house_elena", "office", "grocery"]),
                 "work": "",
                 "eat": "",
                 "relax": "",
@@ -151,21 +151,21 @@ async def run_tests():
     # --- Test 2: City ---
     print("\n[2/12] City system...")
     city = City.from_yaml("config/city.yaml")
-    assert len(city.locations) == 12
+    assert len(city.locations) == 20
     # Test connectivity
     cafe = city.get_location("cafe")
     assert cafe is not None
-    assert "park" in cafe.connected_to
+    assert "street_north" in cafe.connected_to
     connected = city.get_connected("cafe")
     assert len(connected) > 0
     # Test agent placement and movement
     city.place_agent("test_agent", "cafe")
     assert "test_agent" in city.get_agents_at("cafe")
-    city.move_agent("test_agent", "cafe", "park")
+    city.move_agent("test_agent", "cafe", "office")
     assert "test_agent" not in city.get_agents_at("cafe")
-    assert "test_agent" in city.get_agents_at("park")
-    assert city.find_agent("test_agent") == "park"
-    city.locations["park"].remove_occupant("test_agent")
+    assert "test_agent" in city.get_agents_at("office")
+    assert city.find_agent("test_agent") == "office"
+    city.locations["office"].remove_occupant("test_agent")
     print("  PASS: City loads, connections work, movement works")
 
     # --- Test 3: Personas ---
@@ -246,7 +246,7 @@ async def run_tests():
     persona = personas[0]  # Elena
     agent = Agent(persona)
     assert agent.name == "Elena Vasquez"
-    assert agent.location == "home_north"
+    assert agent.location == "house_elena"
     assert agent.state == AgentState.IDLE
     # Test action
     action = AgentAction(type="work", detail="coding", duration_ticks=3, needs_satisfied={"purpose": 0.3})
@@ -290,7 +290,7 @@ async def run_tests():
     clock2 = SimClock()
     agent3 = Agent(personas[0])
     city3 = City.from_yaml("config/city.yaml")
-    city3.place_agent(agent3.id, "home_north")
+    city3.place_agent(agent3.id, "house_elena")
     move_action = AgentAction(type="move", target="cafe", detail="walking to cafe")
     desc = execute_move(agent3, move_action, city3, clock2)
     assert "cafe" in desc.lower() or "Daily Grind" in desc

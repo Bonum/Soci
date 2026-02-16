@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -207,7 +208,7 @@ class OllamaClient:
         self.max_retries = max_retries
         self.usage = LLMUsage()
         self.provider = PROVIDER_OLLAMA
-        self._http = httpx.Client(timeout=180.0)
+        self._http = httpx.AsyncClient(timeout=180.0)
 
     async def complete(
         self,
@@ -217,9 +218,8 @@ class OllamaClient:
         temperature: float = 0.7,
         max_tokens: int = 1024,
     ) -> str:
-        """Send a message to the local Ollama model."""
+        """Send a message to the local Ollama model (async)."""
         model = model or self.default_model
-        # Map Claude model names to Ollama models
         model = self._map_model(model)
 
         payload = {
@@ -237,14 +237,13 @@ class OllamaClient:
 
         for attempt in range(self.max_retries):
             try:
-                response = self._http.post(
+                response = await self._http.post(
                     f"{self.base_url}/api/chat",
                     json=payload,
                 )
                 response.raise_for_status()
                 data = response.json()
 
-                # Track usage
                 input_tokens = data.get("prompt_eval_count", 0)
                 output_tokens = data.get("eval_count", 0)
                 self.usage.record(model, input_tokens, output_tokens)
@@ -259,7 +258,7 @@ class OllamaClient:
                 logger.error(msg)
                 if attempt == self.max_retries - 1:
                     raise ConnectionError(msg)
-                time.sleep(1)
+                await asyncio.sleep(1)
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 404:
                     msg = (
@@ -271,12 +270,12 @@ class OllamaClient:
                 logger.error(f"Ollama API error: {e}")
                 if attempt == self.max_retries - 1:
                     raise
-                time.sleep(1)
+                await asyncio.sleep(1)
             except Exception as e:
                 logger.error(f"Ollama error: {e}")
                 if attempt == self.max_retries - 1:
                     raise
-                time.sleep(1)
+                await asyncio.sleep(1)
         return ""
 
     async def complete_json(
@@ -287,7 +286,7 @@ class OllamaClient:
         temperature: float = 0.7,
         max_tokens: int = 1024,
     ) -> dict:
-        """Send a JSON-mode request to Ollama (uses native format: json)."""
+        """Send a JSON-mode request to Ollama (async, uses native format: json)."""
         model = model or self.default_model
         model = self._map_model(model)
 
@@ -303,7 +302,7 @@ class OllamaClient:
                 {"role": "user", "content": user_message + json_instruction},
             ],
             "stream": False,
-            "format": "json",  # Ollama native JSON mode — guarantees valid JSON output
+            "format": "json",
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
@@ -312,7 +311,7 @@ class OllamaClient:
 
         for attempt in range(self.max_retries):
             try:
-                response = self._http.post(
+                response = await self._http.post(
                     f"{self.base_url}/api/chat",
                     json=payload,
                 )
@@ -330,12 +329,12 @@ class OllamaClient:
                 logger.error(f"Cannot connect to Ollama at {self.base_url}")
                 if attempt == self.max_retries - 1:
                     return {}
-                time.sleep(1)
+                await asyncio.sleep(1)
             except Exception as e:
                 logger.error(f"Ollama JSON error: {e}")
                 if attempt == self.max_retries - 1:
                     return {}
-                time.sleep(1)
+                await asyncio.sleep(1)
         return {}
 
     def _map_model(self, model: str) -> str:
