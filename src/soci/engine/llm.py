@@ -22,8 +22,8 @@ MODEL_SONNET = "claude-sonnet-4-5-20250929"
 MODEL_HAIKU = "claude-haiku-4-5-20251001"
 
 # Ollama model IDs (popular open-source models)
-MODEL_LLAMA = "llama3.2"
-MODEL_LLAMA_SMALL = "llama3.2"
+MODEL_LLAMA = "llama3.1:8b"
+MODEL_LLAMA_SMALL = "llama3.1:8b"
 MODEL_MISTRAL = "mistral"
 MODEL_QWEN = "qwen2.5"
 MODEL_GEMMA = "gemma2"
@@ -207,7 +207,7 @@ class OllamaClient:
         self.max_retries = max_retries
         self.usage = LLMUsage()
         self.provider = PROVIDER_OLLAMA
-        self._http = httpx.Client(timeout=120.0)
+        self._http = httpx.Client(timeout=180.0)
 
     async def complete(
         self,
@@ -287,18 +287,56 @@ class OllamaClient:
         temperature: float = 0.7,
         max_tokens: int = 1024,
     ) -> dict:
+        """Send a JSON-mode request to Ollama (uses native format: json)."""
+        model = model or self.default_model
+        model = self._map_model(model)
+
         json_instruction = (
             "\n\nRespond ONLY with valid JSON. No markdown, no explanation, no extra text. "
             "Just the JSON object."
         )
-        text = await self.complete(
-            system=system,
-            user_message=user_message + json_instruction,
-            model=model,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-        return _parse_json_response(text)
+
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_message + json_instruction},
+            ],
+            "stream": False,
+            "format": "json",  # Ollama native JSON mode — guarantees valid JSON output
+            "options": {
+                "temperature": temperature,
+                "num_predict": max_tokens,
+            },
+        }
+
+        for attempt in range(self.max_retries):
+            try:
+                response = self._http.post(
+                    f"{self.base_url}/api/chat",
+                    json=payload,
+                )
+                response.raise_for_status()
+                data = response.json()
+
+                input_tokens = data.get("prompt_eval_count", 0)
+                output_tokens = data.get("eval_count", 0)
+                self.usage.record(model, input_tokens, output_tokens)
+
+                text = data.get("message", {}).get("content", "")
+                return _parse_json_response(text)
+
+            except httpx.ConnectError:
+                logger.error(f"Cannot connect to Ollama at {self.base_url}")
+                if attempt == self.max_retries - 1:
+                    return {}
+                time.sleep(1)
+            except Exception as e:
+                logger.error(f"Ollama JSON error: {e}")
+                if attempt == self.max_retries - 1:
+                    return {}
+                time.sleep(1)
+        return {}
 
     def _map_model(self, model: str) -> str:
         """Map Claude model names to Ollama equivalents so existing code works."""

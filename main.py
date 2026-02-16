@@ -220,7 +220,7 @@ def main():
     parser.add_argument("--provider", type=str, default="", choices=["", "claude", "ollama"],
                         help="LLM provider: claude or ollama (default: auto-detect)")
     parser.add_argument("--model", type=str, default="",
-                        help="Model name (e.g. llama3.1, mistral, qwen2.5)")
+                        help="Model name (e.g. llama3.1:8b, mistral, qwen2.5)")
     args = parser.parse_args()
 
     Path("data").mkdir(exist_ok=True)
