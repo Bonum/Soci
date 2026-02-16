@@ -1058,72 +1058,123 @@ function renderEventLog() {
 function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
 
 // ============================================================
-// DATA FETCHING
+// DATA FETCHING — WebSocket + polling fallback
 // ============================================================
 let lastTick = -1;
+let ws = null;
+let wsRetryTimer = null;
 
+function processStateData(data) {
+  const clock = data.clock || {};
+  currentTimeOfDay = clock.time_of_day || 'morning';
+  currentWeather = (data.weather || 'sunny').toLowerCase();
+
+  document.getElementById('clock').textContent = `Day ${clock.day||1}, ${clock.time_str||'??:??'} (${currentTimeOfDay})`;
+  document.getElementById('weather-icon').textContent = WEATHER_ICONS[currentWeather] || '\u2600\uFE0F';
+  document.getElementById('weather').textContent = currentWeather;
+  document.getElementById('agent-count').innerHTML = `<span class="dot green"></span> ${Object.keys(data.agents||{}).length} agents`;
+  document.getElementById('conv-count').textContent = `${data.active_conversations||0} convos`;
+
+  const usage = data.llm_usage || '';
+  const cm = usage.match(/calls:\s*(\d+)/i), $m = usage.match(/\$([0-9.]+)/);
+  document.getElementById('api-calls').textContent = `API: ${cm?cm[1]:'0'}`;
+  document.getElementById('cost').textContent = $m ? `$${$m[1]}` : '$0.00';
+
+  agents = data.agents || {};
+
+  const tick = clock.total_ticks || 0;
+  if (tick !== lastTick) {
+    fetchSecondaryData();
+  }
+  lastTick = tick;
+
+  if (activeTab === 'agents') {
+    if (selectedAgentId) fetchAgentDetail(selectedAgentId);
+    else showDefaultDetail();
+  }
+}
+
+async function fetchSecondaryData() {
+  // Locations
+  try {
+    const locRes = await fetch(`${API_BASE}/city/locations`);
+    if (locRes.ok) locations = await locRes.json();
+  } catch(e) {}
+
+  // Events
+  try {
+    const er = await fetch(`${API_BASE}/events`);
+    if (er.ok) {
+      const d2 = await er.json();
+      eventLog = (d2.events||[]).map(e => e.message||'').filter(m => m.trim());
+      if (activeTab === 'events') renderEventLog();
+    }
+  } catch(e) {}
+
+  // Conversations
+  if (activeTab === 'conversations') {
+    fetchConversations();
+  } else {
+    try {
+      const cr = await fetch(`${API_BASE}/conversations?include_history=false`);
+      if (cr.ok) {
+        const cd = await cr.json();
+        conversationData.active = cd.active || [];
+      }
+    } catch(e) {}
+  }
+}
+
+function connectWebSocket() {
+  const wsUrl = `ws://${window.location.host}/ws/stream`;
+  ws = new WebSocket(wsUrl);
+
+  ws.onopen = () => {
+    connected = true;
+    document.getElementById('status').innerHTML = '<span class="dot green"></span> Live (WS)';
+  };
+
+  ws.onmessage = (evt) => {
+    try {
+      const msg = JSON.parse(evt.data);
+      if (msg.type === 'tick' && msg.state) {
+        processStateData(msg.state);
+      } else if (msg.type === 'event') {
+        eventLog.push(msg.message);
+        if (eventLog.length > 200) eventLog = eventLog.slice(-200);
+        if (activeTab === 'events') renderEventLog();
+      }
+    } catch(e) {}
+  };
+
+  ws.onclose = () => {
+    connected = false;
+    document.getElementById('status').innerHTML = '<span class="dot red"></span> Disconnected';
+    // Retry after 3 seconds
+    wsRetryTimer = setTimeout(connectWebSocket, 3000);
+  };
+
+  ws.onerror = () => {
+    ws.close();
+  };
+}
+
+// Polling fallback (also used for initial load)
 async function fetchState() {
   try {
     const res = await fetch(`${API_BASE}/city`);
     if (!res.ok) throw new Error();
     const data = await res.json();
-    if (!connected) { connected=true; document.getElementById('status').innerHTML='<span class="dot green"></span> Connected'; }
-
-    const clock = data.clock || {};
-    currentTimeOfDay = clock.time_of_day || 'morning';
-    currentWeather = (data.weather || 'sunny').toLowerCase();
-
-    document.getElementById('clock').textContent = `Day ${clock.day||1}, ${clock.time_str||'??:??'} (${currentTimeOfDay})`;
-    document.getElementById('weather-icon').textContent = WEATHER_ICONS[currentWeather] || '\u2600\uFE0F';
-    document.getElementById('weather').textContent = currentWeather;
-    document.getElementById('agent-count').innerHTML = `<span class="dot green"></span> ${Object.keys(data.agents||{}).length} agents`;
-    document.getElementById('conv-count').textContent = `${data.active_conversations||0} convos`;
-
-    const usage = data.llm_usage || '';
-    const cm = usage.match(/calls:\s*(\d+)/i), $m = usage.match(/\$([0-9.]+)/);
-    document.getElementById('api-calls').textContent = `API: ${cm?cm[1]:'0'}`;
-    document.getElementById('cost').textContent = $m ? `$${$m[1]}` : '$0.00';
-
-    agents = data.agents || {};
-
-    const locRes = await fetch(`${API_BASE}/city/locations`);
-    if (locRes.ok) locations = await locRes.json();
-
-    const tick = clock.total_ticks || 0;
-    if (tick !== lastTick) {
-      // Fetch events
-      try {
-        const er = await fetch(`${API_BASE}/events`);
-        if (er.ok) {
-          const d2 = await er.json();
-          eventLog = (d2.events||[]).map(e => e.message||'').filter(m => m.trim());
-          if (activeTab === 'events') renderEventLog();
-        }
-      } catch(e) {}
-
-      // Fetch conversations
-      if (activeTab === 'conversations') {
-        fetchConversations();
-      } else {
-        // Still fetch for canvas bubbles
-        try {
-          const cr = await fetch(`${API_BASE}/conversations?include_history=false`);
-          if (cr.ok) {
-            const cd = await cr.json();
-            conversationData.active = cd.active || [];
-          }
-        } catch(e) {}
-      }
+    if (!connected) {
+      connected = true;
+      document.getElementById('status').innerHTML = '<span class="dot green"></span> Connected';
     }
-    lastTick = tick;
-
-    if (activeTab === 'agents') {
-      if (selectedAgentId) fetchAgentDetail(selectedAgentId);
-      else showDefaultDetail();
-    }
-
+    processStateData(data);
   } catch(e) {
-    if (connected) { connected=false; document.getElementById('status').innerHTML='<span class="dot red"></span> Disconnected'; }
+    if (connected) {
+      connected = false;
+      document.getElementById('status').innerHTML = '<span class="dot red"></span> Disconnected';
+    }
   }
 }
 
@@ -1186,9 +1237,11 @@ async function fetchControls() {
 // ============================================================
 initCanvas();
 showDefaultDetail();
-fetchState();
+fetchState();          // Initial load via REST
 fetchControls();
-setInterval(fetchState, POLL_INTERVAL);
+connectWebSocket();    // Try WebSocket for real-time
+// Polling as fallback — only active when WS is disconnected
+setInterval(() => { if (!ws || ws.readyState !== WebSocket.OPEN) fetchState(); }, POLL_INTERVAL);
 </script>
 </body>
 </html>
