@@ -227,7 +227,7 @@ def main():
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
-        handlers=[logging.FileHandler("data/soci.log", mode="a")],
+        handlers=[logging.FileHandler("data/soci.log", mode="a", encoding="utf-8")],
     )
 
     asyncio.run(run_simulation(

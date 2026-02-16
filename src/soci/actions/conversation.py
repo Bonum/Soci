@@ -133,7 +133,7 @@ async def initiate_conversation(
     )
     conv.add_turn(turn)
 
-    logger.info(f"Conversation started: {initiator.name} → {target.name}: \"{message}\"")
+    logger.info(f"Conversation started: {initiator.name} -> {target.name}: \"{message}\"")
     return conv
 
 
