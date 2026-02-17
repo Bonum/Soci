@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -155,3 +156,54 @@ class City:
             location.occupants = loc_data.get("occupants", [])
             city.add_location(location)
         return city
+
+
+def generate_houses(city: City, count: int) -> list[str]:
+    """Add `count` residential locations connected to streets. Returns house IDs.
+
+    Also scales up capacity of commercial, work, and public locations
+    proportionally to handle the larger population.
+    """
+    streets = [lid for lid, loc in city.locations.items()
+               if "street" in lid or loc.zone == "public"]
+    commercial = [lid for lid, loc in city.locations.items()
+                  if loc.zone == "commercial"]
+    if not streets:
+        streets = list(city.locations.keys())[:2]
+
+    house_ids: list[str] = []
+    for i in range(count):
+        hid = f"house_gen_{i+1:02d}"
+        # Connect to one street and 1-2 random commercial/public places
+        street = random.choice(streets)
+        extras = random.sample(commercial, k=min(random.randint(1, 2), len(commercial)))
+        connections = list({street} | set(extras))
+
+        loc = Location(
+            id=hid,
+            name=f"Apartment #{i + 1}",
+            zone="residential",
+            description=f"A generated apartment unit on the {street.replace('_', ' ')} side of town.",
+            capacity=random.randint(2, 3),
+            connected_to=connections,
+        )
+        city.add_location(loc)
+        house_ids.append(hid)
+
+        # Add reverse connections from street/commercial to this house
+        for cid in connections:
+            cloc = city.get_location(cid)
+            if cloc and hid not in cloc.connected_to:
+                cloc.connected_to.append(hid)
+
+    # Scale up non-residential capacities proportionally
+    existing_res = len([l for l in city.locations.values()
+                        if l.zone == "residential" and not l.id.startswith("house_gen_")])
+    total_res = existing_res + count
+    scale = max(1.0, total_res / max(1, existing_res))
+
+    for loc in city.locations.values():
+        if loc.zone in ("commercial", "work", "public"):
+            loc.capacity = max(loc.capacity, int(loc.capacity * scale))
+
+    return house_ids

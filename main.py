@@ -115,9 +115,10 @@ def build_dashboard(sim: Simulation, recent_events: list[str]) -> Layout:
 
 async def run_simulation(
     ticks: int = 96,
-    max_agents: int = 20,
+    max_agents: int = 100,
     tick_delay: float = 0.5,
     resume: bool = False,
+    generate: bool = False,
     provider: str = "",
     model: str = "",
 ) -> None:
@@ -150,8 +151,19 @@ async def run_simulation(
         city = City.from_yaml(str(config_dir / "city.yaml"))
         clock = SimClock(tick_minutes=15, hour=6, minute=0)
         sim = Simulation(city=city, clock=clock, llm=llm)
+
+        # Load YAML personas as the first 20 agents (backward compatible)
         sim.load_agents_from_yaml(str(config_dir / "personas.yaml"))
-        console.print(f"[green]Created new simulation with {len(sim.agents)} agents.[/]")
+        yaml_count = len(sim.agents)
+        console.print(f"[green]Loaded {yaml_count} YAML agents.[/]")
+
+        # Generate additional agents if requested or if max_agents > yaml count
+        gen_count = max_agents - yaml_count
+        if (generate or gen_count > 0) and gen_count > 0:
+            sim.generate_agents(gen_count)
+            console.print(f"[green]Generated {gen_count} procedural agents ({len(sim.agents)} total).[/]")
+        else:
+            console.print(f"[green]Created new simulation with {len(sim.agents)} agents.[/]")
 
     # Limit agents if requested
     if max_agents < len(sim.agents):
@@ -214,9 +226,11 @@ async def run_simulation(
 def main():
     parser = argparse.ArgumentParser(description="Soci — City Population Simulator")
     parser.add_argument("--ticks", type=int, default=96, help="Number of ticks to simulate (default: 96 = 1 day)")
-    parser.add_argument("--agents", type=int, default=20, help="Max number of agents (default: 20)")
+    parser.add_argument("--agents", type=int, default=100, help="Max number of agents (default: 100)")
     parser.add_argument("--speed", type=float, default=0.5, help="Delay between ticks in seconds (default: 0.5)")
     parser.add_argument("--resume", action="store_true", help="Resume from last save")
+    parser.add_argument("--generate", action="store_true",
+                        help="Generate procedural agents to fill up to --agents count")
     parser.add_argument("--provider", type=str, default="", choices=["", "claude", "ollama"],
                         help="LLM provider: claude or ollama (default: auto-detect)")
     parser.add_argument("--model", type=str, default="",
@@ -235,6 +249,7 @@ def main():
         max_agents=args.agents,
         tick_delay=args.speed,
         resume=args.resume,
+        generate=args.generate,
         provider=args.provider,
         model=args.model,
     ))

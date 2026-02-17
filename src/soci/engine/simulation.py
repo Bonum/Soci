@@ -10,6 +10,8 @@ from typing import Callable, Optional
 from soci.agents.agent import Agent, AgentAction
 from soci.agents.memory import MemoryType
 from soci.agents.persona import Persona, load_personas
+from soci.agents.generator import generate_personas
+from soci.agents.routine import DailyRoutine, build_routine, check_motivation_override
 from soci.actions.registry import resolve_action, ACTION_NEEDS, ACTION_DURATIONS
 from soci.actions.movement import execute_move
 from soci.actions.activities import execute_activity
@@ -23,7 +25,7 @@ from soci.engine.llm import (
 )
 from soci.engine.scheduler import prioritize_agents, batch_llm_calls, should_skip_llm
 from soci.engine.entropy import EntropyManager
-from soci.world.city import City
+from soci.world.city import City, generate_houses
 from soci.world.clock import SimClock
 from soci.world.events import EventSystem
 
@@ -54,6 +56,9 @@ class Simulation:
         self._tick_log: list[str] = []  # Log of events this tick
         self._event_history: list[dict] = []  # Persistent event log for API
         self._max_event_history: int = 200
+        # Daily routines per agent (rebuilt from persona each day)
+        self.routines: dict[str, DailyRoutine] = {}
+        self._last_routine_day: int = -1
         # Callback for real-time output
         self.on_event: Optional[Callable[[str], None]] = None
 
@@ -69,6 +74,30 @@ class Simulation:
             agent = Agent(persona)
             self.add_agent(agent)
         logger.info(f"Loaded {len(personas)} agents from {path}")
+
+    def generate_agents(self, count: int) -> None:
+        """Procedurally generate `count` agents with houses and routines."""
+        # Generate houses for the new agents
+        house_ids = generate_houses(self.city, count)
+        logger.info(f"Generated {len(house_ids)} houses for new agents")
+
+        # Generate personas assigned to those houses
+        personas = generate_personas(count, self.city)
+        for persona in personas:
+            agent = Agent(persona)
+            self.add_agent(agent)
+        logger.info(f"Generated {len(personas)} procedural agents")
+
+    def _rebuild_routines(self) -> None:
+        """Rebuild daily routines for all agents (called at start of each day)."""
+        day = self.clock.day
+        if self._last_routine_day == day:
+            return
+        self._last_routine_day = day
+        for agent in self.agents.values():
+            if not agent.is_player:
+                self.routines[agent.id] = build_routine(agent.persona, day)
+        logger.info(f"Built daily routines for {len(self.routines)} agents (day {day})")
 
     def _emit(self, message: str) -> None:
         """Emit an event message."""
@@ -88,6 +117,9 @@ class Simulation:
         self._tick_log = []
         self._emit(f"\n--- {self.clock.datetime_str} ({self.clock.time_of_day.value}) ---")
 
+        # 0. Rebuild routines at the start of each day (or first tick)
+        self._rebuild_routines()
+
         # 1. Entropy management and world events
         entropy_messages = self.entropy.tick(
             list(self.agents.values()),
@@ -106,13 +138,28 @@ class Simulation:
         # 3. Prioritize and process agents
         ordered_agents = prioritize_agents(list(self.agents.values()), self.clock)
 
-        # 4. Generate daily plans for agents that need them
+        # 4. Daily plans — routine IS the plan, skip LLM plan generation for agents with routines
         plan_coros = []
         plan_agents = []
         for agent in ordered_agents:
             if agent.needs_new_plan(self.clock) and not should_skip_llm(agent, self.clock):
-                plan_coros.append(self._generate_daily_plan(agent))
-                plan_agents.append(agent)
+                # If agent has a routine, set a simple plan from routine slots
+                if agent.id in self.routines:
+                    routine = self.routines[agent.id]
+                    plan_items = []
+                    seen = set()
+                    for slot in routine.slots:
+                        label = slot.detail
+                        if label not in seen:
+                            plan_items.append(label)
+                            seen.add(label)
+                    agent.set_daily_plan(
+                        plan_items[:8], self.clock.day,
+                        self.clock.total_ticks, self.clock.time_str,
+                    )
+                else:
+                    plan_coros.append(self._generate_daily_plan(agent))
+                    plan_agents.append(agent)
 
         if plan_coros:
             await batch_llm_calls(plan_coros, self._max_concurrent)
@@ -122,6 +169,8 @@ class Simulation:
         # 5. Process each agent — tick their needs, handle actions
         action_coros = []
         action_agents = []
+        routine_actions: list[tuple[Agent, AgentAction]] = []
+
         for agent in ordered_agents:
             # Tick needs
             is_sleeping = agent.state.value == "sleeping"
@@ -134,15 +183,43 @@ class Simulation:
                     self._emit(f"  {agent.name} finished: {agent.current_action.detail}")
                 continue
 
-            # Skip LLM for sleeping agents during sleep hours, etc.
-            if should_skip_llm(agent, self.clock):
+            # Skip sleeping agents using per-agent awareness
+            if should_skip_llm(agent, self.clock, self.routines.get(agent.id)):
                 continue
 
-            # Agent is idle — needs a new action
+            # Agent is idle — check routine first, then LLM fallback
+            routine = self.routines.get(agent.id)
+            if routine:
+                slot = routine.get_action_for_time(self.clock.hour, self.clock.minute)
+                if slot:
+                    # Check if motivation overrides the routine
+                    override = check_motivation_override(
+                        slot, agent.needs, agent.mood,
+                        agent.persona.extraversion,
+                        agent.persona.conscientiousness,
+                    )
+                    if override:
+                        slot = override
+                        self._emit(f"  [MOTIVATION] {agent.name}: {override.detail}")
+                    action = AgentAction(
+                        type=slot.action_type,
+                        target=slot.target_location,
+                        detail=slot.detail,
+                        duration_ticks=slot.duration_ticks,
+                        needs_satisfied=slot.needs_satisfied,
+                    )
+                    routine_actions.append((agent, action))
+                    continue
+
+            # No routine slot — fallback to LLM (rare)
             action_coros.append(self._decide_action(agent))
             action_agents.append(agent)
 
-        # Run all action decisions concurrently
+        # Execute routine-driven actions (no LLM needed)
+        for agent, action in routine_actions:
+            await self._execute_action(agent, action)
+
+        # Run LLM action decisions concurrently (only for agents without routine match)
         if action_coros:
             action_results = await batch_llm_calls(action_coros, self._max_concurrent)
             for agent, result in zip(action_agents, action_results):
@@ -665,4 +742,6 @@ class Simulation:
         for aid, agent_data in data["agents"].items():
             agent = Agent.from_dict(agent_data)
             sim.agents[agent.id] = agent
+        # Rebuild routines from restored personas (deterministic)
+        sim._rebuild_routines()
         return sim

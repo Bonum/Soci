@@ -157,9 +157,12 @@
     <span id="conv-count">0 convos</span>
     <span class="controls">
       <button class="ctrl-btn" id="btn-pause" onclick="togglePause()" title="Pause/Resume">&#x23EF;</button>
-      <button class="ctrl-btn" id="btn-fast" onclick="setSpeed(0.25)" title="Fast">&#x23E9;</button>
-      <button class="ctrl-btn active" id="btn-normal" onclick="setSpeed(1.0)" title="Normal">1x</button>
       <button class="ctrl-btn" id="btn-slow" onclick="setSpeed(3.0)" title="Slow">&#x1F422;</button>
+      <button class="ctrl-btn active" id="btn-1x" onclick="setSpeed(1.0)" title="Normal">1x</button>
+      <button class="ctrl-btn" id="btn-2x" onclick="setSpeed(0.5)" title="2x speed">2x</button>
+      <button class="ctrl-btn" id="btn-5x" onclick="setSpeed(0.2)" title="5x speed">5x</button>
+      <button class="ctrl-btn" id="btn-10x" onclick="setSpeed(0.1)" title="10x speed">10x</button>
+      <button class="ctrl-btn" id="btn-50x" onclick="setSpeed(0.02)" title="50x speed">50x</button>
       <span class="speed-label" id="speed-label">1x</span>
     </span>
     <span id="api-calls">API: 0</span>
@@ -1460,11 +1463,30 @@ function updateControlsUI() {
   pauseBtn.className = 'ctrl-btn' + (simPaused ? ' paused' : '');
   pauseBtn.title = simPaused ? 'Resume' : 'Pause';
 
-  document.getElementById('btn-fast').className = 'ctrl-btn' + (simSpeed <= 0.3 ? ' active' : '');
-  document.getElementById('btn-normal').className = 'ctrl-btn' + (simSpeed > 0.3 && simSpeed <= 1.5 ? ' active' : '');
-  document.getElementById('btn-slow').className = 'ctrl-btn' + (simSpeed > 1.5 ? ' active' : '');
+  // Highlight the active speed button
+  const speedBtns = [
+    { id: 'btn-slow', min: 2.0, max: Infinity },
+    { id: 'btn-1x', min: 0.8, max: 2.0 },
+    { id: 'btn-2x', min: 0.35, max: 0.8 },
+    { id: 'btn-5x', min: 0.15, max: 0.35 },
+    { id: 'btn-10x', min: 0.05, max: 0.15 },
+    { id: 'btn-50x', min: 0, max: 0.05 },
+  ];
+  for (const btn of speedBtns) {
+    const el = document.getElementById(btn.id);
+    if (el) el.className = 'ctrl-btn' + (simSpeed >= btn.min && simSpeed < btn.max ? ' active' : '');
+  }
 
-  const label = simPaused ? 'PAUSED' : (simSpeed <= 0.3 ? '4x' : (simSpeed <= 0.6 ? '2x' : (simSpeed <= 1.5 ? '1x' : '0.3x')));
+  // Speed label
+  let label = 'PAUSED';
+  if (!simPaused) {
+    if (simSpeed >= 2.0) label = '0.3x';
+    else if (simSpeed >= 0.8) label = '1x';
+    else if (simSpeed >= 0.35) label = '2x';
+    else if (simSpeed >= 0.15) label = '5x';
+    else if (simSpeed >= 0.05) label = '10x';
+    else label = '50x';
+  }
   document.getElementById('speed-label').textContent = label;
 }
 

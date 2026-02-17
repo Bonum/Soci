@@ -325,9 +325,9 @@ async def resume_simulation():
 
 @router.post("/controls/speed")
 async def set_speed(multiplier: float = 1.0):
-    """Set simulation speed. 0.25=fast, 1.0=normal, 3.0=slow."""
+    """Set simulation speed. 0.02=50x, 0.1=10x, 0.2=5x, 0.5=2x, 1.0=normal, 3.0=slow."""
     import soci.api.server as srv
-    srv._sim_speed = max(0.1, min(5.0, multiplier))
+    srv._sim_speed = max(0.01, min(5.0, multiplier))
     return {"speed": srv._sim_speed}
 
 

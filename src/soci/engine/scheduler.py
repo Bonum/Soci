@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from soci.agents.agent import Agent
+    from soci.agents.routine import DailyRoutine
     from soci.world.clock import SimClock
 
 logger = logging.getLogger(__name__)
@@ -61,7 +62,11 @@ async def batch_llm_calls(
     return results
 
 
-def should_skip_llm(agent: Agent, clock: SimClock) -> bool:
+def should_skip_llm(
+    agent: Agent,
+    clock: SimClock,
+    routine: Optional[DailyRoutine] = None,
+) -> bool:
     """Determine if we can skip the LLM call for this agent (habit caching)."""
     # Never skip players
     if agent.is_player:
@@ -71,8 +76,12 @@ def should_skip_llm(agent: Agent, clock: SimClock) -> bool:
     if agent.is_busy:
         return True
 
-    # If sleeping during sleep hours, keep sleeping
-    if agent.state.value == "sleeping" and clock.is_sleeping_hours:
+    # Per-agent sleep awareness via routine
+    if routine:
+        if not routine.is_awake_at(clock.hour) and agent.state.value == "sleeping":
+            return True
+    elif agent.state.value == "sleeping" and clock.is_sleeping_hours:
+        # Fallback to global sleeping hours if no routine
         return True
 
     return False
