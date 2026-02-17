@@ -372,6 +372,7 @@ class GroqClient:
         api_key: Optional[str] = None,
         default_model: str = MODEL_GROQ_LLAMA_8B,
         max_retries: int = 3,
+        max_rpm: int = 28,  # Stay just under 30 req/min free tier
     ) -> None:
         self.api_key = api_key or os.environ.get("GROQ_API_KEY", "")
         if not self.api_key:
@@ -390,6 +391,22 @@ class GroqClient:
             },
             timeout=60.0,
         )
+        # Rate limiter: enforce minimum delay between requests
+        # 30 req/min = 1 req per 2s; use 2.2s to stay safely under
+        self._min_request_interval = 60.0 / max_rpm
+        self._last_request_time: float = 0.0
+        self._rate_lock = asyncio.Lock()
+
+    async def _wait_for_rate_limit(self) -> None:
+        """Wait if needed to stay under the RPM limit."""
+        import time
+        async with self._rate_lock:
+            now = time.monotonic()
+            elapsed = now - self._last_request_time
+            if elapsed < self._min_request_interval:
+                wait_time = self._min_request_interval - elapsed
+                await asyncio.sleep(wait_time)
+            self._last_request_time = time.monotonic()
 
     async def complete(
         self,
@@ -399,7 +416,7 @@ class GroqClient:
         temperature: float = 0.7,
         max_tokens: int = 1024,
     ) -> str:
-        """Send a chat completion request to Groq (async, parallel-safe)."""
+        """Send a chat completion request to Groq (async, rate-limited)."""
         model = self._map_model(model or self.default_model)
 
         payload = {
@@ -414,6 +431,7 @@ class GroqClient:
 
         for attempt in range(self.max_retries):
             try:
+                await self._wait_for_rate_limit()
                 response = await self._http.post("/chat/completions", json=payload)
                 response.raise_for_status()
                 data = response.json()
@@ -429,10 +447,15 @@ class GroqClient:
 
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 429:
-                    # Rate limited — wait and retry
-                    wait = 2 ** attempt + 1
-                    logger.warning(f"Groq rate limited, waiting {wait}s (attempt {attempt + 1})")
-                    await asyncio.sleep(wait)
+                    # Rate limited — respect retry-after header
+                    retry_after_str = e.response.headers.get("retry-after", "")
+                    try:
+                        retry_after = min(float(retry_after_str), 120)  # Cap at 2min
+                    except (ValueError, TypeError):
+                        retry_after = max(3, 2 ** attempt + 1)
+                    body = e.response.text[:200] if e.response.text else ""
+                    logger.warning(f"Groq 429: waiting {retry_after:.0f}s — {body[:100]}")
+                    await asyncio.sleep(retry_after)
                 elif e.response.status_code == 401:
                     raise ValueError("Invalid GROQ_API_KEY")
                 else:
@@ -476,6 +499,7 @@ class GroqClient:
 
         for attempt in range(self.max_retries):
             try:
+                await self._wait_for_rate_limit()
                 response = await self._http.post("/chat/completions", json=payload)
                 response.raise_for_status()
                 data = response.json()
@@ -492,8 +516,14 @@ class GroqClient:
 
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 429:
-                    wait = 2 ** attempt + 1
-                    logger.warning(f"Groq rate limited, waiting {wait}s")
+                    retry_after_str = e.response.headers.get("retry-after", "")
+                    try:
+                        retry_after = min(float(retry_after_str), 120)
+                    except (ValueError, TypeError):
+                        retry_after = max(3, 2 ** attempt + 1)
+                    body = e.response.text[:200] if e.response.text else ""
+                    logger.warning(f"Groq 429 (json): waiting {retry_after:.0f}s — {body[:100]}")
+                    await asyncio.sleep(retry_after)
                     await asyncio.sleep(wait)
                 else:
                     logger.error(f"Groq JSON error: {e.response.status_code}")
@@ -510,7 +540,7 @@ class GroqClient:
     def _map_model(self, model: str) -> str:
         """Map Claude/Ollama model names to Groq equivalents."""
         mapping = {
-            MODEL_SONNET: MODEL_GROQ_LLAMA_70B,  # Use 70B for "smart" model
+            MODEL_SONNET: self.default_model,     # Use 8B for all — 70B has low daily token limit
             MODEL_HAIKU: self.default_model,       # Use default (8B) for routine
             MODEL_LLAMA: MODEL_GROQ_LLAMA_8B,
         }

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -13,7 +15,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from soci.engine.llm import create_llm_client
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+from soci.engine.llm import create_llm_client, PROVIDER_GROQ
 from soci.engine.simulation import Simulation
 from soci.persistence.database import Database
 from soci.persistence.snapshots import load_simulation, save_simulation
@@ -30,6 +38,7 @@ _database: Optional[Database] = None
 _sim_task: Optional[asyncio.Task] = None
 _sim_paused: bool = False
 _sim_speed: float = 1.0  # 1.0 = normal, 0.5 = fast, 2.0 = slow
+_llm_provider: str = ""  # Track which provider is active
 
 
 def get_simulation() -> Simulation:
@@ -45,6 +54,11 @@ def get_database() -> Database:
 async def simulation_loop(sim: Simulation, db: Database, tick_delay: float = 2.0) -> None:
     """Background task that runs the simulation continuously."""
     global _sim_paused, _sim_speed
+    is_rate_limited = (_llm_provider == PROVIDER_GROQ)
+    # Groq free tier: 30 req/min → ~4 calls/tick at 4s ticks is safe
+    if is_rate_limited:
+        tick_delay = 4.0  # Longer ticks to stay under rate limit
+
     while True:
         try:
             if _sim_paused:
@@ -52,19 +66,28 @@ async def simulation_loop(sim: Simulation, db: Database, tick_delay: float = 2.0
                 continue
 
             # At high speeds, limit LLM calls to keep ticks fast
-            # _sim_speed < 0.2 means 5x+, so cap concurrent conversations
             if _sim_speed <= 0.05:
                 # 50x: skip LLM entirely, pure routine mode
                 sim._skip_llm_this_tick = True
+                sim._max_llm_calls_this_tick = 0
             elif _sim_speed <= 0.15:
                 # 10x: max 1 conversation per tick
                 sim._max_convos_this_tick = 1
+                sim._max_llm_calls_this_tick = 2 if is_rate_limited else 0
             elif _sim_speed <= 0.35:
                 # 5x: max 2 conversations per tick
                 sim._max_convos_this_tick = 2
+                sim._max_llm_calls_this_tick = 3 if is_rate_limited else 0
             else:
                 sim._skip_llm_this_tick = False
-                sim._max_convos_this_tick = 0  # 0 = no limit
+                if is_rate_limited:
+                    # Groq free tier: 30 req/min — hard budget of 4 LLM calls/tick
+                    sim._max_convos_this_tick = 1
+                    sim._max_llm_calls_this_tick = 4
+                else:
+                    # Ollama / Claude: no rate limit cap
+                    sim._max_convos_this_tick = 0  # 0 = unlimited
+                    sim._max_llm_calls_this_tick = 0
 
             await sim.tick()
 
@@ -87,14 +110,65 @@ async def simulation_loop(sim: Simulation, db: Database, tick_delay: float = 2.0
             await asyncio.sleep(5)  # Wait before retrying
 
 
+def _choose_provider() -> str:
+    """Let the user choose an LLM provider on startup.
+
+    Priority: SOCI_PROVIDER env var > LLM_PROVIDER env var > interactive prompt.
+    """
+    # Check explicit env vars first
+    provider = os.environ.get("SOCI_PROVIDER", "").lower() or os.environ.get("LLM_PROVIDER", "").lower()
+    if provider in ("claude", "groq", "ollama"):
+        return provider
+
+    # Check if keys are available
+    has_claude = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    has_groq = bool(os.environ.get("GROQ_API_KEY"))
+
+    options = []
+    if has_groq:
+        options.append(("groq", "Groq (fast cloud, free tier 30 req/min)"))
+    if has_claude:
+        options.append(("claude", "Claude (Anthropic API, paid)"))
+    options.append(("ollama", "Ollama (local, free, no rate limit)"))
+
+    # If only one option, use it
+    if len(options) == 1:
+        chosen = options[0][0]
+        print(f"  LLM Provider: {options[0][1]}")
+        return chosen
+
+    # Interactive selection
+    print("\n  Choose LLM provider:")
+    for i, (key, desc) in enumerate(options, 1):
+        print(f"    {i}. {desc}")
+
+    try:
+        choice = input(f"  Enter choice [1-{len(options)}] (default: 1): ").strip()
+        idx = int(choice) - 1 if choice else 0
+        if 0 <= idx < len(options):
+            chosen = options[idx][0]
+        else:
+            chosen = options[0][0]
+    except (ValueError, EOFError):
+        chosen = options[0][0]
+
+    print(f"  -> Using {chosen}")
+    return chosen
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage simulation lifecycle."""
-    global _simulation, _database, _sim_task
+    global _simulation, _database, _sim_task, _llm_provider
 
     # Start up
     logger.info("Starting Soci API server...")
-    llm = create_llm_client()
+
+    # Choose provider
+    _llm_provider = _choose_provider()
+    llm = create_llm_client(provider=_llm_provider)
+    logger.info(f"LLM provider: {_llm_provider} ({llm.__class__.__name__})")
+
     db = Database()
     await db.connect()
     _database = db
@@ -108,6 +182,10 @@ async def lifespan(app: FastAPI):
         clock = SimClock(tick_minutes=15, hour=6, minute=0)
         sim = Simulation(city=city, clock=clock, llm=llm)
         sim.load_agents_from_yaml(str(config_dir / "personas.yaml"))
+        # Scale to target agent count with procedural generation
+        target_agents = int(os.environ.get("SOCI_AGENTS", "100"))
+        if len(sim.agents) < target_agents:
+            sim.generate_agents(target_agents - len(sim.agents))
         logger.info(f"Created new simulation with {len(sim.agents)} agents")
 
     _simulation = sim
@@ -134,7 +212,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Soci — City Population Simulator",
         description="API for the LLM-powered city population simulation",
-        version="0.1.0",
+        version="0.2.0",
         lifespan=lifespan,
     )
 

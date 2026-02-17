@@ -62,8 +62,16 @@ class Simulation:
         # Speed-aware flags (set by server loop for fast-forward)
         self._skip_llm_this_tick: bool = False
         self._max_convos_this_tick: int = 0  # 0 = no limit
+        self._max_llm_calls_this_tick: int = 0  # 0 = no limit; global budget across all categories
+        self._llm_calls_this_tick: int = 0  # counter, reset each tick
         # Callback for real-time output
         self.on_event: Optional[Callable[[str], None]] = None
+
+    def _llm_budget_remaining(self) -> int:
+        """How many LLM calls can still be made this tick. 0 = unlimited."""
+        if self._max_llm_calls_this_tick <= 0:
+            return 999  # unlimited
+        return max(0, self._max_llm_calls_this_tick - self._llm_calls_this_tick)
 
     def add_agent(self, agent: Agent) -> None:
         """Add an agent to the simulation and place them in the city."""
@@ -118,6 +126,7 @@ class Simulation:
     async def tick(self) -> list[str]:
         """Advance the simulation by one tick. Returns list of event descriptions."""
         self._tick_log = []
+        self._llm_calls_this_tick = 0  # Reset budget counter
         self._emit(f"\n--- {self.clock.datetime_str} ({self.clock.time_of_day.value}) ---")
 
         # 0. Rebuild routines at the start of each day (or first tick)
@@ -164,8 +173,17 @@ class Simulation:
                     plan_coros.append(self._generate_daily_plan(agent))
                     plan_agents.append(agent)
 
+        # Cap plan coros to LLM budget
+        budget = self._llm_budget_remaining()
+        if budget < len(plan_coros):
+            for c in plan_coros[budget:]:
+                c.close()
+            plan_coros = plan_coros[:budget]
+            plan_agents = plan_agents[:budget]
+
         if plan_coros:
             await batch_llm_calls(plan_coros, self._max_concurrent)
+            self._llm_calls_this_tick += len(plan_coros)
             for agent in plan_agents:
                 self._emit(f"[PLAN] {agent.name} planned their day: {'; '.join(agent.daily_plan[:3])}...")
 
@@ -224,8 +242,19 @@ class Simulation:
             await self._execute_action(agent, action)
 
         # Run LLM action decisions concurrently (only for agents without routine match)
+        # Cap to avoid rate limits with many agents
+        cap = min(
+            self._max_convos_this_tick if self._max_convos_this_tick > 0 else len(action_coros),
+            self._llm_budget_remaining(),
+        )
+        if len(action_coros) > cap:
+            for c in action_coros[cap:]:
+                c.close()
+            action_coros = action_coros[:cap]
+            action_agents = action_agents[:cap]
         if action_coros and not self._skip_llm_this_tick:
             action_results = await batch_llm_calls(action_coros, self._max_concurrent)
+            self._llm_calls_this_tick += len(action_coros)
             for agent, result in zip(action_agents, action_results):
                 if result and isinstance(result, AgentAction):
                     await self._execute_action(agent, result)
@@ -249,25 +278,32 @@ class Simulation:
                             continue_conversation(conv, responder, other, self.llm, self.clock)
                         )
 
-            # Limit conversations at high speed
-            if self._max_convos_this_tick > 0 and len(conv_coros) > self._max_convos_this_tick:
-                conv_coros = conv_coros[:self._max_convos_this_tick]
+            # Limit conversations by speed cap and global budget
+            conv_cap = min(
+                self._max_convos_this_tick if self._max_convos_this_tick > 0 else len(conv_coros),
+                self._llm_budget_remaining(),
+            )
+            if len(conv_coros) > conv_cap:
+                for c in conv_coros[conv_cap:]:
+                    c.close()
+                conv_coros = conv_coros[:conv_cap]
 
             if conv_coros:
                 await batch_llm_calls(conv_coros, self._max_concurrent)
+                self._llm_calls_this_tick += len(conv_coros)
         else:
             # 50x mode: force-finish all active conversations
             for conv_id, conv in list(self.active_conversations.items()):
                 self._finish_conversation(conv)
             self.active_conversations.clear()
 
-        # 7. Social: maybe start new conversations (respect speed limits)
-        if not self._skip_llm_this_tick:
+        # 7. Social: maybe start new conversations (respect speed limits + budget)
+        if not self._skip_llm_this_tick and self._llm_budget_remaining() > 0:
             if self._max_convos_this_tick == 0 or len(self.active_conversations) < self._max_convos_this_tick:
                 await self._handle_social_interactions(ordered_agents)
 
         # 8. Reflections for agents with enough accumulated importance
-        if not self._skip_llm_this_tick:
+        if not self._skip_llm_this_tick and self._llm_budget_remaining() > 0:
             reflect_coros = []
             reflect_agents = []
             for agent in ordered_agents:
@@ -275,12 +311,19 @@ class Simulation:
                     reflect_coros.append(self._generate_reflection(agent))
                     reflect_agents.append(agent)
 
-            # At 10x, limit reflections to 1 per tick
-            if self._max_convos_this_tick > 0 and len(reflect_coros) > 1:
-                reflect_coros = reflect_coros[:1]
+            # Limit by speed cap and global budget
+            reflect_cap = min(
+                1 if self._max_convos_this_tick > 0 else len(reflect_coros),
+                self._llm_budget_remaining(),
+            )
+            if len(reflect_coros) > reflect_cap:
+                for c in reflect_coros[reflect_cap:]:
+                    c.close()
+                reflect_coros = reflect_coros[:reflect_cap]
 
             if reflect_coros:
                 await batch_llm_calls(reflect_coros, self._max_concurrent)
+                self._llm_calls_this_tick += len(reflect_coros)
 
         # 9. Romance — develop attractions and relationships
         self._tick_romance()
