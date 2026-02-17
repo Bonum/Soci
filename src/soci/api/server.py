@@ -50,11 +50,34 @@ async def simulation_loop(sim: Simulation, db: Database, tick_delay: float = 2.0
             if _sim_paused:
                 await asyncio.sleep(0.5)
                 continue
+
+            # At high speeds, limit LLM calls to keep ticks fast
+            # _sim_speed < 0.2 means 5x+, so cap concurrent conversations
+            if _sim_speed <= 0.05:
+                # 50x: skip LLM entirely, pure routine mode
+                sim._skip_llm_this_tick = True
+            elif _sim_speed <= 0.15:
+                # 10x: max 1 conversation per tick
+                sim._max_convos_this_tick = 1
+            elif _sim_speed <= 0.35:
+                # 5x: max 2 conversations per tick
+                sim._max_convos_this_tick = 2
+            else:
+                sim._skip_llm_this_tick = False
+                sim._max_convos_this_tick = 0  # 0 = no limit
+
             await sim.tick()
+
             # Auto-save every 24 ticks
             if sim.clock.total_ticks % 24 == 0:
                 await save_simulation(sim, db, "autosave")
-            await asyncio.sleep(tick_delay * _sim_speed)
+
+            # At high speeds, skip the delay entirely
+            delay = tick_delay * _sim_speed
+            if delay > 0.05:
+                await asyncio.sleep(delay)
+            else:
+                await asyncio.sleep(0)  # Yield to event loop
         except asyncio.CancelledError:
             logger.info("Simulation loop cancelled")
             await save_simulation(sim, db, "autosave")

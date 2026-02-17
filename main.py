@@ -231,8 +231,8 @@ def main():
     parser.add_argument("--resume", action="store_true", help="Resume from last save")
     parser.add_argument("--generate", action="store_true",
                         help="Generate procedural agents to fill up to --agents count")
-    parser.add_argument("--provider", type=str, default="", choices=["", "claude", "ollama"],
-                        help="LLM provider: claude or ollama (default: auto-detect)")
+    parser.add_argument("--provider", type=str, default="", choices=["", "claude", "groq", "ollama"],
+                        help="LLM provider: claude, groq, or ollama (default: auto-detect)")
     parser.add_argument("--model", type=str, default="",
                         help="Model name (e.g. llama3.1:8b, mistral, qwen2.5)")
     args = parser.parse_args()

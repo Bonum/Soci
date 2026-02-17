@@ -59,6 +59,9 @@ class Simulation:
         # Daily routines per agent (rebuilt from persona each day)
         self.routines: dict[str, DailyRoutine] = {}
         self._last_routine_day: int = -1
+        # Speed-aware flags (set by server loop for fast-forward)
+        self._skip_llm_this_tick: bool = False
+        self._max_convos_this_tick: int = 0  # 0 = no limit
         # Callback for real-time output
         self.on_event: Optional[Callable[[str], None]] = None
 
@@ -211,55 +214,73 @@ class Simulation:
                     routine_actions.append((agent, action))
                     continue
 
-            # No routine slot — fallback to LLM (rare)
-            action_coros.append(self._decide_action(agent))
-            action_agents.append(agent)
+            # No routine slot — fallback to LLM (rare), skip in fast-forward
+            if not self._skip_llm_this_tick:
+                action_coros.append(self._decide_action(agent))
+                action_agents.append(agent)
 
         # Execute routine-driven actions (no LLM needed)
         for agent, action in routine_actions:
             await self._execute_action(agent, action)
 
         # Run LLM action decisions concurrently (only for agents without routine match)
-        if action_coros:
+        if action_coros and not self._skip_llm_this_tick:
             action_results = await batch_llm_calls(action_coros, self._max_concurrent)
             for agent, result in zip(action_agents, action_results):
                 if result and isinstance(result, AgentAction):
                     await self._execute_action(agent, result)
 
-        # 6. Handle active conversations
-        conv_coros = []
-        for conv_id, conv in list(self.active_conversations.items()):
-            if conv.is_finished:
+        # 6. Handle active conversations (skip in 50x mode)
+        if not self._skip_llm_this_tick:
+            conv_coros = []
+            for conv_id, conv in list(self.active_conversations.items()):
+                if conv.is_finished:
+                    self._finish_conversation(conv)
+                    del self.active_conversations[conv_id]
+                    continue
+                # Determine who speaks next
+                last_speaker = conv.turns[-1].speaker_id if conv.turns else None
+                next_speaker_id = [p for p in conv.participants if p != last_speaker]
+                if next_speaker_id:
+                    responder = self.agents.get(next_speaker_id[0])
+                    other = self.agents.get(last_speaker) if last_speaker else None
+                    if responder and other:
+                        conv_coros.append(
+                            continue_conversation(conv, responder, other, self.llm, self.clock)
+                        )
+
+            # Limit conversations at high speed
+            if self._max_convos_this_tick > 0 and len(conv_coros) > self._max_convos_this_tick:
+                conv_coros = conv_coros[:self._max_convos_this_tick]
+
+            if conv_coros:
+                await batch_llm_calls(conv_coros, self._max_concurrent)
+        else:
+            # 50x mode: force-finish all active conversations
+            for conv_id, conv in list(self.active_conversations.items()):
                 self._finish_conversation(conv)
-                del self.active_conversations[conv_id]
-                continue
-            # Determine who speaks next
-            last_speaker = conv.turns[-1].speaker_id if conv.turns else None
-            next_speaker_id = [p for p in conv.participants if p != last_speaker]
-            if next_speaker_id:
-                responder = self.agents.get(next_speaker_id[0])
-                other = self.agents.get(last_speaker) if last_speaker else None
-                if responder and other:
-                    conv_coros.append(
-                        continue_conversation(conv, responder, other, self.llm, self.clock)
-                    )
+            self.active_conversations.clear()
 
-        if conv_coros:
-            await batch_llm_calls(conv_coros, self._max_concurrent)
-
-        # 7. Social: maybe start new conversations
-        await self._handle_social_interactions(ordered_agents)
+        # 7. Social: maybe start new conversations (respect speed limits)
+        if not self._skip_llm_this_tick:
+            if self._max_convos_this_tick == 0 or len(self.active_conversations) < self._max_convos_this_tick:
+                await self._handle_social_interactions(ordered_agents)
 
         # 8. Reflections for agents with enough accumulated importance
-        reflect_coros = []
-        reflect_agents = []
-        for agent in ordered_agents:
-            if agent.memory.should_reflect() and not agent.is_player:
-                reflect_coros.append(self._generate_reflection(agent))
-                reflect_agents.append(agent)
+        if not self._skip_llm_this_tick:
+            reflect_coros = []
+            reflect_agents = []
+            for agent in ordered_agents:
+                if agent.memory.should_reflect() and not agent.is_player:
+                    reflect_coros.append(self._generate_reflection(agent))
+                    reflect_agents.append(agent)
 
-        if reflect_coros:
-            await batch_llm_calls(reflect_coros, self._max_concurrent)
+            # At 10x, limit reflections to 1 per tick
+            if self._max_convos_this_tick > 0 and len(reflect_coros) > 1:
+                reflect_coros = reflect_coros[:1]
+
+            if reflect_coros:
+                await batch_llm_calls(reflect_coros, self._max_concurrent)
 
         # 9. Romance — develop attractions and relationships
         self._tick_romance()

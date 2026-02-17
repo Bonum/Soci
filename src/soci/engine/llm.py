@@ -1,4 +1,4 @@
-"""LLM client — supports Claude API and Ollama (local LLMs) with model routing and cost tracking."""
+"""LLM client — supports Claude API, Groq, and Ollama (local LLMs) with model routing and cost tracking."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 # --- Provider constants ---
 PROVIDER_CLAUDE = "claude"
 PROVIDER_OLLAMA = "ollama"
+PROVIDER_GROQ = "groq"
 
 # Claude model IDs
 MODEL_SONNET = "claude-sonnet-4-5-20250929"
@@ -29,10 +30,18 @@ MODEL_MISTRAL = "mistral"
 MODEL_QWEN = "qwen2.5"
 MODEL_GEMMA = "gemma2"
 
-# Approximate cost per 1M tokens (USD) — Ollama is free
+# Groq model IDs (fast cloud inference)
+MODEL_GROQ_LLAMA_8B = "llama-3.1-8b-instant"
+MODEL_GROQ_LLAMA_70B = "llama-3.3-70b-versatile"
+MODEL_GROQ_MIXTRAL = "mixtral-8x7b-32768"
+
+# Approximate cost per 1M tokens (USD) — Ollama is free, Groq is very cheap
 COST_PER_1M = {
     MODEL_SONNET: {"input": 3.0, "output": 15.0},
     MODEL_HAIKU: {"input": 0.80, "output": 4.0},
+    MODEL_GROQ_LLAMA_8B: {"input": 0.05, "output": 0.08},
+    MODEL_GROQ_LLAMA_70B: {"input": 0.59, "output": 0.79},
+    MODEL_GROQ_MIXTRAL: {"input": 0.24, "output": 0.24},
 }
 
 
@@ -347,6 +356,168 @@ class OllamaClient:
 
 
 # ============================================================
+# Groq (Fast Cloud Inference) Client
+# ============================================================
+
+class GroqClient:
+    """Wrapper around the Groq API for fast cloud inference.
+
+    Groq provides extremely fast inference (~500 tok/s) with parallel request support.
+    Free tier: 30 requests/min on llama-3.1-8b-instant.
+    Sign up: https://console.groq.com
+    """
+
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        default_model: str = MODEL_GROQ_LLAMA_8B,
+        max_retries: int = 3,
+    ) -> None:
+        self.api_key = api_key or os.environ.get("GROQ_API_KEY", "")
+        if not self.api_key:
+            raise ValueError(
+                "GROQ_API_KEY not set. Get a free key at https://console.groq.com"
+            )
+        self.default_model = default_model
+        self.max_retries = max_retries
+        self.usage = LLMUsage()
+        self.provider = PROVIDER_GROQ
+        self._http = httpx.AsyncClient(
+            base_url="https://api.groq.com/openai/v1",
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=60.0,
+        )
+
+    async def complete(
+        self,
+        system: str,
+        user_message: str,
+        model: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
+    ) -> str:
+        """Send a chat completion request to Groq (async, parallel-safe)."""
+        model = self._map_model(model or self.default_model)
+
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_message},
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+
+        for attempt in range(self.max_retries):
+            try:
+                response = await self._http.post("/chat/completions", json=payload)
+                response.raise_for_status()
+                data = response.json()
+
+                usage = data.get("usage", {})
+                self.usage.record(
+                    model,
+                    usage.get("prompt_tokens", 0),
+                    usage.get("completion_tokens", 0),
+                )
+
+                return data["choices"][0]["message"]["content"]
+
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 429:
+                    # Rate limited — wait and retry
+                    wait = 2 ** attempt + 1
+                    logger.warning(f"Groq rate limited, waiting {wait}s (attempt {attempt + 1})")
+                    await asyncio.sleep(wait)
+                elif e.response.status_code == 401:
+                    raise ValueError("Invalid GROQ_API_KEY")
+                else:
+                    logger.error(f"Groq API error: {e.response.status_code} {e.response.text[:200]}")
+                    if attempt == self.max_retries - 1:
+                        raise
+                    await asyncio.sleep(1)
+            except Exception as e:
+                logger.error(f"Groq error: {e}")
+                if attempt == self.max_retries - 1:
+                    raise
+                await asyncio.sleep(1)
+        return ""
+
+    async def complete_json(
+        self,
+        system: str,
+        user_message: str,
+        model: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
+    ) -> dict:
+        """Send a JSON-mode request to Groq."""
+        model = self._map_model(model or self.default_model)
+
+        json_instruction = (
+            "\n\nRespond ONLY with valid JSON. No markdown, no explanation, no extra text. "
+            "Just the JSON object."
+        )
+
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_message + json_instruction},
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "response_format": {"type": "json_object"},
+        }
+
+        for attempt in range(self.max_retries):
+            try:
+                response = await self._http.post("/chat/completions", json=payload)
+                response.raise_for_status()
+                data = response.json()
+
+                usage = data.get("usage", {})
+                self.usage.record(
+                    model,
+                    usage.get("prompt_tokens", 0),
+                    usage.get("completion_tokens", 0),
+                )
+
+                text = data["choices"][0]["message"]["content"]
+                return _parse_json_response(text)
+
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 429:
+                    wait = 2 ** attempt + 1
+                    logger.warning(f"Groq rate limited, waiting {wait}s")
+                    await asyncio.sleep(wait)
+                else:
+                    logger.error(f"Groq JSON error: {e.response.status_code}")
+                    if attempt == self.max_retries - 1:
+                        return {}
+                    await asyncio.sleep(1)
+            except Exception as e:
+                logger.error(f"Groq JSON error: {e}")
+                if attempt == self.max_retries - 1:
+                    return {}
+                await asyncio.sleep(1)
+        return {}
+
+    def _map_model(self, model: str) -> str:
+        """Map Claude/Ollama model names to Groq equivalents."""
+        mapping = {
+            MODEL_SONNET: MODEL_GROQ_LLAMA_70B,  # Use 70B for "smart" model
+            MODEL_HAIKU: self.default_model,       # Use default (8B) for routine
+            MODEL_LLAMA: MODEL_GROQ_LLAMA_8B,
+        }
+        return mapping.get(model, model)
+
+
+# ============================================================
 # Factory — create the right client based on config
 # ============================================================
 
@@ -354,33 +525,39 @@ def create_llm_client(
     provider: Optional[str] = None,
     model: Optional[str] = None,
     ollama_url: str = "http://localhost:11434",
-) -> ClaudeClient | OllamaClient:
+) -> ClaudeClient | OllamaClient | GroqClient:
     """Create an LLM client based on environment or explicit config.
 
     Provider detection order:
     1. Explicit provider argument
     2. LLM_PROVIDER env var
     3. If ANTHROPIC_API_KEY is set → Claude
-    4. Default → Ollama (free, local)
+    4. If GROQ_API_KEY is set → Groq (fast cloud, parallel)
+    5. Default → Ollama (free, local)
     """
     if provider is None:
         provider = os.environ.get("LLM_PROVIDER", "").lower()
 
     if not provider:
-        # Auto-detect: use Claude if key is set, otherwise Ollama
+        # Auto-detect: Claude → Groq → Ollama
         if os.environ.get("ANTHROPIC_API_KEY"):
             provider = PROVIDER_CLAUDE
+        elif os.environ.get("GROQ_API_KEY"):
+            provider = PROVIDER_GROQ
         else:
             provider = PROVIDER_OLLAMA
 
     if provider == PROVIDER_CLAUDE:
         default_model = model or MODEL_HAIKU
         return ClaudeClient(default_model=default_model)
+    elif provider == PROVIDER_GROQ:
+        default_model = model or MODEL_GROQ_LLAMA_8B
+        return GroqClient(default_model=default_model)
     elif provider == PROVIDER_OLLAMA:
         default_model = model or MODEL_LLAMA
         return OllamaClient(base_url=ollama_url, default_model=default_model)
     else:
-        raise ValueError(f"Unknown LLM provider: {provider}. Use 'claude' or 'ollama'.")
+        raise ValueError(f"Unknown LLM provider: {provider}. Use 'claude', 'groq', or 'ollama'.")
 
 
 # --- Prompt Templates ---
