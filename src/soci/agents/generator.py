@@ -69,26 +69,26 @@ LAST_NAMES = [
 ]
 
 OCCUPATIONS = [
-    # White collar
-    ("software engineer", "work"), ("accountant", "work"), ("marketing manager", "work"),
-    ("architect", "work"), ("data analyst", "work"), ("project manager", "work"),
-    ("graphic designer", "work"), ("lawyer", "work"), ("consultant", "work"),
-    ("financial advisor", "work"),
-    # Blue collar / service
-    ("mechanic", "work"), ("electrician", "work"), ("plumber", "work"),
-    ("construction worker", "work"),
-    # Service / hospitality (evening shifts)
-    ("bartender", "commercial"), ("chef", "commercial"), ("waiter", "commercial"),
-    ("barista", "commercial"),
-    # Creative
-    ("writer", "work"), ("musician", "work"), ("photographer", "work"),
-    ("artist", "work"),
-    # Education
-    ("teacher", "work"), ("professor", "work"), ("tutor", "work"),
-    # Health
-    ("nurse", "work"), ("personal trainer", "public"), ("therapist", "work"),
+    # White collar → office, office_tower
+    ("software engineer", "office"), ("accountant", "office"), ("marketing manager", "office"),
+    ("architect", "office"), ("data analyst", "office"), ("project manager", "office"),
+    ("graphic designer", "office"), ("lawyer", "office_tower"), ("consultant", "office_tower"),
+    ("financial advisor", "office_tower"),
+    # Blue collar → factory
+    ("mechanic", "factory"), ("electrician", "factory"), ("plumber", "factory"),
+    ("construction worker", "factory"),
+    # Service / hospitality (evening shifts) → commercial
+    ("bartender", "bar"), ("chef", "restaurant"), ("waiter", "restaurant"),
+    ("barista", "cafe"),
+    # Creative → office
+    ("writer", "office"), ("musician", "office"), ("photographer", "office"),
+    ("artist", "office"),
+    # Education → school
+    ("teacher", "school"), ("professor", "school"), ("tutor", "school"),
+    # Health → hospital
+    ("nurse", "hospital"), ("personal trainer", "gym"), ("therapist", "hospital"),
     # Student / retired
-    ("college student", "work"), ("retired", None),
+    ("college student", "school"), ("retired", None),
 ]
 
 VALUES_POOL = [
@@ -149,11 +149,11 @@ def _pick_name(gender: str, used_names: set[str]) -> str:
 
 
 def _pick_occupation(age: int) -> tuple[str, str | None]:
-    """Pick occupation based on age. Returns (title, work_zone)."""
+    """Pick occupation based on age. Returns (title, work_location_id)."""
     if age >= 65 and random.random() < 0.7:
         return "retired", None
     if 18 <= age <= 22 and random.random() < 0.6:
-        return "college student", "work"
+        return "college student", "school"
     return random.choice(OCCUPATIONS)
 
 
@@ -293,22 +293,22 @@ def _llm_temperature(openness: int) -> float:
 
 
 def _assign_locations(
-    persona_data: dict,
     occupation: str,
-    work_zone: str | None,
+    work_location_id: str | None,
     residential_ids: list[str],
-    work_ids: list[str],
-    commercial_ids: list[str],
+    city_locations: dict,
     res_index: int,
 ) -> tuple[str, str]:
     """Assign home and work locations. Returns (home_id, work_id)."""
     home_id = residential_ids[res_index % len(residential_ids)]
 
-    if occupation in RETIRED_OCCUPATIONS or work_zone is None:
-        work_id = home_id  # Retired folks "work" from home (leisure)
-    elif occupation in EVENING_SHIFT_JOBS:
-        work_id = random.choice(commercial_ids) if commercial_ids else home_id
+    if occupation in RETIRED_OCCUPATIONS or work_location_id is None:
+        work_id = home_id  # Retired folks stay home
+    elif work_location_id in city_locations:
+        work_id = work_location_id
     else:
+        # Fallback: find any work-zone location
+        work_ids = [lid for lid, loc in city_locations.items() if loc.zone == "work"]
         work_id = random.choice(work_ids) if work_ids else home_id
 
     return home_id, work_id
@@ -318,8 +318,6 @@ def generate_personas(count: int, city: City) -> list[Persona]:
     """Generate `count` unique personas with assigned home/work locations."""
     # Gather location pools
     residential_ids = [lid for lid, loc in city.locations.items() if loc.zone == "residential"]
-    work_ids = [lid for lid, loc in city.locations.items() if loc.zone == "work"]
-    commercial_ids = [lid for lid, loc in city.locations.items() if loc.zone == "commercial"]
 
     if not residential_ids:
         raise ValueError("City has no residential locations — cannot assign homes.")
@@ -331,7 +329,7 @@ def generate_personas(count: int, city: City) -> list[Persona]:
         gender = _pick_gender()
         name = _pick_name(gender, used_names)
         age = random.randint(18, 75)
-        occupation, work_zone = _pick_occupation(age)
+        occupation, work_location_id = _pick_occupation(age)
         traits = _generate_traits()
         values = _pick_values(traits)
         quirks = _pick_quirks()
@@ -340,12 +338,10 @@ def generate_personas(count: int, city: City) -> list[Persona]:
         temperature = _llm_temperature(traits["openness"])
 
         home_id, work_id = _assign_locations(
-            {},
             occupation,
-            work_zone,
+            work_location_id,
             residential_ids,
-            work_ids,
-            commercial_ids,
+            city.locations,
             i,
         )
 

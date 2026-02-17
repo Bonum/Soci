@@ -2,7 +2,7 @@ name: Soci City
 
 locations:
   # ===================
-  # RESIDENTIAL — 10 individual houses
+  # RESIDENTIAL — 10 individual houses + 3 apartment blocks
   # ===================
   - id: house_elena
     name: "Elena & Lila's Apartment"
@@ -37,14 +37,14 @@ locations:
     zone: residential
     description: A small studio apartment crammed with musical instruments, vinyl records, and empty coffee cups.
     capacity: 2
-    connected_to: [street_north, cafe, park]
+    connected_to: [street_west, cafe, park]
 
   - id: house_priya
     name: "Priya & Nina's Flat"
     zone: residential
     description: A modern flat kept immaculately clean. Family photos on one side, property listings on the other.
     capacity: 3
-    connected_to: [street_north, office, park]
+    connected_to: [street_east, office, park]
 
   - id: house_james
     name: "James & Theo's House"
@@ -74,6 +74,27 @@ locations:
     capacity: 4
     connected_to: [street_south, bar, library]
 
+  - id: apartment_block_1
+    name: Northside Apartments
+    zone: residential
+    description: A modern four-story apartment building with a rooftop terrace and shared laundry room.
+    capacity: 8
+    connected_to: [street_north, cafe, park, church]
+
+  - id: apartment_block_2
+    name: Southside Apartments
+    zone: residential
+    description: A brick apartment building with a courtyard garden and friendly neighbors who watch out for each other.
+    capacity: 8
+    connected_to: [street_south, bar, gym, cinema]
+
+  - id: apartment_block_3
+    name: Central Apartments
+    zone: residential
+    description: A newly renovated building right off the town square. Convenient but noisy on weekends.
+    capacity: 8
+    connected_to: [town_square, grocery, street_north, street_south]
+
   # ===================
   # COMMERCIAL
   # ===================
@@ -82,28 +103,42 @@ locations:
     zone: commercial
     description: A warm, bustling cafe with mismatched furniture and the aroma of fresh coffee. The local gossip hub.
     capacity: 15
-    connected_to: [house_elena, house_helen, house_diana, house_kai, street_north, office]
+    connected_to: [house_elena, house_helen, house_diana, house_kai, street_north, office, bakery]
 
   - id: grocery
     name: Green Basket Market
     zone: commercial
     description: A neighborhood grocery store with fresh produce and a friendly owner who knows everyone by name.
     capacity: 12
-    connected_to: [house_diana, house_rosa, street_north, street_south]
+    connected_to: [house_diana, house_rosa, apartment_block_3, street_north, street_south]
 
   - id: bar
     name: The Rusty Anchor
     zone: commercial
     description: A dimly lit bar with a jukebox, pool table, and regulars who've been coming for years. Lively at night.
     capacity: 15
-    connected_to: [house_james, house_frank, restaurant, street_south]
+    connected_to: [house_james, house_frank, apartment_block_2, restaurant, street_south, cinema]
 
   - id: restaurant
     name: Mama Rosa's Kitchen
     zone: commercial
     description: A family-run Italian restaurant with checkered tablecloths and the best pasta in town.
     capacity: 12
-    connected_to: [house_rosa, bar, office, street_south]
+    connected_to: [house_rosa, bar, office, street_south, town_square]
+
+  - id: bakery
+    name: Golden Crust Bakery
+    zone: commercial
+    description: A charming bakery with a glass display of fresh pastries. The smell of bread draws people in from the street.
+    capacity: 10
+    connected_to: [street_north, cafe, apartment_block_1]
+
+  - id: cinema
+    name: Starlight Cinema
+    zone: commercial
+    description: A vintage two-screen cinema with red velvet seats and a popcorn machine that never stops.
+    capacity: 15
+    connected_to: [street_south, bar, town_square, apartment_block_2]
 
   # ===================
   # WORK
@@ -112,8 +147,36 @@ locations:
     name: The Hive Coworking
     zone: work
     description: An open-plan coworking space with standing desks, meeting rooms, and a perpetually broken printer.
+    capacity: 25
+    connected_to: [house_priya, cafe, restaurant, street_north, town_square]
+
+  - id: office_tower
+    name: Pinnacle Tower
+    zone: work
+    description: A sleek glass office building housing law firms, tech startups, and financial advisors across six floors.
+    capacity: 30
+    connected_to: [street_north, street_east, cafe, town_square]
+
+  - id: factory
+    name: Ironworks Factory
+    zone: work
+    description: A large industrial building with a loading dock, welding bays, and the constant hum of machinery.
+    capacity: 25
+    connected_to: [street_south, street_east, sports_field]
+
+  - id: school
+    name: Soci Elementary & High
+    zone: work
+    description: A two-story school building with a playground, science lab, and the sound of a bell every hour.
+    capacity: 25
+    connected_to: [street_north, street_west, park, church]
+
+  - id: hospital
+    name: Soci City Hospital
+    zone: work
+    description: A small community hospital with an ER, a few wards, and a cafeteria that serves surprisingly good soup.
     capacity: 20
-    connected_to: [house_priya, cafe, restaurant, street_north]
+    connected_to: [street_north, street_east, street_south]
 
   # ===================
   # PUBLIC
@@ -123,14 +186,14 @@ locations:
     zone: public
     description: A green park with old willow trees, a pond, benches, and a small playground. Popular for morning jogs and evening walks.
     capacity: 30
-    connected_to: [house_elena, house_marcus, house_kai, house_priya, gym, library, street_north]
+    connected_to: [house_elena, house_marcus, house_kai, house_priya, gym, library, street_north, church, school, sports_field]
 
   - id: gym
     name: Iron & Grit Gym
     zone: public
     description: A no-nonsense gym with free weights, treadmills, and a boxing ring in the back.
-    capacity: 12
-    connected_to: [house_marcus, house_james, house_yuki, park, street_south]
+    capacity: 15
+    connected_to: [house_marcus, house_james, house_yuki, apartment_block_2, park, street_south, sports_field]
 
   - id: library
     name: Soci Public Library
@@ -139,19 +202,54 @@ locations:
     capacity: 15
     connected_to: [house_helen, house_yuki, house_frank, park, street_south]
 
+  - id: church
+    name: "St. Mary's Church"
+    zone: public
+    description: A stone church with stained glass windows, a quiet garden, and community gatherings every Sunday.
+    capacity: 15
+    connected_to: [street_north, street_west, park, apartment_block_1, school]
+
+  - id: town_square
+    name: Town Square
+    zone: public
+    description: The heart of Soci City. A cobblestone plaza with a fountain, benches, a notice board, and a weekend farmers market.
+    capacity: 40
+    connected_to: [street_north, street_south, office, office_tower, restaurant, cinema, apartment_block_3]
+
+  - id: sports_field
+    name: Community Sports Field
+    zone: public
+    description: A large grassy field with soccer goals, a running track, and bleachers. Busy on evenings and weekends.
+    capacity: 30
+    connected_to: [gym, park, street_south, street_west, factory]
+
   # ===================
-  # STREETS — connectors
+  # STREETS — connectors (grid)
   # ===================
   - id: street_north
     name: North Main Street
     zone: public
     description: The main street running through the northern part of town. Shops, cafes, and foot traffic.
-    capacity: 40
-    connected_to: [house_elena, house_marcus, house_helen, house_diana, house_kai, house_priya, cafe, grocery, office, park, street_south]
+    capacity: 50
+    connected_to: [house_elena, house_marcus, house_helen, house_diana, apartment_block_1, apartment_block_3, cafe, grocery, office, office_tower, bakery, park, school, hospital, church, town_square, street_south, street_east, street_west]
 
   - id: street_south
     name: South Main Street
     zone: public
     description: The southern stretch of main street. More residential, with the bar and gym nearby.
+    capacity: 50
+    connected_to: [house_james, house_rosa, house_yuki, house_frank, apartment_block_2, apartment_block_3, bar, grocery, gym, library, restaurant, cinema, factory, sports_field, town_square, hospital, street_north, street_east, street_west]
+
+  - id: street_east
+    name: East Avenue
+    zone: public
+    description: A quieter avenue on the east side of town, near the hospital and office towers.
     capacity: 40
-    connected_to: [house_james, house_rosa, house_yuki, house_frank, bar, grocery, gym, library, restaurant, street_north]
+    connected_to: [house_priya, office_tower, hospital, factory, street_north, street_south]
+
+  - id: street_west
+    name: West Avenue
+    zone: public
+    description: A tree-lined avenue on the west side, near the school and sports fields.
+    capacity: 40
+    connected_to: [house_kai, school, church, sports_field, street_north, street_south]

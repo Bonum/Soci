@@ -33,7 +33,7 @@
 
   /* SIDEBAR */
   #sidebar {
-    width: 380px; background: #16213e; border-left: 2px solid #0f3460;
+    width: 260px; background: #16213e; border-left: 2px solid #0f3460;
     display: flex; flex-direction: column; overflow: hidden;
   }
   .sidebar-tabs {
@@ -175,6 +175,13 @@
     <canvas id="cityCanvas"></canvas>
     <div id="tooltip"></div>
     <div id="toast-container"></div>
+    <input type="range" id="pan-x" min="0" max="100" value="0"
+      style="position:absolute;bottom:4px;left:10px;right:10px;width:calc(100% - 20px);height:14px;opacity:0.5;z-index:50;"
+      oninput="onPanSlider()">
+    <input type="range" id="pan-y" min="0" max="100" value="0"
+      orient="vertical"
+      style="position:absolute;right:4px;top:10px;bottom:24px;width:14px;height:calc(100% - 34px);opacity:0.5;z-index:50;writing-mode:vertical-lr;direction:ltr;-webkit-appearance:slider-vertical;"
+      oninput="onPanSlider()">
   </div>
   <div id="sidebar">
     <div class="sidebar-tabs">
@@ -202,52 +209,81 @@ const POLL_INTERVAL = 2000;
 const HORIZON = 0.14;
 
 // --- CITY LAYOUT ---
-// Road network: main horizontal roads and connecting vertical roads
+// World dimensions (normalized) — larger than viewport, scrollable
+const WORLD_W = 1.6;
+const WORLD_H = 1.4;
+
+// Road network
 const ROADS = [
   // Horizontal roads
-  { x1: 0.04, y1: 0.30, x2: 0.96, y2: 0.30, width: 14, name: 'North Road' },
-  { x1: 0.04, y1: 0.65, x2: 0.96, y2: 0.65, width: 14, name: 'South Road' },
+  { x1: 0.03, y1: 0.28, x2: 0.97, y2: 0.28, width: 14, name: 'North Road' },
+  { x1: 0.03, y1: 0.58, x2: 0.97, y2: 0.58, width: 14, name: 'South Road' },
   // Main vertical street
-  { x1: 0.50, y1: 0.17, x2: 0.50, y2: 0.92, width: 16, name: 'Main Street' },
-  // West lane
-  { x1: 0.18, y1: 0.24, x2: 0.18, y2: 0.85, width: 8 },
-  // East lane
-  { x1: 0.82, y1: 0.24, x2: 0.82, y2: 0.85, width: 8 },
-  // Small connector roads
-  { x1: 0.18, y1: 0.48, x2: 0.50, y2: 0.48, width: 6 },
-  { x1: 0.50, y1: 0.48, x2: 0.82, y2: 0.48, width: 6 },
-  { x1: 0.18, y1: 0.80, x2: 0.50, y2: 0.80, width: 6 },
-  { x1: 0.50, y1: 0.80, x2: 0.82, y2: 0.80, width: 6 },
+  { x1: 0.50, y1: 0.13, x2: 0.50, y2: 0.90, width: 16, name: 'Main Street' },
+  // West avenue
+  { x1: 0.15, y1: 0.20, x2: 0.15, y2: 0.82, width: 10 },
+  // East avenue
+  { x1: 0.85, y1: 0.20, x2: 0.85, y2: 0.82, width: 10 },
+  // Mid connectors
+  { x1: 0.15, y1: 0.43, x2: 0.50, y2: 0.43, width: 6 },
+  { x1: 0.50, y1: 0.43, x2: 0.85, y2: 0.43, width: 6 },
+  { x1: 0.15, y1: 0.72, x2: 0.50, y2: 0.72, width: 6 },
+  { x1: 0.50, y1: 0.72, x2: 0.85, y2: 0.72, width: 6 },
+  // Extra connectors
+  { x1: 0.30, y1: 0.28, x2: 0.30, y2: 0.43, width: 6 },
+  { x1: 0.70, y1: 0.28, x2: 0.70, y2: 0.43, width: 6 },
+  { x1: 0.30, y1: 0.58, x2: 0.30, y2: 0.72, width: 6 },
+  { x1: 0.70, y1: 0.58, x2: 0.70, y2: 0.72, width: 6 },
 ];
 
-// Building positions — placed along streets
+// Building positions — spread across larger grid
 const LOCATION_POSITIONS = {
-  // North-side houses (above North Road)
-  house_elena:  { x: 0.10, y: 0.21, type: 'house', label: 'Elena & Lila' },
-  house_marcus: { x: 0.30, y: 0.21, type: 'house', label: 'Marcus & Zoe' },
-  house_helen:  { x: 0.70, y: 0.21, type: 'house', label: 'Helen & Alice' },
-  house_diana:  { x: 0.90, y: 0.21, type: 'house', label: 'Diana & Marco' },
-  // Middle houses
-  house_kai:    { x: 0.10, y: 0.40, type: 'house', label: "Kai's Studio" },
-  house_priya:  { x: 0.90, y: 0.40, type: 'house', label: 'Priya & Nina' },
-  // South-side houses (below South Road)
-  house_james:  { x: 0.10, y: 0.72, type: 'house', label: 'James & Theo' },
-  house_rosa:   { x: 0.30, y: 0.72, type: 'house', label: 'Rosa & Omar' },
-  house_yuki:   { x: 0.70, y: 0.72, type: 'house', label: 'Yuki & Devon' },
-  house_frank:  { x: 0.90, y: 0.72, type: 'house', label: 'Frank+George+Sam' },
-  // Commercial — along main street
-  cafe:         { x: 0.38, y: 0.35, type: 'shop', label: 'The Daily Grind' },
-  grocery:      { x: 0.62, y: 0.35, type: 'shop', label: 'Green Basket' },
-  office:       { x: 0.50, y: 0.54, type: 'office', label: 'The Hive' },
-  restaurant:   { x: 0.38, y: 0.58, type: 'shop', label: "Mama Rosa's" },
-  bar:          { x: 0.62, y: 0.58, type: 'shop', label: 'Rusty Anchor' },
-  // Public
-  park:         { x: 0.50, y: 0.22, type: 'park', label: 'Willow Park' },
-  gym:          { x: 0.30, y: 0.54, type: 'public', label: 'Iron & Grit' },
-  library:      { x: 0.70, y: 0.54, type: 'public', label: 'Public Library' },
-  // Streets
-  street_north: { x: 0.50, y: 0.30, type: 'street', label: 'N. Main St' },
-  street_south: { x: 0.50, y: 0.65, type: 'street', label: 'S. Main St' },
+  // === RESIDENTIAL — Row 1: North houses ===
+  house_elena:  { x: 0.08, y: 0.19, type: 'house', label: 'Elena & Lila' },
+  house_marcus: { x: 0.24, y: 0.19, type: 'house', label: 'Marcus & Zoe' },
+  house_helen:  { x: 0.62, y: 0.19, type: 'house', label: 'Helen & Alice' },
+  house_diana:  { x: 0.78, y: 0.19, type: 'house', label: 'Diana & Marco' },
+  // Row 2: Middle houses
+  house_kai:    { x: 0.08, y: 0.36, type: 'house', label: "Kai's Studio" },
+  house_priya:  { x: 0.92, y: 0.36, type: 'house', label: 'Priya & Nina' },
+  // Row 3: South houses
+  house_james:  { x: 0.08, y: 0.65, type: 'house', label: 'James & Theo' },
+  house_rosa:   { x: 0.24, y: 0.65, type: 'house', label: 'Rosa & Omar' },
+  house_yuki:   { x: 0.62, y: 0.65, type: 'house', label: 'Yuki & Devon' },
+  house_frank:  { x: 0.78, y: 0.65, type: 'house', label: 'Frank+George+Sam' },
+  // Apartment blocks
+  apartment_block_1: { x: 0.40, y: 0.19, type: 'apartment', label: 'Northside Apts' },
+  apartment_block_2: { x: 0.40, y: 0.65, type: 'apartment', label: 'Southside Apts' },
+  apartment_block_3: { x: 0.56, y: 0.50, type: 'apartment', label: 'Central Apts' },
+
+  // === COMMERCIAL ===
+  cafe:         { x: 0.35, y: 0.34, type: 'shop', label: 'The Daily Grind' },
+  grocery:      { x: 0.65, y: 0.34, type: 'shop', label: 'Green Basket' },
+  bakery:       { x: 0.22, y: 0.34, type: 'shop', label: 'Golden Crust' },
+  restaurant:   { x: 0.35, y: 0.50, type: 'shop', label: "Mama Rosa's" },
+  bar:          { x: 0.65, y: 0.50, type: 'shop', label: 'Rusty Anchor' },
+  cinema:       { x: 0.78, y: 0.50, type: 'cinema', label: 'Starlight Cinema' },
+
+  // === WORK ===
+  office:       { x: 0.50, y: 0.34, type: 'office', label: 'The Hive' },
+  office_tower: { x: 0.80, y: 0.34, type: 'tower', label: 'Pinnacle Tower' },
+  factory:      { x: 0.92, y: 0.65, type: 'factory', label: 'Ironworks' },
+  school:       { x: 0.08, y: 0.50, type: 'school', label: 'Soci School' },
+  hospital:     { x: 0.92, y: 0.50, type: 'hospital', label: 'City Hospital' },
+
+  // === PUBLIC ===
+  park:         { x: 0.50, y: 0.19, type: 'park', label: 'Willow Park' },
+  gym:          { x: 0.22, y: 0.50, type: 'public', label: 'Iron & Grit' },
+  library:      { x: 0.78, y: 0.78, type: 'public', label: 'Public Library' },
+  church:       { x: 0.08, y: 0.78, type: 'church', label: "St. Mary's" },
+  town_square:  { x: 0.50, y: 0.50, type: 'square', label: 'Town Square' },
+  sports_field: { x: 0.22, y: 0.78, type: 'sports', label: 'Sports Field' },
+
+  // === STREETS ===
+  street_north: { x: 0.50, y: 0.28, type: 'street', label: 'N. Main St' },
+  street_south: { x: 0.50, y: 0.58, type: 'street', label: 'S. Main St' },
+  street_east:  { x: 0.85, y: 0.43, type: 'street', label: 'East Ave' },
+  street_west:  { x: 0.15, y: 0.43, type: 'street', label: 'West Ave' },
 };
 
 const AGENT_COLORS = [
@@ -300,6 +336,10 @@ let stars = [];
 let activeTab = 'agents';
 let agentIdxMap = {};
 
+// Pan state
+let panX = 0, panY = 0;
+let isDragging = false, dragStartX = 0, dragStartY = 0, dragPanStartX = 0, dragPanStartY = 0;
+
 // Tree / decorations cache
 let trees = [];
 let streetLamps = [];
@@ -313,10 +353,11 @@ function initParticles() {
     stars.push({x:Math.random(), y:Math.random()*HORIZON, size:0.5+Math.random()*1.5, tw:Math.random()*6.28});
   // Scatter trees in green spaces between buildings
   const treeZones = [
-    {cx:0.50, cy:0.22, rx:0.12, ry:0.04, count:8},  // park
-    {cx:0.10, cy:0.55, rx:0.04, ry:0.06, count:3},   // west green
-    {cx:0.90, cy:0.55, rx:0.04, ry:0.06, count:3},   // east green
-    {cx:0.50, cy:0.88, rx:0.15, ry:0.03, count:5},   // south park
+    {cx:0.50, cy:0.19, rx:0.10, ry:0.03, count:8},   // park
+    {cx:0.22, cy:0.78, rx:0.06, ry:0.03, count:5},   // sports field
+    {cx:0.50, cy:0.50, rx:0.04, ry:0.03, count:4},   // town square
+    {cx:0.08, cy:0.78, rx:0.03, ry:0.02, count:3},   // church garden
+    {cx:0.50, cy:0.85, rx:0.15, ry:0.03, count:5},   // south green
   ];
   for (const z of treeZones) {
     for (let i = 0; i < z.count; i++) {
@@ -329,9 +370,11 @@ function initParticles() {
     }
   }
   // Street lamps along roads
-  for (let i = 0; i < 8; i++) streetLamps.push({ x: 0.50, y: 0.20 + i*0.09 });
-  for (let i = 0; i < 4; i++) streetLamps.push({ x: 0.10 + i*0.26, y: 0.30 });
-  for (let i = 0; i < 4; i++) streetLamps.push({ x: 0.10 + i*0.26, y: 0.65 });
+  for (let i = 0; i < 8; i++) streetLamps.push({ x: 0.50, y: 0.16 + i*0.10 });
+  for (let i = 0; i < 5; i++) streetLamps.push({ x: 0.06 + i*0.22, y: 0.28 });
+  for (let i = 0; i < 5; i++) streetLamps.push({ x: 0.06 + i*0.22, y: 0.58 });
+  for (let i = 0; i < 4; i++) streetLamps.push({ x: 0.15, y: 0.25 + i*0.18 });
+  for (let i = 0; i < 4; i++) streetLamps.push({ x: 0.85, y: 0.25 + i*0.18 });
 }
 
 // ============================================================
@@ -354,6 +397,10 @@ function initCanvas() {
   window.addEventListener('resize', resizeCanvas);
   canvas.addEventListener('click', onCanvasClick);
   canvas.addEventListener('mousemove', onCanvasMouseMove);
+  canvas.addEventListener('mousedown', onCanvasDragStart);
+  canvas.addEventListener('mousemove', onCanvasDrag);
+  canvas.addEventListener('mouseup', onCanvasDragEnd);
+  canvas.addEventListener('mouseleave', onCanvasDragEnd);
   initParticles();
   requestAnimationFrame(animate);
 }
@@ -362,6 +409,40 @@ function resizeCanvas() {
   canvas.width = c.clientWidth;
   canvas.height = c.clientHeight;
 }
+
+// World size in pixels (larger than canvas)
+function worldW() { return canvas.width * WORLD_W; }
+function worldH() { return canvas.height * WORLD_H; }
+function maxPanX() { return Math.max(0, worldW() - canvas.width); }
+function maxPanY() { return Math.max(0, worldH() - canvas.height); }
+
+function onPanSlider() {
+  const sx = document.getElementById('pan-x');
+  const sy = document.getElementById('pan-y');
+  panX = (sx.value / 100) * maxPanX();
+  panY = (sy.value / 100) * maxPanY();
+}
+function syncSliders() {
+  const sx = document.getElementById('pan-x');
+  const sy = document.getElementById('pan-y');
+  if (sx) sx.value = maxPanX() > 0 ? (panX / maxPanX()) * 100 : 0;
+  if (sy) sy.value = maxPanY() > 0 ? (panY / maxPanY()) * 100 : 0;
+}
+function onCanvasDragStart(e) {
+  if (e.button !== 0) return;
+  isDragging = true;
+  dragStartX = e.clientX; dragStartY = e.clientY;
+  dragPanStartX = panX; dragPanStartY = panY;
+}
+function onCanvasDrag(e) {
+  if (!isDragging) return;
+  const dx = dragStartX - e.clientX, dy = dragStartY - e.clientY;
+  if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
+  panX = Math.max(0, Math.min(maxPanX(), dragPanStartX + dx));
+  panY = Math.max(0, Math.min(maxPanY(), dragPanStartY + dy));
+  syncSliders();
+}
+function onCanvasDragEnd() { isDragging = false; }
 
 function animate() {
   animFrame++;
@@ -380,17 +461,24 @@ function animate() {
 // ============================================================
 function draw() {
   if (!ctx) return;
-  const W = canvas.width, H = canvas.height;
+  const W = worldW(), H = worldH();
+  const cW = canvas.width, cH = canvas.height;
 
-  drawSky(W, H);
+  // Sky and weather drawn without pan (full canvas)
+  drawSky(cW, cH);
+
+  ctx.save();
+  ctx.translate(-panX, -panY);
+
   drawGround(W, H);
   drawWeather(W, H);
   drawRoads(W, H);
   drawSidewalks(W, H);
   drawTrees(W, H);
 
-  // Draw buildings (non-street, non-park locations)
-  for (const [id, pos] of Object.entries(LOCATION_POSITIONS)) {
+  // Draw buildings — known positions + auto-generated houses
+  const allPositions = getEffectivePositions();
+  for (const [id, pos] of Object.entries(allPositions)) {
     if (pos.type !== 'street') drawBuilding(id, pos, W, H);
   }
 
@@ -418,6 +506,35 @@ function draw() {
     ctx.fillStyle = `rgba(180,190,200,${0.30 + Math.sin(animFrame*0.015)*0.08})`;
     ctx.fillRect(0, 0, W, H);
   }
+
+  ctx.restore();
+}
+
+// Auto-compute positions for generated houses not in LOCATION_POSITIONS
+let _genPosCache = {};
+function getEffectivePositions() {
+  const result = {...LOCATION_POSITIONS};
+  // Add any locations from server data that we don't have positions for
+  for (const locId of Object.keys(locations)) {
+    if (!result[locId]) {
+      if (!_genPosCache[locId]) {
+        // Hash-based position in residential rows
+        let h = 0;
+        for (let i = 0; i < locId.length; i++) h = ((h << 5) - h + locId.charCodeAt(i)) | 0;
+        const col = ((h >>> 0) % 12) / 12;
+        const row = ((h >>> 4) % 3);
+        const rowY = [0.82, 0.86, 0.90][row];
+        _genPosCache[locId] = {
+          x: 0.06 + col * 0.88,
+          y: rowY + ((h >>> 8) % 3) * 0.01,
+          type: 'house',
+          label: (locations[locId]?.name || locId).slice(0, 14),
+        };
+      }
+      result[locId] = _genPosCache[locId];
+    }
+  }
+  return result;
 }
 
 function getAgentIdx(id) {
@@ -429,6 +546,7 @@ function getAgentIdx(id) {
 // SKY
 // ============================================================
 function drawSky(W, H) {
+  // Sky is always drawn at canvas size (before pan transform)
   const s = SKY[currentTimeOfDay] || SKY.morning;
   const hLine = H * HORIZON;
   const grad = ctx.createLinearGradient(0, 0, 0, hLine);
@@ -474,7 +592,7 @@ function drawMoon(x, y, r) {
 // GROUND
 // ============================================================
 function drawGround(W, H) {
-  const hLine = H * HORIZON;
+  const hLine = (canvas.height * HORIZON);
   const gt = GROUND_TINT[currentTimeOfDay] || GROUND_TINT.morning;
   const grad = ctx.createLinearGradient(0, hLine, 0, H);
   const bc = hexToRgb(gt.base);
@@ -670,22 +788,32 @@ function drawBuilding(id, pos, W, H) {
   if (pos.type === 'house') drawHouse(x, y, isDark, id);
   else if (pos.type === 'shop') drawShop(x, y, isDark);
   else if (pos.type === 'office') drawOffice(x, y, isDark);
+  else if (pos.type === 'tower') drawTower(x, y, isDark);
   else if (pos.type === 'park') drawPark(x, y, isDark);
   else if (pos.type === 'public') drawPublicBuilding(x, y, isDark);
+  else if (pos.type === 'factory') drawFactory(x, y, isDark);
+  else if (pos.type === 'school') drawSchool(x, y, isDark);
+  else if (pos.type === 'hospital') drawHospital(x, y, isDark);
+  else if (pos.type === 'church') drawChurch(x, y, isDark);
+  else if (pos.type === 'cinema') drawCinema(x, y, isDark);
+  else if (pos.type === 'apartment') drawApartment(x, y, isDark);
+  else if (pos.type === 'square') drawSquare(x, y, isDark);
+  else if (pos.type === 'sports') drawSportsField(x, y, isDark);
 
   // Label
-  if (pos.type !== 'park') {
+  if (pos.type !== 'park' && pos.type !== 'square' && pos.type !== 'sports') {
     const label = pos.label || id;
     const short = label.length > 16 ? label.slice(0, 14) + '..' : label;
     ctx.font = 'bold 9px Segoe UI'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    const ly = pos.type === 'house' ? y + 18 : y + 25;
+    const ly = pos.type === 'house' ? y + 18 : (pos.type === 'tower' ? y + 35 : y + 25);
     ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillText(short, x+1, ly+1);
     ctx.fillStyle = isDark ? '#a0a8c0' : '#fff'; ctx.fillText(short, x, ly);
   }
 
   // Occupant count badge
   if (occ > 0) {
-    const bx = x + (pos.type === 'house' ? 22 : 28), by = y - (pos.type === 'house' ? 14 : 18);
+    const byOff = pos.type === 'house' ? 14 : (pos.type === 'tower' ? 32 : (pos.type === 'church' ? 40 : 18));
+    const bx = x + (pos.type === 'house' ? 22 : 28), by = y - byOff;
     ctx.fillStyle = '#e94560'; ctx.beginPath(); ctx.arc(bx, by, 8, 0, 6.28); ctx.fill();
     ctx.fillStyle = '#fff'; ctx.font = 'bold 8px Segoe UI'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(occ.toString(), bx, by);
@@ -835,6 +963,257 @@ function drawPark(x, y, dk) {
   ctx.fillStyle = dk ? '#90a880' : '#fff'; ctx.fillText('Willow Park', x, y+18);
 }
 
+function drawTower(x, y, dk) {
+  const w = 36, h = 56;
+  // Glass facade
+  ctx.fillStyle = dk ? '#1e2038' : '#6880a0';
+  ctx.fillRect(x-w/2, y-h/2, w, h);
+  // Top cap
+  ctx.fillStyle = dk ? '#141828' : '#506880';
+  ctx.fillRect(x-w/2-2, y-h/2-3, w+4, 5);
+  // Antenna
+  ctx.fillStyle = '#888'; ctx.fillRect(x-1, y-h/2-12, 2, 10);
+  ctx.fillStyle = '#e94560'; ctx.beginPath(); ctx.arc(x, y-h/2-12, 2, 0, 6.28); ctx.fill();
+  // Door
+  ctx.fillStyle = dk ? '#0a0e18' : '#384858';
+  ctx.fillRect(x-5, y+h/2-14, 10, 14);
+  // Window grid (5 rows x 4 cols)
+  const wc = dk ? 'rgba(255,210,100,0.55)' : 'rgba(180,220,255,0.5)';
+  ctx.fillStyle = wc;
+  for (let r = 0; r < 5; r++)
+    for (let c = 0; c < 4; c++)
+      ctx.fillRect(x-w/2+3+c*8.5, y-h/2+5+r*10, 6, 6);
+}
+
+function drawFactory(x, y, dk) {
+  const w = 56, h = 34;
+  // Main building
+  ctx.fillStyle = dk ? '#2a2520' : '#8a7a6a';
+  ctx.fillRect(x-w/2, y-h/2, w, h);
+  // Saw-tooth roof
+  ctx.fillStyle = dk ? '#1a1815' : '#6a5a4a';
+  for (let i = 0; i < 3; i++) {
+    const rx = x - w/2 + i*(w/3);
+    ctx.beginPath();
+    ctx.moveTo(rx, y-h/2);
+    ctx.lineTo(rx + w/6, y-h/2-10);
+    ctx.lineTo(rx + w/3, y-h/2);
+    ctx.closePath(); ctx.fill();
+  }
+  // Chimney with smoke
+  ctx.fillStyle = dk ? '#3a3020' : '#706050';
+  ctx.fillRect(x+w/2-10, y-h/2-18, 8, 14);
+  // Smoke
+  ctx.fillStyle = `rgba(180,180,180,${dk?0.15:0.25})`;
+  for (let i = 0; i < 3; i++) {
+    const sy = y-h/2-22-i*8 + Math.sin(animFrame*0.03+i)*3;
+    ctx.beginPath(); ctx.arc(x+w/2-6+i*3, sy, 4+i*2, 0, 6.28); ctx.fill();
+  }
+  // Loading door
+  ctx.fillStyle = dk ? '#1a1815' : '#5a4a3a';
+  ctx.fillRect(x-8, y+h/2-16, 16, 16);
+  // Windows
+  const wc = dk ? 'rgba(255,180,80,0.5)' : 'rgba(200,220,240,0.4)';
+  ctx.fillStyle = wc;
+  for (let c = 0; c < 4; c++) ctx.fillRect(x-w/2+4+c*14, y-h/2+6, 10, 8);
+}
+
+function drawSchool(x, y, dk) {
+  const w = 52, h = 36;
+  // Main building
+  ctx.fillStyle = dk ? '#2a2225' : '#c4a088';
+  ctx.fillRect(x-w/2, y-h/2, w, h);
+  // Roof
+  ctx.fillStyle = dk ? '#1a1518' : '#8a5a3a';
+  ctx.fillRect(x-w/2-2, y-h/2-3, w+4, 5);
+  // Flagpole
+  ctx.fillStyle = '#888'; ctx.fillRect(x+w/2-6, y-h/2-20, 2, 18);
+  // Flag
+  ctx.fillStyle = '#e94560';
+  ctx.beginPath();
+  ctx.moveTo(x+w/2-4, y-h/2-20);
+  ctx.lineTo(x+w/2+8, y-h/2-16);
+  ctx.lineTo(x+w/2-4, y-h/2-12);
+  ctx.closePath(); ctx.fill();
+  // Door
+  ctx.fillStyle = dk ? '#1a1218' : '#6a4a3a';
+  ctx.fillRect(x-5, y+h/2-14, 10, 14);
+  // Windows (2 rows)
+  const wc = dk ? 'rgba(255,210,100,0.6)' : 'rgba(200,230,255,0.5)';
+  ctx.fillStyle = wc;
+  for (let r = 0; r < 2; r++)
+    for (let c = 0; c < 4; c++)
+      ctx.fillRect(x-w/2+4+c*12, y-h/2+5+r*12, 8, 8);
+}
+
+function drawHospital(x, y, dk) {
+  const w = 50, h = 40;
+  // Main building
+  ctx.fillStyle = dk ? '#1e2228' : '#c8ccd0';
+  ctx.fillRect(x-w/2, y-h/2, w, h);
+  // Flat roof
+  ctx.fillStyle = dk ? '#141820' : '#a0a4a8';
+  ctx.fillRect(x-w/2-2, y-h/2-3, w+4, 5);
+  // Red cross
+  ctx.fillStyle = '#e94560';
+  ctx.fillRect(x-3, y-h/2+4, 6, 14);
+  ctx.fillRect(x-7, y-h/2+8, 14, 6);
+  // Door
+  ctx.fillStyle = dk ? '#0a1018' : '#4a5a6a';
+  ctx.fillRect(x-5, y+h/2-12, 10, 12);
+  // Windows
+  const wc = dk ? 'rgba(200,240,255,0.55)' : 'rgba(200,230,255,0.5)';
+  ctx.fillStyle = wc;
+  for (let r = 0; r < 2; r++)
+    for (let c = 0; c < 4; c++)
+      ctx.fillRect(x-w/2+4+c*12, y-h/2+20+r*8, 8, 5);
+}
+
+function drawChurch(x, y, dk) {
+  const w = 40, h = 36;
+  // Main building
+  ctx.fillStyle = dk ? '#2a2828' : '#c0b8a8';
+  ctx.fillRect(x-w/2, y-h/2, w, h);
+  // Steeple
+  ctx.fillStyle = dk ? '#1a1818' : '#908880';
+  ctx.fillRect(x-6, y-h/2-18, 12, 18);
+  // Steeple top
+  ctx.beginPath();
+  ctx.moveTo(x-8, y-h/2-18);
+  ctx.lineTo(x, y-h/2-30);
+  ctx.lineTo(x+8, y-h/2-18);
+  ctx.closePath(); ctx.fill();
+  // Cross
+  ctx.fillStyle = dk ? '#888' : '#d4c8a0';
+  ctx.fillRect(x-1.5, y-h/2-38, 3, 10);
+  ctx.fillRect(x-4, y-h/2-36, 8, 3);
+  // Stained glass window
+  ctx.fillStyle = dk ? 'rgba(100,150,255,0.5)' : 'rgba(80,120,200,0.4)';
+  ctx.beginPath(); ctx.arc(x, y-h/2-8, 4, 0, 6.28); ctx.fill();
+  // Door (arched)
+  ctx.fillStyle = dk ? '#1a1518' : '#5a4a3a';
+  ctx.fillRect(x-5, y+h/2-14, 10, 14);
+  ctx.beginPath(); ctx.arc(x, y+h/2-14, 5, Math.PI, 0); ctx.fill();
+  // Side windows
+  const wc = dk ? 'rgba(255,200,100,0.5)' : 'rgba(200,180,120,0.45)';
+  ctx.fillStyle = wc;
+  ctx.fillRect(x-w/2+4, y-h/2+6, 6, 10);
+  ctx.fillRect(x+w/2-10, y-h/2+6, 6, 10);
+  // Label
+  ctx.font = 'bold 9px Segoe UI'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillText("St. Mary's", x+1, y+h/2+3);
+  ctx.fillStyle = dk ? '#a0a8c0' : '#fff'; ctx.fillText("St. Mary's", x, y+h/2+2);
+}
+
+function drawCinema(x, y, dk) {
+  const w = 48, h = 34;
+  // Main building
+  ctx.fillStyle = dk ? '#2a1828' : '#5a3060';
+  ctx.fillRect(x-w/2, y-h/2, w, h);
+  // Marquee sign
+  ctx.fillStyle = dk ? '#4a2040' : '#8a4080';
+  ctx.fillRect(x-w/2+4, y-h/2-8, w-8, 10);
+  // Marquee lights
+  ctx.fillStyle = dk ? '#f0c040' : '#ffe880';
+  for (let i = 0; i < 8; i++) {
+    const lx = x-w/2+8+i*5;
+    const flicker = Math.sin(animFrame*0.1+i*0.8) > 0;
+    if (flicker || !dk) {
+      ctx.beginPath(); ctx.arc(lx, y-h/2-3, 1.5, 0, 6.28); ctx.fill();
+    }
+  }
+  // "CINEMA" text
+  ctx.fillStyle = dk ? '#f0c040' : '#fff';
+  ctx.font = 'bold 7px Segoe UI'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('CINEMA', x, y-h/2-2);
+  // Door
+  ctx.fillStyle = dk ? '#1a0818' : '#3a1830';
+  ctx.fillRect(x-5, y+h/2-12, 10, 12);
+  // Poster frames
+  const wc = dk ? 'rgba(255,200,100,0.4)' : 'rgba(200,180,240,0.5)';
+  ctx.fillStyle = wc;
+  ctx.fillRect(x-w/2+4, y-h/2+8, 12, 16);
+  ctx.fillRect(x+w/2-16, y-h/2+8, 12, 16);
+}
+
+function drawApartment(x, y, dk) {
+  const w = 38, h = 48;
+  // Main building (tall)
+  ctx.fillStyle = dk ? '#2a2830' : '#a09890';
+  ctx.fillRect(x-w/2, y-h/2, w, h);
+  // Flat roof
+  ctx.fillStyle = dk ? '#1a1820' : '#807870';
+  ctx.fillRect(x-w/2-2, y-h/2-3, w+4, 5);
+  // Door
+  ctx.fillStyle = dk ? '#1a1520' : '#605850';
+  ctx.fillRect(x-4, y+h/2-10, 8, 10);
+  // Windows (4 rows x 3 cols)
+  const wc = dk ? 'rgba(255,210,100,0.55)' : 'rgba(180,220,255,0.45)';
+  ctx.fillStyle = wc;
+  for (let r = 0; r < 4; r++)
+    for (let c = 0; c < 3; c++) {
+      // Some windows dark at night
+      if (dk && ((r*3+c+animFrame) % 7 < 2)) continue;
+      ctx.fillRect(x-w/2+4+c*12, y-h/2+5+r*11, 8, 7);
+    }
+}
+
+function drawSquare(x, y, dk) {
+  // Cobblestone plaza
+  ctx.fillStyle = dk ? '#2a2820' : '#b0a890';
+  ctx.beginPath(); ctx.ellipse(x, y, 50, 30, 0, 0, 6.28); ctx.fill();
+  ctx.strokeStyle = dk ? '#3a3828' : '#c0b898';
+  ctx.lineWidth = 2; ctx.stroke();
+  // Fountain
+  ctx.fillStyle = dk ? '#1a2a3a' : '#708898';
+  ctx.beginPath(); ctx.ellipse(x, y, 12, 7, 0, 0, 6.28); ctx.fill();
+  ctx.fillStyle = dk ? '#2a3a5a' : '#88b0d0';
+  ctx.beginPath(); ctx.ellipse(x, y-2, 6, 4, 0, 0, 6.28); ctx.fill();
+  // Water spray
+  if (!dk || animFrame % 3 < 2) {
+    ctx.fillStyle = `rgba(100,180,220,${dk?0.3:0.5})`;
+    ctx.beginPath(); ctx.arc(x, y-8+Math.sin(animFrame*0.06)*2, 3, 0, 6.28); ctx.fill();
+  }
+  // Benches
+  ctx.fillStyle = dk ? '#3a2a15' : '#7a5a30';
+  ctx.fillRect(x-30, y+12, 12, 3);
+  ctx.fillRect(x+18, y+12, 12, 3);
+  // Notice board
+  ctx.fillStyle = dk ? '#2a2520' : '#8a7a60';
+  ctx.fillRect(x+30, y-8, 8, 12);
+  // Label
+  ctx.font = 'bold 10px Segoe UI'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillText('Town Square', x+1, y+21);
+  ctx.fillStyle = dk ? '#a0a8b0' : '#fff'; ctx.fillText('Town Square', x, y+20);
+}
+
+function drawSportsField(x, y, dk) {
+  // Large green field
+  ctx.fillStyle = dk ? '#1a3018' : '#4a9a38';
+  ctx.beginPath(); ctx.ellipse(x, y, 48, 24, 0, 0, 6.28); ctx.fill();
+  // Field lines
+  ctx.strokeStyle = dk ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.4)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.ellipse(x, y, 44, 20, 0, 0, 6.28); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x, y-20); ctx.lineTo(x, y+20); ctx.stroke();
+  ctx.beginPath(); ctx.arc(x, y, 8, 0, 6.28); ctx.stroke();
+  // Goals
+  ctx.strokeStyle = dk ? '#555' : '#ddd'; ctx.lineWidth = 2;
+  ctx.strokeRect(x-46, y-6, 4, 12);
+  ctx.strokeRect(x+42, y-6, 4, 12);
+  // Running track
+  ctx.strokeStyle = dk ? '#3a2828' : '#c87850';
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.ellipse(x, y, 52, 28, 0, 0, 6.28); ctx.stroke();
+  // Bleachers
+  ctx.fillStyle = dk ? '#2a2828' : '#888';
+  ctx.fillRect(x-20, y+26, 40, 5);
+  // Label
+  ctx.font = 'bold 9px Segoe UI'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillText('Sports Field', x+1, y+33);
+  ctx.fillStyle = dk ? '#90a880' : '#fff'; ctx.fillText('Sports Field', x, y+32);
+}
+
 function dim(hex, f) {
   if (hex.startsWith('rgb')) return hex; // already rgb
   const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
@@ -907,7 +1286,8 @@ function drawConversationBubbles(W, H) {
 // ============================================================
 function computeAgentTarget(id, agent, globalIdx, byLoc, W, H) {
   const loc = agent.location || 'house_elena';
-  const pos = LOCATION_POSITIONS[loc];
+  const allPos = getEffectivePositions();
+  const pos = allPos[loc];
   if (!pos) return;
 
   const atLoc = byLoc[loc] || [];
@@ -916,22 +1296,29 @@ function computeAgentTarget(id, agent, globalIdx, byLoc, W, H) {
 
   // For streets, spread agents along the road
   if (pos.type === 'street') {
+    const row = Math.floor(localIdx / 10);
+    const col = localIdx % 10;
     const spread = Math.min(count, 10);
-    const step = 0.04;
+    const step = 0.025;
     const startX = pos.x - (spread-1)*step/2;
     agentTargets[id] = {
-      x: (startX + localIdx * step) * W,
-      y: pos.y * H + 16 + (localIdx % 2) * 12
+      x: (startX + col * step) * W,
+      y: pos.y * H + 16 + row * 18 + (col % 2) * 10
     };
   } else {
-    // Cluster around building
-    const radius = pos.type === 'house' ? 18 + Math.floor(count/3)*8 : 28 + Math.floor(count/5)*10;
-    const step = Math.PI / Math.max(count+1, 2);
-    const angle = step * (localIdx+1);
-    const ox = Math.cos(angle)*radius - radius/3;
-    const oy = Math.sin(angle)*radius*0.5 + (pos.type === 'house' ? 22 : 30);
+    // Multi-row arrangement for large crowds
+    const baseRadius = pos.type === 'house' ? 16 : (pos.type === 'park' || pos.type === 'square' || pos.type === 'sports' ? 35 : 24);
+    const maxPerRow = pos.type === 'house' ? 4 : 8;
+    const row = Math.floor(localIdx / maxPerRow);
+    const colIdx = localIdx % maxPerRow;
+    const rowCount = Math.min(count - row * maxPerRow, maxPerRow);
+    const radius = baseRadius + row * 14;
+    const step = Math.PI / Math.max(rowCount + 1, 2);
+    const angle = step * (colIdx + 1);
+    const ox = Math.cos(angle) * radius - radius / 3;
+    const oy = Math.sin(angle) * radius * 0.45 + (pos.type === 'house' ? 20 : 28) + row * 6;
 
-    agentTargets[id] = { x: pos.x*W + ox, y: pos.y*H + oy };
+    agentTargets[id] = { x: pos.x * W + ox, y: pos.y * H + oy };
   }
   if (!agentPositions[id]) agentPositions[id] = {...agentTargets[id]};
 }
@@ -1054,8 +1441,9 @@ function drawPerson(id, agent, globalIdx, W, H) {
 // INTERACTION
 // ============================================================
 function onCanvasClick(e) {
+  if (isDragging) return;
   const rect=canvas.getBoundingClientRect();
-  const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+  const mx=e.clientX-rect.left+panX, my=e.clientY-rect.top+panY;
   let clicked=null, minD=24;
   for (const [id,pos] of Object.entries(agentPositions)) {
     const d=Math.hypot(mx-pos.x,my-pos.y);
@@ -1073,9 +1461,11 @@ function onCanvasClick(e) {
 
 function onCanvasMouseMove(e) {
   const rect=canvas.getBoundingClientRect();
-  const mx=e.clientX-rect.left, my=e.clientY-rect.top;
-  const W=canvas.width, H=canvas.height;
+  const mx=e.clientX-rect.left+panX, my=e.clientY-rect.top+panY;
+  const W=worldW(), H=worldH();
   const tt=document.getElementById('tooltip');
+
+  if (isDragging) return;
 
   let foundAgent=null;
   for (const [id,pos] of Object.entries(agentPositions)) {
@@ -1084,7 +1474,8 @@ function onCanvasMouseMove(e) {
 
   let foundLoc=null;
   if (!foundAgent) {
-    for (const [id, pos] of Object.entries(LOCATION_POSITIONS)) {
+    const allPos = getEffectivePositions();
+    for (const [id, pos] of Object.entries(allPos)) {
       const lx=pos.x*W, ly=pos.y*H;
       const hitR = pos.type === 'house' ? 25 : 35;
       if(Math.hypot(mx-lx,my-ly)<hitR){foundLoc=id;break;}
