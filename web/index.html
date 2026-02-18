@@ -393,6 +393,7 @@ let zoom = 1.0;
 let agentPrevLocations = {};   // {id: locationId} last known location
 let agentWaypoints = {};       // {id: {x,y}} intermediate road point during transit
 let agentFacingRight = {};     // {id: bool} last known horizontal facing direction
+let locCrowdCount = {};        // {locationId: count} — used by drawPerson to scale agents
 let isDragging = false, dragStartX = 0, dragStartY = 0, dragPanStartX = 0, dragPanStartY = 0;
 // Rectangle-zoom state
 let rectZoomMode = false, isRectDragging = false, rectStart = null, rectEnd = null;
@@ -1693,16 +1694,38 @@ function computeAgentTarget(id, agent, globalIdx, byLoc, W, H) {
     };
   } else {
     // Multi-row arrangement for large crowds
-    const baseRadius = pos.type === 'house' ? 18 : (pos.type === 'park' || pos.type === 'square' || pos.type === 'sports' ? 55 : 38);
-    const maxPerRow = pos.type === 'house' ? 5 : 13;
-    const row = Math.floor(localIdx / maxPerRow);
-    const colIdx = localIdx % maxPerRow;
-    const rowCount = Math.min(count - row * maxPerRow, maxPerRow);
-    const radius = baseRadius + row * 24;
-    const step = Math.PI / Math.max(rowCount + 1, 2);
-    const angle = step * (colIdx + 1);
-    const ox = Math.cos(angle) * radius - radius / 3;
-    const oy = Math.sin(angle) * radius * 0.5 + (pos.type === 'house' ? 22 : 34) + row * 10;
+    locCrowdCount[loc] = count;  // store for drawPerson scale-down
+
+    let ox, oy;
+    if (count <= 10) {
+      // Small crowd: natural semicircle arc
+      const baseR = pos.type === 'house' ? 18 : (pos.type === 'park' || pos.type === 'square' || pos.type === 'sports' ? 40 : 28);
+      const mpr   = pos.type === 'house' ? 4 : 6;
+      const iRow  = Math.floor(localIdx / mpr);
+      const iCol  = localIdx % mpr;
+      const rCnt  = Math.min(count - iRow * mpr, mpr);
+      const rad   = baseR + iRow * 18;
+      const stp   = Math.PI / Math.max(rCnt + 1, 2);
+      const ang   = stp * (iCol + 1);
+      ox = Math.cos(ang) * rad - rad / 3;
+      oy = Math.sin(ang) * rad * 0.5 + (pos.type === 'house' ? 20 : 28) + iRow * 8;
+    } else {
+      // Large crowd: grid layout — fills a rectangle so no dense blob
+      const isWide = pos.type === 'park' || pos.type === 'square' || pos.type === 'sports';
+      const areaW  = isWide ? 290 : 210;
+      const areaH  = isWide ? 210 : 160;
+      const cols   = Math.ceil(Math.sqrt(count * 1.3));
+      const rows   = Math.ceil(count / cols);
+      const cellW  = areaW / cols;
+      const cellH  = areaH / rows;
+      const col    = localIdx % cols;
+      const iRow   = Math.floor(localIdx / cols);
+      // Deterministic per-agent jitter so grid looks organic, not military
+      const jx = ((globalIdx * 7  + 3) % 11) - 5;
+      const jy = ((globalIdx * 11 + 7) % 9)  - 4;
+      ox = -(cols - 1) * cellW / 2 + col * cellW + jx;
+      oy = 26 + iRow * cellH + jy;
+    }
 
     agentTargets[id] = { x: pos.x * W + ox, y: pos.y * H + oy };
   }
@@ -1744,7 +1767,10 @@ function drawPerson(id, agent, globalIdx, W, H) {
   const isSel = id === selectedAgentId;
   const isHov = id === hoveredAgent;
   const gender = agent.gender || 'unknown';
-  const scale = isSel ? 1.15 : (isHov ? 1.0 : 0.82);
+  // Shrink agents proportionally when many share a location — sqrt falloff, min 48%
+  const crowdN = locCrowdCount[agent.location] || 1;
+  const crowdShrink = Math.max(0.48, Math.sqrt(12 / Math.max(12, crowdN)));
+  const scale = isSel ? 1.15 : (isHov ? 1.0 : 0.82 * crowdShrink);
   const isMoving = agent.state === 'moving';
   const isSleeping = agent.state === 'sleeping';
 
