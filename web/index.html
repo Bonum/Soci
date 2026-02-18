@@ -1910,20 +1910,26 @@ function drawPerson(id, agent, globalIdx, W, H) {
   ctx.beginPath(); ctx.arc(hx - 1.8, hy - 1.5, 0.45, 0, 6.28); ctx.fill();
   ctx.beginPath(); ctx.arc(hx + 1.9, hy - 1.5, 0.45, 0, 6.28); ctx.fill();
 
-  // Mouth — quadratic bezier, depth proportional to mood
-  // moodCurve > 0 → bows down (smile), < 0 → bows up (frown)
-  const mouthW = 2.2;
-  const mCurve = moodVal * 3.8;
-  const mouthY = hy + 2.8;
-  // colour: rosy for happy, muted for neutral, dark for sad
-  const mr = moodVal > 0 ? Math.round(185 - moodVal * 20) : 140;
-  const mg = moodVal > 0 ? 90 : Math.round(90 - Math.abs(moodVal) * 40);
-  const mb = moodVal > 0 ? 90 : Math.round(90 - Math.abs(moodVal) * 20);
-  ctx.strokeStyle = `rgba(${mr},${mg},${mb},0.85)`; ctx.lineWidth = 1.0; ctx.lineCap = 'round';
+  // Mouth — quadratic bezier smile/frown
+  // The bezier control point is at distance mCurve; actual visible deflection = mCurve/2
+  // Multiply by 14 so that mood=±0.3 already shows a clear curve (~2px at display scale)
+  const mouthW = 3.2;
+  const mCurve = Math.max(-10, Math.min(10, moodVal * 14));
+  const mouthY = hy + 3.2;
+  // Colour: warm rosy-red when happy, neutral skin-tone, dark blue-grey when sad
+  const mClamp = Math.max(-1, Math.min(1, moodVal));
+  const mColR = mClamp > 0 ? Math.round(200 + mClamp * 30) : Math.round(200 - Math.abs(mClamp) * 110);
+  const mColG = mClamp > 0 ? Math.round(100 - mClamp * 20) : Math.round(100 - Math.abs(mClamp) * 50);
+  const mColB = mClamp > 0 ? Math.round(100 - mClamp * 20) : Math.round(100 + Math.abs(mClamp) * 20);
+  ctx.strokeStyle = `rgba(${mColR},${mColG},${mColB},0.9)`; ctx.lineWidth = 1.4; ctx.lineCap = 'round';
   ctx.beginPath();
   ctx.moveTo(hx - mouthW, mouthY);
   ctx.quadraticCurveTo(hx, mouthY + mCurve, hx + mouthW, mouthY);
   ctx.stroke();
+  // Lip-corner dots make the curve start/end clearly visible
+  ctx.fillStyle = `rgba(${mColR},${mColG},${mColB},0.7)`;
+  ctx.beginPath(); ctx.arc(hx - mouthW, mouthY, 0.7, 0, 6.28); ctx.fill();
+  ctx.beginPath(); ctx.arc(hx + mouthW, mouthY, 0.7, 0, 6.28); ctx.fill();
 
   ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
 
