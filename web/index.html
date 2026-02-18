@@ -23,8 +23,21 @@
     height: 50px;
   }
   #header h1 { font-size: 18px; color: #e94560; letter-spacing: 2px; }
-  #header .info { display: flex; gap: 20px; font-size: 13px; color: #a0a0c0; }
+  #header .info { display: flex; gap: 20px; font-size: 13px; color: #a0a0c0; align-items: center; }
   #header .info span { display: flex; align-items: center; gap: 6px; }
+  #weekend-badge {
+    display: none; align-items: center; gap: 5px;
+    background: linear-gradient(135deg, #f0c040, #e67e22);
+    color: #1a1a2e; font-weight: 800; font-size: 11px;
+    padding: 3px 10px; border-radius: 12px;
+    letter-spacing: 1px; text-transform: uppercase;
+    box-shadow: 0 0 10px rgba(240,192,64,0.5);
+    animation: weekend-pulse 2s ease-in-out infinite;
+  }
+  @keyframes weekend-pulse {
+    0%, 100% { box-shadow: 0 0 8px rgba(240,192,64,0.4); }
+    50% { box-shadow: 0 0 18px rgba(240,192,64,0.8); }
+  }
   .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
   .dot.green { background: #4ecca3; } .dot.yellow { background: #f0c040; } .dot.red { background: #e94560; }
   #main { display: flex; height: calc(100vh - 50px); }
@@ -152,6 +165,7 @@
   <h1>SOCI CITY</h1>
   <div class="info">
     <span id="clock">Day 1, 06:00</span>
+    <span id="weekend-badge">🏖️ Weekend</span>
     <span><span id="weather-icon"></span> <span id="weather">Sunny</span></span>
     <span id="agent-count"><span class="dot green"></span> 0 agents</span>
     <span id="conv-count">0 convos</span>
@@ -346,6 +360,9 @@ let agentIdxMap = {};
 // Pan & zoom state
 let panX = 0, panY = 0;
 let zoom = 1.0;
+// Movement tracking — previous location + road waypoints for smooth walking
+let agentPrevLocations = {};   // {id: locationId} last known location
+let agentWaypoints = {};       // {id: {x,y}} intermediate road point during transit
 let isDragging = false, dragStartX = 0, dragStartY = 0, dragPanStartX = 0, dragPanStartY = 0;
 // Rectangle-zoom state
 let rectZoomMode = false, isRectDragging = false, rectStart = null, rectEnd = null;
@@ -531,8 +548,21 @@ function animate() {
   for (const [id, target] of Object.entries(agentTargets)) {
     if (!agentPositions[id]) { agentPositions[id] = {...target}; continue; }
     const p = agentPositions[id];
-    p.x += (target.x - p.x) * 0.06;
-    p.y += (target.y - p.y) * 0.06;
+    const agent = agents[id];
+
+    // If there's a road waypoint, move toward it first
+    const wp = agentWaypoints[id];
+    if (wp) {
+      const d = Math.hypot(p.x - wp.x, p.y - wp.y);
+      if (d < 4) delete agentWaypoints[id];  // arrived at waypoint
+    }
+    const dest = agentWaypoints[id] || target;
+
+    // Moving agents travel slower so the walk is visible; others snap faster
+    const isMoving = agent && (agent.state === 'moving');
+    const lerpRate = isMoving ? 0.022 : 0.07;
+    p.x += (dest.x - p.x) * lerpRate;
+    p.y += (dest.y - p.y) * lerpRate;
   }
   draw();
   requestAnimationFrame(animate);
@@ -1638,6 +1668,30 @@ function computeAgentTarget(id, agent, globalIdx, byLoc, W, H) {
     agentTargets[id] = { x: pos.x * W + ox, y: pos.y * H + oy };
   }
   if (!agentPositions[id]) agentPositions[id] = {...agentTargets[id]};
+
+  // ── Road-waypoint routing for moving agents ──────────────────
+  // When location changes while moving, insert a road waypoint so
+  // the agent walks along the street grid instead of cutting straight.
+  const prevLoc = agentPrevLocations[id];
+  if (agent.state === 'moving' && prevLoc && prevLoc !== loc) {
+    const prevPos = allPos[prevLoc];
+    if (prevPos && agentPositions[id]) {
+      const midX = (prevPos.x + pos.x) / 2;
+      const midY = (prevPos.y + pos.y) / 2;
+      // Snap midpoint to nearest horizontal or vertical road
+      const hRoads = [0.28, 0.43, 0.58, 0.72];
+      const vRoads = [0.15, 0.30, 0.50, 0.70, 0.85];
+      const nearH = hRoads.reduce((b, r) => Math.abs(midY - r) < Math.abs(midY - b) ? r : b, hRoads[0]);
+      const nearV = vRoads.reduce((b, r) => Math.abs(midX - r) < Math.abs(midX - b) ? r : b, vRoads[0]);
+      const useH = Math.abs(midY - nearH) <= Math.abs(midX - nearV);
+      const jitter = (localIdx % 3 - 1) * 7;  // lane spread
+      agentWaypoints[id] = {
+        x: (useH ? midX : nearV) * W + (useH ? jitter : 0),
+        y: (useH ? nearH : midY) * H + (useH ? 0 : jitter),
+      };
+    }
+  }
+  agentPrevLocations[id] = loc;
 }
 
 // ============================================================
@@ -1651,149 +1705,242 @@ function drawPerson(id, agent, globalIdx, W, H) {
   const isSel = id === selectedAgentId;
   const isHov = id === hoveredAgent;
   const gender = agent.gender || 'unknown';
-  const scale = (isSel ? 1.0 : (isHov ? 0.9 : 0.72));
+  const scale = isSel ? 1.15 : (isHov ? 1.0 : 0.82);
   const isMoving = agent.state === 'moving';
   const isSleeping = agent.state === 'sleeping';
 
+  // Visual movement = interpolated position is far from target
   const tgt = agentTargets[id];
-  const moving = tgt && Math.hypot(ax-tgt.x, ay-tgt.y) > 3;
+  const movingVisually = tgt && Math.hypot(ax - tgt.x, ay - tgt.y) > 4;
+  const walkAnim = isMoving || movingVisually;
+  const walkPhase = animFrame * 0.28;
+  const bounce   = walkAnim ? Math.sin(walkPhase) * 2.5 : 0;
+  const legSwing = walkAnim ? Math.sin(walkPhase) * 12  : 0;
+  const armSwing = walkAnim ? Math.sin(walkPhase) * 16  : 0;
+
+  // Skin & hair
+  const skinTones = ['#f5dbb8','#d4a574','#c68642','#8d5524','#e8c4a0','#f0c090'];
+  const skin = skinTones[(globalIdx * 7 + 3) % skinTones.length];
+  const hairColor = dim(color, 0.45);
+  // Pants = darker variant of shirt, shoes = very dark
+  const pantsColor = dim(color, 0.55);
+  const shoeColor  = currentTimeOfDay === 'night' ? '#1a1a1a' : '#2a2010';
 
   ctx.save();
   ctx.translate(ax, ay);
   ctx.scale(scale, scale);
+  if (isSel) { ctx.shadowColor = color; ctx.shadowBlur = 14; }
 
-  if (isSel) { ctx.shadowColor=color; ctx.shadowBlur=12; }
+  // ── Ground shadow (elongated, ISO-angled) ─────────────────
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.beginPath(); ctx.ellipse(3, 13, 8, 3, 0.2, 0, 6.28); ctx.fill();
 
-  const walkAnim = isMoving || moving;
-  const walkPhase = animFrame * 0.28;
-  const bounce    = walkAnim ? Math.sin(walkPhase) * 2.8 : 0;
-  const armSwing  = walkAnim ? Math.sin(walkPhase) * 18 : 0;
-  const legSwing  = walkAnim ? Math.sin(walkPhase) * 13 : 0;
+  // ── SHOES ────────────────────────────────────────────────
+  const lKneeX = walkAnim ? -1.5 - legSwing * 0.18 : -1.5;
+  const rKneeX = walkAnim ?  1.5 + legSwing * 0.18 :  1.5;
+  const lFootX = walkAnim ? -2.5 - legSwing * 0.35 : -2.5;
+  const rFootX = walkAnim ?  2.5 + legSwing * 0.35 :  2.5;
+  const lFootY = 12 + bounce + legSwing;
+  const rFootY = 12 + bounce - legSwing;
+  // Shoe body
+  ctx.fillStyle = shoeColor;
+  ctx.beginPath(); ctx.roundRect(lFootX - 3, lFootY - 1, 5, 2.5, 1); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(rFootX - 1.5, rFootY - 1, 5, 2.5, 1); ctx.fill();
 
-  // Ground shadow (isometric ellipse)
-  ctx.fillStyle = 'rgba(0,0,0,0.18)';
-  ctx.beginPath(); ctx.ellipse(1, 10, 6, 2.5, 0.15, 0, 6.28); ctx.fill();
+  // ── LEGS (two-segment: thigh + shin with knee) ───────────
+  ctx.lineWidth = walkAnim ? 2.8 : 2.2;
+  ctx.lineCap = 'round';
+  // Left leg
+  ctx.strokeStyle = gender === 'female' ? dim(pantsColor, 0.85) : pantsColor;
+  ctx.beginPath(); ctx.moveTo(-1.5, 4 + bounce);
+  ctx.lineTo(lKneeX, 8 + bounce + legSwing * 0.5);
+  ctx.lineTo(lFootX, lFootY); ctx.stroke();
+  // Right leg
+  ctx.beginPath(); ctx.moveTo(1.5, 4 + bounce);
+  ctx.lineTo(rKneeX, 8 + bounce - legSwing * 0.5);
+  ctx.lineTo(rFootX, rFootY); ctx.stroke();
+  // Right leg 2.5D depth (slightly lighter)
+  ctx.strokeStyle = dim(gender === 'female' ? dim(pantsColor, 0.85) : pantsColor, 1.2);
+  ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(1.5 + 1.5, 4 + bounce);
+  ctx.lineTo(rKneeX + 1.5, 8 + bounce - legSwing * 0.5);
+  ctx.lineTo(rFootX + 1.5, rFootY); ctx.stroke();
 
-  // Determine skin tones for variety
-  const skinTones = ['#f0d0b0','#d4a574','#c68642','#8d5524','#e8c4a0','#f5d6b8'];
-  const skinIdx = (globalIdx * 7 + 3) % skinTones.length;
-  const skin = skinTones[skinIdx];
+  // ── TORSO (2.5D shirt with shoulder width + side face) ───
+  const tY = -10 + bounce;
+  const tw = gender === 'female' ? 7 : 8;  // half-width at shoulders
+  const bw = gender === 'female' ? 5 : 7;  // half-width at waist
 
-  // --- BODY (2.5D: front + slight right side visible) ---
-  // Torso — front face
-  if (gender==='female') {
-    ctx.fillStyle = color;
+  // Front face
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(-tw, tY);      ctx.lineTo(tw, tY);
+  ctx.lineTo(bw, tY + 13); ctx.lineTo(-bw, tY + 13);
+  ctx.closePath(); ctx.fill();
+
+  // Right side face (2.5D depth)
+  ctx.fillStyle = dim(color, 0.6);
+  ctx.beginPath();
+  ctx.moveTo(tw,     tY);
+  ctx.lineTo(tw + 4, tY - 2);
+  ctx.lineTo(bw + 4, tY + 11);
+  ctx.lineTo(bw,     tY + 13);
+  ctx.closePath(); ctx.fill();
+
+  // Top face (shoulder plane)
+  ctx.fillStyle = dim(color, 1.15 > 1 ? 1 : 1.15);
+  ctx.beginPath();
+  ctx.moveTo(-tw,     tY);
+  ctx.lineTo(-tw + 4, tY - 2);
+  ctx.lineTo(tw + 4,  tY - 2);
+  ctx.lineTo(tw,      tY);
+  ctx.closePath(); ctx.fill();
+
+  // Collar / neckline
+  ctx.fillStyle = dim(color, 0.75);
+  ctx.beginPath(); ctx.ellipse(0.5, tY + 1, 2.5, 1.5, 0, 0, 6.28); ctx.fill();
+
+  // Belt line
+  ctx.strokeStyle = dim(color, 0.4);
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(-bw, tY + 12); ctx.lineTo(bw, tY + 12); ctx.stroke();
+
+  // Female: skirt flare
+  if (gender === 'female') {
+    ctx.fillStyle = dim(color, 0.8);
     ctx.beginPath();
-    ctx.moveTo(-3, -8+bounce); ctx.lineTo(3, -8+bounce);
-    ctx.lineTo(5, 3+bounce); ctx.lineTo(-5, 3+bounce);
-    ctx.closePath(); ctx.fill();
-    // Torso side (2.5D)
-    ctx.fillStyle = dim(color, 0.7);
-    ctx.beginPath();
-    ctx.moveTo(3, -8+bounce); ctx.lineTo(5, -9+bounce);
-    ctx.lineTo(7, 2+bounce); ctx.lineTo(5, 3+bounce);
-    ctx.closePath(); ctx.fill();
-  } else {
-    // Male/NB — blocky torso
-    ctx.fillStyle = color;
-    ctx.fillRect(-3.5, -8+bounce, 7, 10);
-    // Torso side (2.5D)
-    ctx.fillStyle = dim(color, 0.65);
-    ctx.beginPath();
-    ctx.moveTo(3.5, -8+bounce); ctx.lineTo(5.5, -9.5+bounce);
-    ctx.lineTo(5.5, 0.5+bounce); ctx.lineTo(3.5, 2+bounce);
+    ctx.moveTo(-bw, tY + 12); ctx.lineTo(-bw - 2, tY + 16 + bounce);
+    ctx.lineTo(bw + 2, tY + 16 + bounce); ctx.lineTo(bw, tY + 12);
     ctx.closePath(); ctx.fill();
   }
 
-  // Legs (with perspective offset)
-  const legColor = gender==='female' ? skin : dim(color, 0.5);
-  ctx.strokeStyle = legColor;
-  ctx.lineWidth = walkAnim ? 2.5 : 1.8;
-  const lx1 = walkAnim ? -3 - legSwing * 0.25 : -3;
-  const lx2 = walkAnim ?  3 + legSwing * 0.25 :  3;
-  const ly  = walkAnim ? 11 : 8;
-  ctx.beginPath(); ctx.moveTo(-2, 3+bounce); ctx.lineTo(lx1, ly+bounce+legSwing); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo( 2, 3+bounce); ctx.lineTo(lx2, ly+bounce-legSwing); ctx.stroke();
+  // ── ARMS (two-segment with elbow when walking) ────────────
+  const shoulderY = tY + 2;
+  // Elbow positions
+  const lElbowX = walkAnim ? -tw - 3 + armSwing * 0.3 : -tw - 3;
+  const lElbowY = walkAnim ? shoulderY + 5 + armSwing * 0.4 : shoulderY + 5;
+  const rElbowX = walkAnim ?  tw + 3 - armSwing * 0.3 :  tw + 3;
+  const rElbowY = walkAnim ? shoulderY + 5 - armSwing * 0.4 : shoulderY + 5;
+  // Hand positions
+  const lHandX = walkAnim ? lElbowX - 2 + armSwing * 0.6 : lElbowX - 1;
+  const lHandY = walkAnim ? lElbowY + 4 + armSwing * 0.8 : lElbowY + 4;
+  const rHandX = walkAnim ? rElbowX + 2 - armSwing * 0.6 : rElbowX + 1;
+  const rHandY = walkAnim ? rElbowY + 4 - armSwing * 0.8 : rElbowY + 4;
 
-  // Feet
-  ctx.fillStyle = '#2a2a2a';
-  ctx.fillRect(lx1-2, ly-1+bounce+legSwing, 4, 2);
-  ctx.fillRect(lx2-1, ly-1+bounce-legSwing, 4, 2);
-
-  // Arms
-  ctx.strokeStyle = skin;
-  ctx.lineWidth = walkAnim ? 2.0 : 1.5;
-  const armX1 = walkAnim ? -9 : -7;
-  const armX2 = walkAnim ?  9 :  7;
-  const armY  = walkAnim ?  2 :  0;
-  ctx.beginPath(); ctx.moveTo(-3.5, -6+bounce); ctx.lineTo(armX1, armY+bounce+armSwing); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo( 3.5, -6+bounce); ctx.lineTo(armX2, armY+bounce-armSwing); ctx.stroke();
-
-  // Head (slightly offset for 2.5D)
+  ctx.strokeStyle = skin; ctx.lineWidth = walkAnim ? 2.0 : 1.6; ctx.lineCap = 'round';
+  // Left arm (upper arm + forearm)
+  ctx.beginPath(); ctx.moveTo(-tw + 1, shoulderY);
+  ctx.lineTo(lElbowX, lElbowY); ctx.lineTo(lHandX, lHandY); ctx.stroke();
+  // Right arm
+  ctx.beginPath(); ctx.moveTo(tw - 1, shoulderY);
+  ctx.lineTo(rElbowX, rElbowY); ctx.lineTo(rHandX, rHandY); ctx.stroke();
+  // Hands
   ctx.fillStyle = skin;
-  ctx.beginPath(); ctx.arc(0.5, -13+bounce, 5, 0, 6.28); ctx.fill();
-  // Head side shading
-  ctx.fillStyle = dim(skin, 0.85);
-  ctx.beginPath(); ctx.arc(2, -13+bounce, 4.5, -0.3, 1.2); ctx.fill();
+  ctx.beginPath(); ctx.arc(lHandX, lHandY, 1.5, 0, 6.28); ctx.fill();
+  ctx.beginPath(); ctx.arc(rHandX, rHandY, 1.5, 0, 6.28); ctx.fill();
 
-  // Hair
-  const hairColor = dim(color, 0.5);
+  // ── NECK ─────────────────────────────────────────────────
+  ctx.fillStyle = skin;
+  ctx.fillRect(-1.5, tY - 3.5, 3, 4);
+
+  // ── HEAD (2.5D — sphere-like with side shading) ───────────
+  const hx = 1, hy = tY - 10;   // head center (slightly right for 2.5D)
+  const hr = 6.5;
+  // Back-of-head / shading arc
+  ctx.fillStyle = dim(skin, 0.78);
+  ctx.beginPath(); ctx.arc(hx + 1.5, hy, hr - 0.5, 0, 6.28); ctx.fill();
+  // Main face
+  ctx.fillStyle = skin;
+  ctx.beginPath(); ctx.arc(hx, hy, hr, 0, 6.28); ctx.fill();
+  // Right cheek highlight (2.5D lit from upper-left)
+  ctx.fillStyle = `rgba(255,255,255,0.12)`;
+  ctx.beginPath(); ctx.arc(hx - 2, hy - 2, hr * 0.55, 0, 6.28); ctx.fill();
+  // Ear (right side, 2.5D)
+  ctx.fillStyle = dim(skin, 0.88);
+  ctx.beginPath(); ctx.ellipse(hx + hr - 0.5, hy + 1, 1.5, 2, 0, 0, 6.28); ctx.fill();
+
+  // ── HAIR ─────────────────────────────────────────────────
   ctx.fillStyle = hairColor;
-  if (gender==='female') {
-    ctx.beginPath(); ctx.ellipse(0.5, -15.5+bounce, 6, 3.5, 0, Math.PI, 0); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(-3, -11+bounce, 2, 5, 0.3, 0, 6.28); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(4, -11+bounce, 2, 5, -0.3, 0, 6.28); ctx.fill();
-  } else if (gender==='male') {
-    ctx.beginPath(); ctx.ellipse(0.5, -15.5+bounce, 5.5, 3, 0, Math.PI, 0); ctx.fill();
+  if (gender === 'female') {
+    // Long hair — top cap + side curtains
+    ctx.beginPath(); ctx.arc(hx, hy - 1, hr + 0.5, Math.PI * 1.1, Math.PI * 0.05); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(hx - hr + 1, hy + 3, 2.2, hr * 0.85, -0.2, 0, 6.28); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(hx + hr - 0.5, hy + 3, 1.8, hr * 0.7,  0.2, 0, 6.28); ctx.fill();
+  } else if (gender === 'male') {
+    // Short crop
+    ctx.beginPath(); ctx.arc(hx, hy - 1, hr + 0.5, Math.PI * 1.15, Math.PI * -0.1); ctx.fill();
+    ctx.fillRect(hx - hr - 0.5, hy - 1, 3, hr * 0.6);  // left side
   } else {
-    ctx.beginPath(); ctx.ellipse(0.5, -15.5+bounce, 6, 3.5, 0, Math.PI, 0); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(-3.5, -12+bounce, 1.5, 4, 0.2, 0, 6.28); ctx.fill();
+    // Medium / non-binary
+    ctx.beginPath(); ctx.arc(hx, hy - 1, hr + 0.5, Math.PI * 1.08, Math.PI * 0.0); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(hx - hr + 0.5, hy + 2, 2, hr * 0.65, -0.15, 0, 6.28); ctx.fill();
   }
 
-  // Eyes (tiny dots)
-  ctx.fillStyle = '#222';
-  ctx.fillRect(-1.5, -14+bounce, 1, 1);
-  ctx.fillRect(2, -14+bounce, 1, 1);
+  // ── FACE ─────────────────────────────────────────────────
+  // Eyes
+  ctx.fillStyle = '#1a1010';
+  ctx.beginPath(); ctx.arc(hx - 2.2, hy - 1, 1.1, 0, 6.28); ctx.fill();
+  ctx.beginPath(); ctx.arc(hx + 1.5, hy - 1, 1.1, 0, 6.28); ctx.fill();
+  // Eye shine
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.beginPath(); ctx.arc(hx - 1.8, hy - 1.5, 0.45, 0, 6.28); ctx.fill();
+  ctx.beginPath(); ctx.arc(hx + 1.9, hy - 1.5, 0.45, 0, 6.28); ctx.fill();
+  // Mouth (tiny arc)
+  const moodVal = agent.mood || 0;
+  ctx.strokeStyle = dim(skin, 0.55); ctx.lineWidth = 0.8;
+  ctx.beginPath(); ctx.arc(hx - 0.3, hy + 2.5, 1.8, 0.1, Math.PI - 0.1, moodVal < -0.2); ctx.stroke();
 
-  ctx.shadowColor='transparent'; ctx.shadowBlur=0;
+  ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
 
-  // State effects
-  if (agent.state==='in_conversation') {
-    ctx.fillStyle='rgba(240,192,64,0.85)';
-    ctx.beginPath(); ctx.ellipse(10, -17+bounce, 7, 5, 0, 0, 6.28); ctx.fill();
-    ctx.fillStyle='#1a1a2e'; ctx.font='bold 6px Segoe UI'; ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText('...', 10, -17+bounce);
+  // ── STATE EFFECTS ─────────────────────────────────────────
+  if (agent.state === 'in_conversation') {
+    ctx.fillStyle = 'rgba(240,192,64,0.9)';
+    ctx.beginPath(); ctx.roundRect(hr + 3, hy - hr - 6, 16, 11, 3); ctx.fill();
+    // speech tail
+    ctx.beginPath(); ctx.moveTo(hr + 3, hy - hr - 2); ctx.lineTo(hr - 1, hy); ctx.lineTo(hr + 7, hy - hr - 2); ctx.fill();
+    ctx.fillStyle = '#1a1a2e'; ctx.font = 'bold 6px Segoe UI';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('...', hr + 11, hy - hr);
   }
 
   if (isSleeping) {
-    const t=animFrame*0.04;
-    ctx.font='bold 7px Segoe UI'; ctx.textAlign='left';
-    for (let i=0;i<3;i++) {
-      ctx.globalAlpha=0.3+i*0.25; ctx.fillStyle='#8ab4f8';
-      ctx.fillText('z', 7+i*3, -18-i*5+Math.sin(t+i)*2);
+    const t = animFrame * 0.04;
+    ctx.font = 'bold 8px Segoe UI'; ctx.textAlign = 'left';
+    for (let i = 0; i < 3; i++) {
+      ctx.globalAlpha = 0.3 + i * 0.25; ctx.fillStyle = '#8ab4f8';
+      ctx.fillText('z', hr + 2 + i * 4, hy - hr - i * 6 + Math.sin(t + i) * 2);
     }
-    ctx.globalAlpha=1;
+    ctx.globalAlpha = 1;
   }
 
   if (agent.partner_id) {
-    drawHeart(0, -22+bounce+Math.sin(animFrame*0.04)*2, 3, 'rgba(233,30,144,0.7)');
+    drawHeart(1, hy - hr - 10 + Math.sin(animFrame * 0.04) * 2, 3.5, 'rgba(233,30,144,0.8)');
+  }
+
+  // Selected ring
+  if (isSel) {
+    ctx.strokeStyle = color; ctx.lineWidth = 1.5;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.arc(hx, hy, hr + 3, 0, 6.28); ctx.stroke();
+    ctx.setLineDash([]);
   }
 
   ctx.restore();
 
-  // Name label (smaller)
-  const firstName = (agent.name||id).split(' ')[0];
-  ctx.font=`${isSel?'bold ':''}8px Segoe UI`; ctx.textAlign='center'; ctx.textBaseline='top';
-  ctx.fillStyle='rgba(0,0,0,0.45)'; ctx.fillText(firstName, ax+1, ay+10*scale+1);
-  ctx.fillStyle=isSel?'#fff':'#c0c0d0'; ctx.fillText(firstName, ax, ay+10*scale);
+  // ── Name label ───────────────────────────────────────────
+  const firstName = (agent.name || id).split(' ')[0];
+  ctx.font = `${isSel ? 'bold ' : ''}8px Segoe UI`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillText(firstName, ax + 1, ay + 14 * scale + 1);
+  ctx.fillStyle = isSel ? '#fff' : '#c8c8d8'; ctx.fillText(firstName, ax, ay + 14 * scale);
 
-  // Mood bar (smaller)
-  const mood=agent.mood||0;
-  const mw=14, mx=ax-mw/2, my=ay+10*scale+11;
-  ctx.fillStyle='rgba(15,52,96,0.4)'; ctx.fillRect(mx,my,mw,2);
-  const mf=(mood+1)/2;
-  ctx.fillStyle=mf>0.6?'#4ecca3':(mf>0.3?'#f0c040':'#e94560');
-  ctx.fillRect(mx,my,mw*mf,2);
+  // ── Mood bar ─────────────────────────────────────────────
+  const moodV = agent.mood || 0;
+  const mw = 16, mxb = ax - mw / 2, myb = ay + 14 * scale + 11;
+  ctx.fillStyle = 'rgba(15,52,96,0.45)'; ctx.fillRect(mxb, myb, mw, 2.5);
+  const mf = (moodV + 1) / 2;
+  ctx.fillStyle = mf > 0.6 ? '#4ecca3' : (mf > 0.3 ? '#f0c040' : '#e94560');
+  ctx.fillRect(mxb, myb, mw * mf, 2.5);
 }
 
 // ============================================================
@@ -2078,7 +2225,12 @@ function processStateData(data) {
   currentTimeOfDay = clock.time_of_day || 'morning';
   currentWeather = (data.weather || 'sunny').toLowerCase();
 
-  document.getElementById('clock').textContent = `Day ${clock.day||1}, ${clock.time_str||'??:??'} (${currentTimeOfDay})`;
+  const dayNum = clock.day || 1;
+  const dayOfWeek = ((dayNum - 1) % 7) + 1; // 1=Mon … 7=Sun
+  const isWeekend = dayOfWeek >= 6;
+  document.getElementById('clock').textContent = `Day ${dayNum}, ${clock.time_str||'??:??'} (${currentTimeOfDay})`;
+  const badge = document.getElementById('weekend-badge');
+  badge.style.display = isWeekend ? 'flex' : 'none';
   document.getElementById('weather-icon').textContent = WEATHER_ICONS[currentWeather] || '\u2600\uFE0F';
   document.getElementById('weather').textContent = currentWeather;
   document.getElementById('agent-count').innerHTML = `<span class="dot green"></span> ${Object.keys(data.agents||{}).length} agents`;
