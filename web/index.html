@@ -257,6 +257,23 @@ const ROADS = [
   { x1: 0.70, y1: 0.58, x2: 0.70, y2: 0.72, width: 6 },
 ];
 
+// Slot grid for procedurally generated houses — 52 positions covering the whole map
+const GEN_HOUSE_SLOTS = (function() {
+  const s = [];
+  for (let i = 0; i < 10; i++) s.push({x: 0.04 + i * 0.092, y: 0.06 + (i % 3) * 0.025});
+  for (let i = 0; i < 7;  i++) s.push({x: 0.02, y: 0.19 + i * 0.10});
+  for (let i = 0; i < 7;  i++) s.push({x: 0.97, y: 0.19 + i * 0.10});
+  for (let i = 0; i < 10; i++) s.push({x: 0.04 + i * 0.092, y: 0.88 + (i % 3) * 0.025});
+  const interior = [
+    [0.13,0.14],[0.28,0.14],[0.44,0.13],[0.58,0.14],[0.73,0.13],[0.87,0.14],
+    [0.13,0.80],[0.28,0.80],[0.44,0.81],[0.58,0.80],[0.73,0.81],[0.87,0.80],
+    [0.93,0.22],[0.93,0.45],[0.93,0.57],[0.93,0.74],
+    [0.03,0.22],[0.03,0.45],[0.03,0.57],[0.03,0.74],
+  ];
+  for (const [x,y] of interior) s.push({x,y});
+  return s; // 52 slots
+})();
+
 // Building positions — spread across larger grid
 const LOCATION_POSITIONS = {
   // === RESIDENTIAL — Row 1: North houses ===
@@ -299,6 +316,14 @@ const LOCATION_POSITIONS = {
   church:       { x: 0.08, y: 0.78, type: 'church', label: "St. Mary's" },
   town_square:  { x: 0.50, y: 0.50, type: 'square', label: 'Town Square' },
   sports_field: { x: 0.22, y: 0.78, type: 'sports', label: 'Sports Field' },
+
+  // === NEW BUILDINGS (corner apartments + east-side commercial) ===
+  apt_northeast: { x: 0.93, y: 0.10, type: 'apartment', label: 'Eastview Terrace' },
+  apt_northwest:  { x: 0.04, y: 0.10, type: 'apartment', label: 'Hilltop Gardens' },
+  apt_southeast:  { x: 0.93, y: 0.86, type: 'apartment', label: 'Riverside Commons' },
+  apt_southwest:  { x: 0.04, y: 0.86, type: 'apartment', label: 'Orchard Hill Flats' },
+  diner:     { x: 0.92, y: 0.36, type: 'shop', label: 'Blue Moon Diner' },
+  pharmacy:  { x: 0.35, y: 0.78, type: 'shop', label: 'SociMed Pharmacy' },
 
   // === STREETS ===
   street_north: { x: 0.50, y: 0.28, type: 'street', label: 'N. Main St' },
@@ -657,22 +682,33 @@ function draw() {
 let _genPosCache = {};
 function getEffectivePositions() {
   const result = {...LOCATION_POSITIONS};
-  // Add any locations from server data that we don't have positions for
   for (const locId of Object.keys(locations)) {
     if (!result[locId]) {
       if (!_genPosCache[locId]) {
-        // Hash-based position in residential rows
         let h = 0;
         for (let i = 0; i < locId.length; i++) h = ((h << 5) - h + locId.charCodeAt(i)) | 0;
-        const col = ((h >>> 0) % 12) / 12;
-        const row = ((h >>> 4) % 3);
-        const rowY = [0.82, 0.86, 0.90][row];
-        _genPosCache[locId] = {
-          x: 0.06 + col * 0.88,
-          y: rowY + ((h >>> 8) % 3) * 0.01,
-          type: 'house',
-          label: (locations[locId]?.name || locId).slice(0, 14),
-        };
+        const genMatch = locId.match(/house_gen_(\d+)/);
+        if (genMatch) {
+          // Deterministic slot assignment: house_gen_01 → slot 0, house_gen_02 → slot 1, …
+          const slotIdx = (parseInt(genMatch[1]) - 1) % GEN_HOUSE_SLOTS.length;
+          const sl = GEN_HOUSE_SLOTS[slotIdx];
+          const jx = ((h >>> 8) & 0xf) * 0.004 - 0.028;
+          const jy = ((h >>> 12) & 0xf) * 0.004 - 0.028;
+          _genPosCache[locId] = {
+            x: Math.max(0.01, Math.min(0.99, sl.x + jx)),
+            y: Math.max(0.01, Math.min(0.99, sl.y + jy)),
+            type: 'house',
+            label: (locations[locId]?.name || locId).slice(0, 14),
+          };
+        } else {
+          // Unknown location: spread evenly across the whole map via hash
+          _genPosCache[locId] = {
+            x: 0.05 + ((h >>> 0) % 18) / 18 * 0.90,
+            y: 0.05 + ((h >>> 4) % 16) / 16 * 0.90,
+            type: 'house',
+            label: (locations[locId]?.name || locId).slice(0, 14),
+          };
+        }
       }
       result[locId] = _genPosCache[locId];
     }

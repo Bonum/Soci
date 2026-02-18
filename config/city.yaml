@@ -253,3 +253,51 @@ locations:
     description: A tree-lined avenue on the west side, near the school and sports fields.
     capacity: 40
     connected_to: [house_kai, school, church, sports_field, street_north, street_south]
+
+  # ===================
+  # CORNER APARTMENT BLOCKS --- expand residential to all four quadrants
+  # ===================
+  - id: apt_northeast
+    name: "Eastview Terrace"
+    zone: residential
+    description: A modern apartment block in the northeast corner, popular with hospital staff and factory workers.
+    capacity: 12
+    connected_to: [street_east, hospital, office_tower, diner]
+
+  - id: apt_northwest
+    name: "Hilltop Gardens"
+    zone: residential
+    description: A quiet residential complex on the northwest hilltop, overlooking the school and church.
+    capacity: 12
+    connected_to: [street_west, school, church]
+
+  - id: apt_southeast
+    name: "Riverside Commons"
+    zone: residential
+    description: A lively apartment complex near the sports field and factory district, popular with young workers.
+    capacity: 12
+    connected_to: [street_south, factory, sports_field, library]
+
+  - id: apt_southwest
+    name: "Orchard Hill Flats"
+    zone: residential
+    description: A peaceful residential block on the southwest edge of town, close to the library and park.
+    capacity: 12
+    connected_to: [street_south, library, sports_field]
+
+  # ===================
+  # NEW COMMERCIAL --- east side balance
+  # ===================
+  - id: diner
+    name: "Blue Moon Diner"
+    zone: commercial
+    description: A classic diner open early to late. Strong coffee, big plates, and regulars who treat it like a second home.
+    capacity: 12
+    connected_to: [street_east, hospital, factory, apt_northeast]
+
+  - id: pharmacy
+    name: "SociMed Pharmacy"
+    zone: commercial
+    description: A neighborhood pharmacy where the pharmacist knows everyone by name and stocks good candy.
+    capacity: 8
+    connected_to: [street_south, library, apartment_block_2, apt_southwest]

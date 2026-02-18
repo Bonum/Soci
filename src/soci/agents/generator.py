@@ -112,7 +112,7 @@ QUIRKS_POOL = [
 
 # Occupation categories for schedule variation
 EVENING_SHIFT_JOBS = {"bartender", "chef", "waiter", "barista"}
-STUDENT_OCCUPATIONS = {"college student"}
+STUDENT_OCCUPATIONS = {"college student", "elementary student", "middle school student", "high school student"}
 RETIRED_OCCUPATIONS = {"retired"}
 PHYSICAL_JOBS = {"mechanic", "electrician", "plumber", "construction worker", "personal trainer"}
 
@@ -150,6 +150,12 @@ def _pick_name(gender: str, used_names: set[str]) -> str:
 
 def _pick_occupation(age: int) -> tuple[str, str | None]:
     """Pick occupation based on age. Returns (title, work_location_id)."""
+    if age <= 11:
+        return "elementary student", "school"
+    if age <= 14:
+        return "middle school student", "school"
+    if age <= 17:
+        return "high school student", "school"
     if age >= 65 and random.random() < 0.7:
         return "retired", None
     if 18 <= age <= 22 and random.random() < 0.6:
@@ -239,7 +245,13 @@ def _generate_background(name: str, age: int, occupation: str, traits: dict[str,
     first = name.split()[0]
 
     # Age-based life stage
-    if age <= 22:
+    if age <= 11:
+        stage = f"{first} is {age} years old and attends Soci Elementary School"
+    elif age <= 14:
+        stage = f"{first} is {age} years old and is in middle school"
+    elif age <= 17:
+        stage = f"{first} is {age} years old and is a high schooler at Soci School"
+    elif age <= 22:
         stage = f"{first} is a {age}-year-old finding their way in life"
     elif age <= 35:
         stage = f"{first} is a {age}-year-old building their career"
@@ -251,7 +263,11 @@ def _generate_background(name: str, age: int, occupation: str, traits: dict[str,
         stage = f"{first} is a {age}-year-old enjoying their golden years"
 
     # Occupation context
-    if occupation == "retired":
+    if occupation == "elementary student":
+        job_part = "They love recess, have strong opinions about their favourite subjects, and make friends easily."
+    elif occupation in ("middle school student", "high school student"):
+        job_part = "They're navigating homework, friendships, and figuring out who they are."
+    elif occupation == "retired":
         job_part = "After decades of work, they now fill their days with hobbies and neighborhood life."
     elif occupation == "college student":
         subjects = random.choice([
@@ -328,7 +344,7 @@ def generate_personas(count: int, city: City) -> list[Persona]:
     for i in range(count):
         gender = _pick_gender()
         name = _pick_name(gender, used_names)
-        age = random.randint(18, 75)
+        age = random.randint(8, 17) if random.random() < 0.20 else random.randint(18, 75)
         occupation, work_location_id = _pick_occupation(age)
         traits = _generate_traits()
         values = _pick_values(traits)
