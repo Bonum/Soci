@@ -164,6 +164,11 @@
       <button class="ctrl-btn" id="btn-10x" onclick="setSpeed(0.1)" title="10x speed">10x</button>
       <button class="ctrl-btn" id="btn-50x" onclick="setSpeed(0.02)" title="50x speed">50x</button>
       <span class="speed-label" id="speed-label">1x</span>
+      <span style="color:#1a3a6e;margin:0 2px">│</span>
+      <button class="ctrl-btn" id="btn-rect-zoom" onclick="toggleRectZoom()" title="Draw a rectangle to zoom into that area (Shift+drag)">⬚</button>
+      <button class="ctrl-btn" onclick="zoomBy(1.3)" title="Zoom In (scroll up)">＋</button>
+      <button class="ctrl-btn" onclick="zoomBy(1/1.3)" title="Zoom Out (scroll down)">－</button>
+      <button class="ctrl-btn" onclick="zoomFit()" title="Fit entire city on screen">Fit</button>
     </span>
     <span id="api-calls">API: 0</span>
     <span id="cost">$0.00</span>
@@ -209,9 +214,11 @@ const POLL_INTERVAL = 2000;
 const HORIZON = 0.14;
 
 // --- CITY LAYOUT ---
-// World dimensions (normalized) — larger than viewport, scrollable
-const WORLD_W = 1.6;
-const WORLD_H = 1.4;
+// World dimensions — 1:1 with canvas (zoom handled separately)
+const WORLD_W = 1.0;
+const WORLD_H = 1.0;
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 10.0;
 
 // Road network
 const ROADS = [
@@ -336,9 +343,13 @@ let stars = [];
 let activeTab = 'agents';
 let agentIdxMap = {};
 
-// Pan state
+// Pan & zoom state
 let panX = 0, panY = 0;
+let zoom = 1.0;
 let isDragging = false, dragStartX = 0, dragStartY = 0, dragPanStartX = 0, dragPanStartY = 0;
+// Rectangle-zoom state
+let rectZoomMode = false, isRectDragging = false, rectStart = null, rectEnd = null;
+let _blockNextClick = false;
 
 // Tree / decorations cache
 let trees = [];
@@ -401,6 +412,7 @@ function initCanvas() {
   canvas.addEventListener('mousemove', onCanvasDrag);
   canvas.addEventListener('mouseup', onCanvasDragEnd);
   canvas.addEventListener('mouseleave', onCanvasDragEnd);
+  canvas.addEventListener('wheel', onCanvasWheel, {passive: false});
   initParticles();
   requestAnimationFrame(animate);
 }
@@ -410,11 +422,11 @@ function resizeCanvas() {
   canvas.height = c.clientHeight;
 }
 
-// World size in pixels (larger than canvas)
-function worldW() { return canvas.width * WORLD_W; }
-function worldH() { return canvas.height * WORLD_H; }
-function maxPanX() { return Math.max(0, worldW() - canvas.width); }
-function maxPanY() { return Math.max(0, worldH() - canvas.height); }
+// World size — base is canvas size; zoom applied via ctx.scale
+function worldW() { return canvas.width; }
+function worldH() { return canvas.height; }
+function maxPanX() { return Math.max(0, canvas.width * (1 - 1 / zoom)); }
+function maxPanY() { return Math.max(0, canvas.height * (1 - 1 / zoom)); }
 
 function onPanSlider() {
   const sx = document.getElementById('pan-x');
@@ -430,19 +442,89 @@ function syncSliders() {
 }
 function onCanvasDragStart(e) {
   if (e.button !== 0) return;
+  if (rectZoomMode) {
+    const r = canvas.getBoundingClientRect();
+    rectStart = {x: e.clientX - r.left, y: e.clientY - r.top};
+    rectEnd = {...rectStart};
+    isRectDragging = true;
+    return;
+  }
   isDragging = true;
   dragStartX = e.clientX; dragStartY = e.clientY;
   dragPanStartX = panX; dragPanStartY = panY;
 }
 function onCanvasDrag(e) {
+  if (isRectDragging) {
+    const r = canvas.getBoundingClientRect();
+    rectEnd = {x: e.clientX - r.left, y: e.clientY - r.top};
+    return;
+  }
   if (!isDragging) return;
   const dx = dragStartX - e.clientX, dy = dragStartY - e.clientY;
   if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
-  panX = Math.max(0, Math.min(maxPanX(), dragPanStartX + dx));
-  panY = Math.max(0, Math.min(maxPanY(), dragPanStartY + dy));
+  panX = Math.max(0, Math.min(maxPanX(), dragPanStartX + dx / zoom));
+  panY = Math.max(0, Math.min(maxPanY(), dragPanStartY + dy / zoom));
   syncSliders();
 }
-function onCanvasDragEnd() { isDragging = false; }
+function onCanvasDragEnd() {
+  if (isRectDragging) {
+    isRectDragging = false;
+    if (rectStart && rectEnd) {
+      const rw = Math.abs(rectEnd.x - rectStart.x), rh = Math.abs(rectEnd.y - rectStart.y);
+      if (rw > 10 && rh > 10) { applyRectZoom(); _blockNextClick = true; }
+    }
+    rectStart = null; rectEnd = null;
+    rectZoomMode = false;
+    const btn = document.getElementById('btn-rect-zoom');
+    if (btn) btn.classList.remove('active');
+    canvas.style.cursor = 'default';
+    return;
+  }
+  isDragging = false;
+}
+
+// ============================================================
+// ZOOM FUNCTIONS
+// ============================================================
+function onCanvasWheel(e) {
+  e.preventDefault();
+  const r = canvas.getBoundingClientRect();
+  const sx = e.clientX - r.left, sy = e.clientY - r.top;
+  zoomAround(e.deltaY < 0 ? 1.15 : 1 / 1.15, sx, sy);
+}
+function zoomAround(factor, sx, sy) {
+  const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom * factor));
+  if (newZoom === zoom) return;
+  // World point under screen pixel (sx, sy): wx = sx/zoom + panX
+  const wx = sx / zoom + panX, wy = sy / zoom + panY;
+  zoom = newZoom;
+  panX = Math.max(0, Math.min(maxPanX(), wx - sx / zoom));
+  panY = Math.max(0, Math.min(maxPanY(), wy - sy / zoom));
+  syncSliders();
+}
+function zoomBy(factor) { zoomAround(factor, canvas.width / 2, canvas.height / 2); }
+function zoomFit() { zoom = 1.0; panX = 0; panY = 0; syncSliders(); }
+function applyRectZoom() {
+  if (!rectStart || !rectEnd) return;
+  const x1 = Math.min(rectStart.x, rectEnd.x), y1 = Math.min(rectStart.y, rectEnd.y);
+  const x2 = Math.max(rectStart.x, rectEnd.x), y2 = Math.max(rectStart.y, rectEnd.y);
+  const rw = x2 - x1, rh = y2 - y1;
+  if (rw < 10 || rh < 10) return;
+  // Convert screen rect corners to world coords
+  const wx1 = x1 / zoom + panX, wy1 = y1 / zoom + panY;
+  const wx2 = x2 / zoom + panX, wy2 = y2 / zoom + panY;
+  const newZoom = Math.min(MAX_ZOOM, Math.min(canvas.width / (wx2 - wx1), canvas.height / (wy2 - wy1)));
+  zoom = Math.max(MIN_ZOOM, newZoom);
+  panX = Math.max(0, Math.min(maxPanX(), wx1));
+  panY = Math.max(0, Math.min(maxPanY(), wy1));
+  syncSliders();
+}
+function toggleRectZoom() {
+  rectZoomMode = !rectZoomMode;
+  const btn = document.getElementById('btn-rect-zoom');
+  if (btn) btn.classList.toggle('active', rectZoomMode);
+  canvas.style.cursor = rectZoomMode ? 'crosshair' : 'default';
+}
 
 function animate() {
   animFrame++;
@@ -464,13 +546,20 @@ function draw() {
   const W = worldW(), H = worldH();
   const cW = canvas.width, cH = canvas.height;
 
-  // Sky and weather drawn without pan (full canvas)
+  // Background fill (covers any gap between sky and zoomed ground)
+  const skyCfg = SKY[currentTimeOfDay] || SKY.morning;
+  ctx.fillStyle = skyCfg.bot;
+  ctx.fillRect(0, 0, cW, cH);
+
+  // Sky drawn at canvas size (no zoom transform — always fills background)
   drawSky(cW, cH);
 
   ctx.save();
+  ctx.scale(zoom, zoom);
   ctx.translate(-panX, -panY);
 
   drawGround(W, H);
+  drawZones(W, H);
   drawWeather(W, H);
   drawRoads(W, H);
   drawSidewalks(W, H);
@@ -508,6 +597,29 @@ function draw() {
   }
 
   ctx.restore();
+
+  // Rect-zoom selection overlay (screen coords, after restore)
+  if (isRectDragging && rectStart && rectEnd) {
+    const x1 = Math.min(rectStart.x, rectEnd.x), y1 = Math.min(rectStart.y, rectEnd.y);
+    const x2 = Math.max(rectStart.x, rectEnd.x), y2 = Math.max(rectStart.y, rectEnd.y);
+    ctx.fillStyle = 'rgba(78,204,163,0.08)';
+    ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+    ctx.strokeStyle = 'rgba(78,204,163,0.9)';
+    ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
+    ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+    ctx.setLineDash([]);
+  }
+
+  // Zoom level indicator
+  if (zoom !== 1.0 || rectZoomMode) {
+    ctx.font = 'bold 10px Segoe UI'; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+    const label = rectZoomMode ? '⬚ draw rect to zoom' : `${zoom.toFixed(1)}x`;
+    const tw = ctx.measureText(label).width + 14;
+    ctx.fillStyle = 'rgba(15,52,96,0.75)';
+    ctx.fillRect(cW - tw - 4, cH - 22, tw + 4, 18);
+    ctx.fillStyle = rectZoomMode ? '#f0c040' : '#4ecca3';
+    ctx.fillText(label, cW - 6, cH - 6);
+  }
 }
 
 // Auto-compute positions for generated houses not in LOCATION_POSITIONS
@@ -658,37 +770,100 @@ function drawMoon(x, y, r) {
 function drawGround(W, H) {
   const hLine = (canvas.height * HORIZON);
   const gt = GROUND_TINT[currentTimeOfDay] || GROUND_TINT.morning;
-  const grad = ctx.createLinearGradient(0, hLine, 0, H);
   const bc = hexToRgb(gt.base);
-  grad.addColorStop(0, `rgb(${bc.r+20},${bc.g+30},${bc.b+10})`);
-  grad.addColorStop(1, `rgb(${Math.max(0,bc.r-15)},${Math.max(0,bc.g-15)},${Math.max(0,bc.b-10)})`);
+  const isDark = currentTimeOfDay === 'night' || currentTimeOfDay === 'evening';
+  const isDawn = currentTimeOfDay === 'dawn';
+
+  // Base gradient — three-band ground for depth
+  const grad = ctx.createLinearGradient(0, hLine, 0, H);
+  grad.addColorStop(0,   `rgb(${bc.r+28},${bc.g+40},${bc.b+12})`);
+  grad.addColorStop(0.4, `rgb(${bc.r+10},${bc.g+20},${bc.b+5})`);
+  grad.addColorStop(1,   `rgb(${Math.max(0,bc.r-20)},${Math.max(0,bc.g-20)},${Math.max(0,bc.b-14)})`);
   ctx.fillStyle = grad;
   ctx.fillRect(0, hLine, W, H - hLine);
 
+  // Horizontal band of slightly different shade — mid-ground variation
+  if (!isDark) {
+    const bandY = hLine + (H - hLine) * 0.5;
+    const bandGrad = ctx.createLinearGradient(0, bandY - 12, 0, bandY + 12);
+    bandGrad.addColorStop(0, 'rgba(0,0,0,0)');
+    bandGrad.addColorStop(0.5, isDawn ? 'rgba(180,120,60,0.06)' : 'rgba(80,130,40,0.06)');
+    bandGrad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = bandGrad;
+    ctx.fillRect(0, bandY - 12, W, 24);
+  }
+
+  // Rain/storm overlay
   if (currentWeather === 'rainy' || currentWeather === 'stormy') {
     ctx.fillStyle = `rgba(40, 50, 70, ${currentWeather === 'stormy' ? 0.35 : 0.2})`;
     ctx.fillRect(0, hLine, W, H - hLine);
   }
 
-  // Grass texture
-  ctx.fillStyle = `rgba(${60+bc.r*0.3},${90+bc.g*0.3},${40+bc.b*0.2}, 0.12)`;
-  for (let i = 0; i < 100; i++) {
-    const gx = (i*37+13)%W;
-    const gy = hLine + 10 + ((i*53+7)%(H-hLine-15));
+  // Scattered grass tufts for texture
+  ctx.fillStyle = `rgba(${60+bc.r*0.3},${90+bc.g*0.3},${40+bc.b*0.2}, 0.14)`;
+  for (let i = 0; i < 120; i++) {
+    const gx = (i * 37 + 13) % W;
+    const gy = hLine + 10 + ((i * 53 + 7) % (H - hLine - 15));
     ctx.fillRect(gx, gy, 2, 3);
   }
 
-  const horizGrad = ctx.createLinearGradient(0, hLine-4, 0, hLine+6);
+  // Horizon blend
+  const horizGrad = ctx.createLinearGradient(0, hLine - 4, 0, hLine + 8);
   const s = SKY[currentTimeOfDay] || SKY.morning;
   horizGrad.addColorStop(0, s.bot);
   horizGrad.addColorStop(1, gt.base);
   ctx.fillStyle = horizGrad;
-  ctx.fillRect(0, hLine-4, W, 10);
+  ctx.fillRect(0, hLine - 4, W, 12);
 }
 
 function hexToRgb(hex) {
   const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
   return {r,g,b};
+}
+
+// ============================================================
+// ZONE COLORS — colored neighborhood tints
+// ============================================================
+function drawZones(W, H) {
+  const isDark = currentTimeOfDay === 'night' || currentTimeOfDay === 'evening';
+  const isDawn = currentTimeOfDay === 'dawn';
+
+  const zones = [
+    // Park — bright grass green
+    { cx: 0.50, cy: 0.19, rx: 0.11, ry: 0.055, c: isDark ? '#1a4a18' : (isDawn ? '#4a7a30' : '#7ecf50'), a: isDark ? 0.22 : 0.35 },
+    // Sports field — turf green
+    { cx: 0.22, cy: 0.78, rx: 0.07, ry: 0.055, c: isDark ? '#1a3818' : '#5ab838', a: isDark ? 0.20 : 0.30 },
+    // Town square — warm cobblestone gold
+    { cx: 0.50, cy: 0.50, rx: 0.07, ry: 0.045, c: isDark ? '#3a3010' : '#e8c86a', a: isDark ? 0.18 : 0.32 },
+    // Commercial row — warm terracotta orange
+    { cx: 0.48, cy: 0.42, rx: 0.32, ry: 0.075, c: isDark ? '#2a1808' : '#e8b880', a: isDark ? 0.15 : 0.20 },
+    // North residential — soft warm cream
+    { cx: 0.48, cy: 0.20, rx: 0.44, ry: 0.060, c: isDark ? '#28201a' : '#eedcb0', a: isDark ? 0.13 : 0.22 },
+    // South residential — light sandy beige
+    { cx: 0.48, cy: 0.66, rx: 0.44, ry: 0.065, c: isDark ? '#28201a' : '#e8d8a0', a: isDark ? 0.13 : 0.22 },
+    // Office / business district — cool steel blue
+    { cx: 0.66, cy: 0.34, rx: 0.22, ry: 0.075, c: isDark ? '#182030' : '#b0cce8', a: isDark ? 0.18 : 0.24 },
+    // Industrial — brownish rust
+    { cx: 0.91, cy: 0.63, rx: 0.07, ry: 0.08, c: isDark ? '#201408' : '#c89860', a: isDark ? 0.20 : 0.28 },
+    // Hospital — clean pale cyan
+    { cx: 0.91, cy: 0.50, rx: 0.07, ry: 0.055, c: isDark ? '#182828' : '#b8e8e0', a: isDark ? 0.18 : 0.26 },
+    // School — warm learning yellow
+    { cx: 0.08, cy: 0.50, rx: 0.07, ry: 0.055, c: isDark ? '#28200a' : '#f0e890', a: isDark ? 0.16 : 0.26 },
+    // Church garden — soft lavender-green
+    { cx: 0.08, cy: 0.78, rx: 0.06, ry: 0.045, c: isDark ? '#1a2030' : '#d0c8e8', a: isDark ? 0.18 : 0.28 },
+  ];
+
+  for (const z of zones) {
+    const grd = ctx.createRadialGradient(z.cx*W, z.cy*H, 0, z.cx*W, z.cy*H, Math.max(z.rx*W, z.ry*H));
+    grd.addColorStop(0, z.c);
+    grd.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.globalAlpha = z.a;
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.ellipse(z.cx*W, z.cy*H, z.rx*W, z.ry*H, 0, 0, 6.28);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1.0;
 }
 
 // ============================================================
@@ -1489,9 +1664,11 @@ function drawPerson(id, agent, globalIdx, W, H) {
 
   if (isSel) { ctx.shadowColor=color; ctx.shadowBlur=12; }
 
-  const bounce = (isMoving||moving) ? Math.sin(animFrame*0.18)*1.5 : 0;
-  const armSwing = (isMoving||moving) ? Math.sin(animFrame*0.18)*6 : 0;
-  const legSwing = (isMoving||moving) ? Math.sin(animFrame*0.18)*4 : 0;
+  const walkAnim = isMoving || moving;
+  const walkPhase = animFrame * 0.28;
+  const bounce    = walkAnim ? Math.sin(walkPhase) * 2.8 : 0;
+  const armSwing  = walkAnim ? Math.sin(walkPhase) * 18 : 0;
+  const legSwing  = walkAnim ? Math.sin(walkPhase) * 13 : 0;
 
   // Ground shadow (isometric ellipse)
   ctx.fillStyle = 'rgba(0,0,0,0.18)';
@@ -1529,20 +1706,28 @@ function drawPerson(id, agent, globalIdx, W, H) {
   }
 
   // Legs (with perspective offset)
-  ctx.strokeStyle = gender==='female' ? skin : dim(color, 0.5);
-  ctx.lineWidth = 1.8;
-  ctx.beginPath(); ctx.moveTo(-2, 3+bounce); ctx.lineTo(-3, 8+bounce+legSwing); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(2, 3+bounce); ctx.lineTo(3, 8+bounce-legSwing); ctx.stroke();
+  const legColor = gender==='female' ? skin : dim(color, 0.5);
+  ctx.strokeStyle = legColor;
+  ctx.lineWidth = walkAnim ? 2.5 : 1.8;
+  const lx1 = walkAnim ? -3 - legSwing * 0.25 : -3;
+  const lx2 = walkAnim ?  3 + legSwing * 0.25 :  3;
+  const ly  = walkAnim ? 11 : 8;
+  ctx.beginPath(); ctx.moveTo(-2, 3+bounce); ctx.lineTo(lx1, ly+bounce+legSwing); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo( 2, 3+bounce); ctx.lineTo(lx2, ly+bounce-legSwing); ctx.stroke();
 
   // Feet
   ctx.fillStyle = '#2a2a2a';
-  ctx.fillRect(-4.5, 7+bounce+legSwing, 3, 1.5);
-  ctx.fillRect(1.5, 7+bounce-legSwing, 3, 1.5);
+  ctx.fillRect(lx1-2, ly-1+bounce+legSwing, 4, 2);
+  ctx.fillRect(lx2-1, ly-1+bounce-legSwing, 4, 2);
 
   // Arms
-  ctx.strokeStyle = skin; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(-3.5, -6+bounce); ctx.lineTo(-7, 0+bounce+armSwing); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(3.5, -6+bounce); ctx.lineTo(7, 0+bounce-armSwing); ctx.stroke();
+  ctx.strokeStyle = skin;
+  ctx.lineWidth = walkAnim ? 2.0 : 1.5;
+  const armX1 = walkAnim ? -9 : -7;
+  const armX2 = walkAnim ?  9 :  7;
+  const armY  = walkAnim ?  2 :  0;
+  ctx.beginPath(); ctx.moveTo(-3.5, -6+bounce); ctx.lineTo(armX1, armY+bounce+armSwing); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo( 3.5, -6+bounce); ctx.lineTo(armX2, armY+bounce-armSwing); ctx.stroke();
 
   // Head (slightly offset for 2.5D)
   ctx.fillStyle = skin;
@@ -1616,8 +1801,9 @@ function drawPerson(id, agent, globalIdx, W, H) {
 // ============================================================
 function onCanvasClick(e) {
   if (isDragging) return;
+  if (_blockNextClick) { _blockNextClick = false; return; }
   const rect=canvas.getBoundingClientRect();
-  const mx=e.clientX-rect.left+panX, my=e.clientY-rect.top+panY;
+  const mx=(e.clientX-rect.left)/zoom+panX, my=(e.clientY-rect.top)/zoom+panY;
   let clicked=null, minD=24;
   for (const [id,pos] of Object.entries(agentPositions)) {
     const d=Math.hypot(mx-pos.x,my-pos.y);
@@ -1635,11 +1821,11 @@ function onCanvasClick(e) {
 
 function onCanvasMouseMove(e) {
   const rect=canvas.getBoundingClientRect();
-  const mx=e.clientX-rect.left+panX, my=e.clientY-rect.top+panY;
+  const mx=(e.clientX-rect.left)/zoom+panX, my=(e.clientY-rect.top)/zoom+panY;
   const W=worldW(), H=worldH();
   const tt=document.getElementById('tooltip');
 
-  if (isDragging) return;
+  if (isDragging || rectZoomMode) return;
 
   let foundAgent=null;
   for (const [id,pos] of Object.entries(agentPositions)) {
