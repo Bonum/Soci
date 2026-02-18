@@ -257,22 +257,26 @@ const ROADS = [
   { x1: 0.70, y1: 0.58, x2: 0.70, y2: 0.72, width: 6 },
 ];
 
-// Slot grid for procedurally generated houses — 52 positions covering the whole map
-const GEN_HOUSE_SLOTS = (function() {
-  const s = [];
-  for (let i = 0; i < 10; i++) s.push({x: 0.04 + i * 0.092, y: 0.06 + (i % 3) * 0.025});
-  for (let i = 0; i < 7;  i++) s.push({x: 0.02, y: 0.19 + i * 0.10});
-  for (let i = 0; i < 7;  i++) s.push({x: 0.97, y: 0.19 + i * 0.10});
-  for (let i = 0; i < 10; i++) s.push({x: 0.04 + i * 0.092, y: 0.88 + (i % 3) * 0.025});
-  const interior = [
-    [0.13,0.14],[0.28,0.14],[0.44,0.13],[0.58,0.14],[0.73,0.13],[0.87,0.14],
-    [0.13,0.80],[0.28,0.80],[0.44,0.81],[0.58,0.80],[0.73,0.81],[0.87,0.80],
-    [0.93,0.22],[0.93,0.45],[0.93,0.57],[0.93,0.74],
-    [0.03,0.22],[0.03,0.45],[0.03,0.57],[0.03,0.74],
-  ];
-  for (const [x,y] of interior) s.push({x,y});
-  return s; // 52 slots
-})();
+// Slot grid for procedurally generated houses — all slots in VALID city ground (y≥0.20).
+// Horizon is at y=0.14; sky/mountain occupy y<0.20. Slots cover the full map width.
+const GEN_HOUSE_SLOTS = [
+  // North strip: gaps between named north houses (y=0.19) and commercial row (y=0.34)
+  {x:0.04,y:0.21},{x:0.16,y:0.21},{x:0.30,y:0.21},{x:0.54,y:0.21},{x:0.70,y:0.21},{x:0.86,y:0.21},{x:0.94,y:0.21},
+  {x:0.04,y:0.27},{x:0.16,y:0.27},{x:0.30,y:0.27},{x:0.44,y:0.27},{x:0.56,y:0.27},{x:0.70,y:0.27},{x:0.84,y:0.27},{x:0.94,y:0.27},
+  // West column: left edge clear of school (x=0.08, y=0.50)
+  {x:0.03,y:0.36},{x:0.03,y:0.42},{x:0.03,y:0.56},{x:0.03,y:0.62},
+  // East column: right edge clear of hospital (x=0.92, y=0.50)
+  {x:0.96,y:0.36},{x:0.96,y:0.42},{x:0.96,y:0.56},{x:0.96,y:0.62},
+  // Interior mid-north gaps (between commercial strip rows, y=0.40-0.46)
+  {x:0.14,y:0.40},{x:0.44,y:0.40},{x:0.72,y:0.40},{x:0.84,y:0.40},
+  // Interior mid-south gaps (y=0.54-0.62)
+  {x:0.14,y:0.56},{x:0.30,y:0.56},{x:0.44,y:0.56},{x:0.70,y:0.56},{x:0.82,y:0.56},
+  // South strip: gaps between south named houses (y=0.65) and south zone buildings (y=0.78)
+  {x:0.04,y:0.66},{x:0.30,y:0.66},{x:0.54,y:0.66},{x:0.70,y:0.66},{x:0.86,y:0.66},{x:0.94,y:0.66},
+  {x:0.04,y:0.72},{x:0.16,y:0.72},{x:0.30,y:0.72},{x:0.46,y:0.72},{x:0.56,y:0.72},{x:0.70,y:0.72},{x:0.84,y:0.72},{x:0.94,y:0.72},
+  // Bottom fringe (y=0.82)
+  {x:0.14,y:0.82},{x:0.30,y:0.82},{x:0.44,y:0.82},{x:0.56,y:0.82},{x:0.70,y:0.82},{x:0.86,y:0.82},{x:0.96,y:0.82},
+];
 
 // Building positions — spread across larger grid
 const LOCATION_POSITIONS = {
@@ -318,10 +322,10 @@ const LOCATION_POSITIONS = {
   sports_field: { x: 0.22, y: 0.78, type: 'sports', label: 'Sports Field' },
 
   // === NEW BUILDINGS (corner apartments + east-side commercial) ===
-  apt_northeast: { x: 0.93, y: 0.10, type: 'apartment', label: 'Eastview Terrace' },
-  apt_northwest:  { x: 0.04, y: 0.10, type: 'apartment', label: 'Hilltop Gardens' },
-  apt_southeast:  { x: 0.93, y: 0.86, type: 'apartment', label: 'Riverside Commons' },
-  apt_southwest:  { x: 0.04, y: 0.86, type: 'apartment', label: 'Orchard Hill Flats' },
+  apt_northeast: { x: 0.93, y: 0.22, type: 'apartment', label: 'Eastview Terrace' },
+  apt_northwest:  { x: 0.07, y: 0.22, type: 'apartment', label: 'Hilltop Gardens' },
+  apt_southeast:  { x: 0.93, y: 0.78, type: 'apartment', label: 'Riverside Commons' },
+  apt_southwest:  { x: 0.07, y: 0.78, type: 'apartment', label: 'Orchard Hill Flats' },
   diner:     { x: 0.92, y: 0.36, type: 'shop', label: 'Blue Moon Diner' },
   pharmacy:  { x: 0.35, y: 0.78, type: 'shop', label: 'SociMed Pharmacy' },
 
@@ -689,14 +693,12 @@ function getEffectivePositions() {
         for (let i = 0; i < locId.length; i++) h = ((h << 5) - h + locId.charCodeAt(i)) | 0;
         const genMatch = locId.match(/house_gen_(\d+)/);
         if (genMatch) {
-          // Deterministic slot assignment: house_gen_01 → slot 0, house_gen_02 → slot 1, …
+          // Deterministic slot — no jitter so houses never drift into sky/mountain
           const slotIdx = (parseInt(genMatch[1]) - 1) % GEN_HOUSE_SLOTS.length;
           const sl = GEN_HOUSE_SLOTS[slotIdx];
-          const jx = ((h >>> 8) & 0xf) * 0.004 - 0.028;
-          const jy = ((h >>> 12) & 0xf) * 0.004 - 0.028;
           _genPosCache[locId] = {
-            x: Math.max(0.01, Math.min(0.99, sl.x + jx)),
-            y: Math.max(0.01, Math.min(0.99, sl.y + jy)),
+            x: sl.x,
+            y: sl.y,
             type: 'house',
             label: (locations[locId]?.name || locId).slice(0, 14),
           };
@@ -1691,16 +1693,16 @@ function computeAgentTarget(id, agent, globalIdx, byLoc, W, H) {
     };
   } else {
     // Multi-row arrangement for large crowds
-    const baseRadius = pos.type === 'house' ? 16 : (pos.type === 'park' || pos.type === 'square' || pos.type === 'sports' ? 35 : 24);
-    const maxPerRow = pos.type === 'house' ? 4 : 8;
+    const baseRadius = pos.type === 'house' ? 18 : (pos.type === 'park' || pos.type === 'square' || pos.type === 'sports' ? 55 : 38);
+    const maxPerRow = pos.type === 'house' ? 5 : 13;
     const row = Math.floor(localIdx / maxPerRow);
     const colIdx = localIdx % maxPerRow;
     const rowCount = Math.min(count - row * maxPerRow, maxPerRow);
-    const radius = baseRadius + row * 14;
+    const radius = baseRadius + row * 24;
     const step = Math.PI / Math.max(rowCount + 1, 2);
     const angle = step * (colIdx + 1);
     const ox = Math.cos(angle) * radius - radius / 3;
-    const oy = Math.sin(angle) * radius * 0.45 + (pos.type === 'house' ? 20 : 28) + row * 6;
+    const oy = Math.sin(angle) * radius * 0.5 + (pos.type === 'house' ? 22 : 34) + row * 10;
 
     agentTargets[id] = { x: pos.x * W + ox, y: pos.y * H + oy };
   }

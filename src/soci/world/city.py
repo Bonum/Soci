@@ -164,18 +164,21 @@ def generate_houses(city: City, count: int) -> list[str]:
     Also scales up capacity of commercial, work, and public locations
     proportionally to handle the larger population.
     """
-    streets = [lid for lid, loc in city.locations.items()
-               if "street" in lid or loc.zone == "public"]
-    commercial = [lid for lid, loc in city.locations.items()
-                  if loc.zone == "commercial"]
+    # Use only the 4 named streets (not all public zones) and cycle through them
+    # evenly so agents distribute across all 4 streets instead of bottlenecking one.
+    streets = [lid for lid in city.locations if lid.startswith("street_")]
+    if not streets:
+        streets = [lid for lid, loc in city.locations.items() if loc.zone == "public"]
     if not streets:
         streets = list(city.locations.keys())[:2]
+    commercial = [lid for lid, loc in city.locations.items()
+                  if loc.zone == "commercial"]
 
     house_ids: list[str] = []
     for i in range(count):
         hid = f"house_gen_{i+1:02d}"
-        # Connect to one street and 1-2 random commercial/public places
-        street = random.choice(streets)
+        # Cycle evenly through streets: house 1→street_north, 2→street_south, etc.
+        street = streets[i % len(streets)]
         extras = random.sample(commercial, k=min(random.randint(1, 2), len(commercial)))
         connections = list({street} | set(extras))
 

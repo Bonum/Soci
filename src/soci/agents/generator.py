@@ -332,8 +332,14 @@ def _assign_locations(
 
 def generate_personas(count: int, city: City) -> list[Persona]:
     """Generate `count` unique personas with assigned home/work locations."""
-    # Gather location pools
-    residential_ids = [lid for lid, loc in city.locations.items() if loc.zone == "residential"]
+    # Assign generated agents to GENERATED houses only (house_gen_XX).
+    # Named homes are reserved for YAML personas, preventing empty generated houses.
+    residential_ids = [lid for lid, loc in city.locations.items()
+                       if loc.zone == "residential" and lid.startswith("house_gen_")]
+    if not residential_ids:
+        # Fallback: use all residential (e.g., standalone run without YAML personas)
+        residential_ids = [lid for lid, loc in city.locations.items()
+                           if loc.zone == "residential"]
 
     if not residential_ids:
         raise ValueError("City has no residential locations — cannot assign homes.")
