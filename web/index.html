@@ -1716,7 +1716,7 @@ function drawPerson(id, agent, globalIdx, W, H) {
   const walkPhase = animFrame * 0.28;
   const bounce   = walkAnim ? Math.sin(walkPhase) * 2.5 : 0;
   const legSwing = walkAnim ? Math.sin(walkPhase) * 12  : 0;
-  const armSwing = walkAnim ? Math.sin(walkPhase) * 16  : 0;
+  const armSwing = walkAnim ? Math.sin(walkPhase) * 10  : 0;
 
   // Skin & hair
   const skinTones = ['#f5dbb8','#d4a574','#c68642','#8d5524','#e8c4a0','#f0c090'];
@@ -1766,51 +1766,57 @@ function drawPerson(id, agent, globalIdx, W, H) {
   ctx.lineTo(rKneeX + 1.5, 8 + bounce - legSwing * 0.5);
   ctx.lineTo(rFootX + 1.5, rFootY); ctx.stroke();
 
-  // ── TORSO (2.5D shirt with shoulder width + side face) ───
+  // ── TORSO (smooth, rounded, gradient-shaded) ──────────────
   const tY = -10 + bounce;
-  const tw = gender === 'female' ? 7 : 8;  // half-width at shoulders
-  const bw = gender === 'female' ? 5 : 7;  // half-width at waist
+  const tw = gender === 'female' ? 7 : 8;    // shoulder half-width
+  const bw = gender === 'female' ? 4.5 : 6;  // waist half-width
 
-  // Front face
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.moveTo(-tw, tY);      ctx.lineTo(tw, tY);
-  ctx.lineTo(bw, tY + 13); ctx.lineTo(-bw, tY + 13);
-  ctx.closePath(); ctx.fill();
-
-  // Right side face (2.5D depth)
-  ctx.fillStyle = dim(color, 0.6);
-  ctx.beginPath();
-  ctx.moveTo(tw,     tY);
-  ctx.lineTo(tw + 4, tY - 2);
-  ctx.lineTo(bw + 4, tY + 11);
-  ctx.lineTo(bw,     tY + 13);
-  ctx.closePath(); ctx.fill();
-
-  // Top face (shoulder plane)
-  ctx.fillStyle = dim(color, 1.15 > 1 ? 1 : 1.15);
-  ctx.beginPath();
-  ctx.moveTo(-tw,     tY);
-  ctx.lineTo(-tw + 4, tY - 2);
-  ctx.lineTo(tw + 4,  tY - 2);
-  ctx.lineTo(tw,      tY);
-  ctx.closePath(); ctx.fill();
-
-  // Collar / neckline
-  ctx.fillStyle = dim(color, 0.75);
-  ctx.beginPath(); ctx.ellipse(0.5, tY + 1, 2.5, 1.5, 0, 0, 6.28); ctx.fill();
-
-  // Belt line
-  ctx.strokeStyle = dim(color, 0.4);
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(-bw, tY + 12); ctx.lineTo(bw, tY + 12); ctx.stroke();
-
-  // Female: skirt flare
-  if (gender === 'female') {
-    ctx.fillStyle = dim(color, 0.8);
+  // Helper to build the torso path (reused for fill + highlight)
+  function torsoPath() {
     ctx.beginPath();
-    ctx.moveTo(-bw, tY + 12); ctx.lineTo(-bw - 2, tY + 16 + bounce);
-    ctx.lineTo(bw + 2, tY + 16 + bounce); ctx.lineTo(bw, tY + 12);
+    ctx.moveTo(-bw, tY + 13);
+    ctx.lineTo(-tw, tY + 2);
+    ctx.quadraticCurveTo(-tw, tY - 1, -tw + 3, tY - 1); // left shoulder round
+    ctx.lineTo(tw - 3, tY - 1);
+    ctx.quadraticCurveTo(tw, tY - 1, tw, tY + 2);        // right shoulder round
+    ctx.lineTo(bw, tY + 13);
+    ctx.closePath();
+  }
+
+  // Main fill: horizontal gradient — lit left, shadow right (cylindrical form)
+  const tGrad = ctx.createLinearGradient(-tw - 1, tY, tw + 1, tY + 13);
+  tGrad.addColorStop(0.00, dim(color, 1.30));  // highlight left shoulder
+  tGrad.addColorStop(0.22, dim(color, 1.08));  // upper-centre
+  tGrad.addColorStop(0.52, color);             // mid
+  tGrad.addColorStop(0.78, dim(color, 0.72));  // right shading
+  tGrad.addColorStop(1.00, dim(color, 0.45));  // right edge deep shadow
+  ctx.fillStyle = tGrad;
+  torsoPath(); ctx.fill();
+
+  // Chest highlight — soft radial glow on upper-left
+  const chGrad = ctx.createRadialGradient(-2.5, tY + 3.5, 0, -2.5, tY + 3.5, 6.5);
+  chGrad.addColorStop(0, 'rgba(255,255,255,0.20)');
+  chGrad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = chGrad;
+  torsoPath(); ctx.fill();
+
+  // Subtle right-edge depth line
+  ctx.strokeStyle = dim(color, 0.35); ctx.lineWidth = 1; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(tw, tY + 2); ctx.lineTo(bw, tY + 13); ctx.stroke();
+
+  // Belt / waist crease
+  ctx.strokeStyle = dim(color, 0.45); ctx.lineWidth = 0.9;
+  ctx.beginPath(); ctx.moveTo(-bw + 0.5, tY + 13); ctx.lineTo(bw - 0.5, tY + 13); ctx.stroke();
+
+  // Female: skirt flare with gradient
+  if (gender === 'female') {
+    const skirtGrad = ctx.createLinearGradient(-bw - 2, tY + 13, bw + 2, tY + 17);
+    skirtGrad.addColorStop(0, color);
+    skirtGrad.addColorStop(1, dim(color, 0.72));
+    ctx.fillStyle = skirtGrad;
+    ctx.beginPath();
+    ctx.moveTo(-bw, tY + 13); ctx.lineTo(-bw - 2.5, tY + 17 + bounce);
+    ctx.lineTo(bw + 2.5, tY + 17 + bounce); ctx.lineTo(bw, tY + 13);
     ctx.closePath(); ctx.fill();
   }
 
@@ -1822,22 +1828,22 @@ function drawPerson(id, agent, globalIdx, W, H) {
   const rElbowX = walkAnim ?  tw + 3 - armSwing * 0.3 :  tw + 3;
   const rElbowY = walkAnim ? shoulderY + 5 - armSwing * 0.4 : shoulderY + 5;
   // Hand positions
-  const lHandX = walkAnim ? lElbowX - 2 + armSwing * 0.6 : lElbowX - 1;
-  const lHandY = walkAnim ? lElbowY + 4 + armSwing * 0.8 : lElbowY + 4;
-  const rHandX = walkAnim ? rElbowX + 2 - armSwing * 0.6 : rElbowX + 1;
-  const rHandY = walkAnim ? rElbowY + 4 - armSwing * 0.8 : rElbowY + 4;
+  const lHandX = walkAnim ? lElbowX - 1.5 + armSwing * 0.4 : lElbowX - 1;
+  const lHandY = walkAnim ? lElbowY + 4 + armSwing * 0.45 : lElbowY + 4;
+  const rHandX = walkAnim ? rElbowX + 1.5 - armSwing * 0.4 : rElbowX + 1;
+  const rHandY = walkAnim ? rElbowY + 4 - armSwing * 0.45 : rElbowY + 4;
 
-  ctx.strokeStyle = skin; ctx.lineWidth = walkAnim ? 2.0 : 1.6; ctx.lineCap = 'round';
+  ctx.strokeStyle = skin; ctx.lineWidth = 1.8; ctx.lineCap = 'round';
   // Left arm (upper arm + forearm)
   ctx.beginPath(); ctx.moveTo(-tw + 1, shoulderY);
   ctx.lineTo(lElbowX, lElbowY); ctx.lineTo(lHandX, lHandY); ctx.stroke();
   // Right arm
   ctx.beginPath(); ctx.moveTo(tw - 1, shoulderY);
   ctx.lineTo(rElbowX, rElbowY); ctx.lineTo(rHandX, rHandY); ctx.stroke();
-  // Hands
+  // Hands (small filled circles)
   ctx.fillStyle = skin;
-  ctx.beginPath(); ctx.arc(lHandX, lHandY, 1.5, 0, 6.28); ctx.fill();
-  ctx.beginPath(); ctx.arc(rHandX, rHandY, 1.5, 0, 6.28); ctx.fill();
+  ctx.beginPath(); ctx.arc(lHandX, lHandY, 1.1, 0, 6.28); ctx.fill();
+  ctx.beginPath(); ctx.arc(rHandX, rHandY, 1.1, 0, 6.28); ctx.fill();
 
   // ── NECK ─────────────────────────────────────────────────
   ctx.fillStyle = skin;
@@ -1877,6 +1883,24 @@ function drawPerson(id, agent, globalIdx, W, H) {
   }
 
   // ── FACE ─────────────────────────────────────────────────
+  const moodVal = agent.mood || 0;
+
+  // Eyebrows — angle and height react to mood
+  const brBase = hy - 3.4;
+  const sadTilt  = moodVal < 0 ? Math.min(1, -moodVal) * 2.0 : 0;  // inner corner rises
+  const happyRaise = moodVal > 0 ? moodVal * 0.8 : 0;              // whole brow lifts
+  ctx.strokeStyle = hairColor; ctx.lineWidth = 1.0; ctx.lineCap = 'round';
+  // Left brow: outer=(hx-3.8), inner=(hx-1.0)
+  ctx.beginPath();
+  ctx.moveTo(hx - 3.8, brBase - happyRaise);
+  ctx.lineTo(hx - 1.0, brBase - happyRaise - sadTilt);
+  ctx.stroke();
+  // Right brow: inner=(hx+1.0), outer=(hx+3.8)
+  ctx.beginPath();
+  ctx.moveTo(hx + 1.0, brBase - happyRaise - sadTilt);
+  ctx.lineTo(hx + 3.8, brBase - happyRaise);
+  ctx.stroke();
+
   // Eyes
   ctx.fillStyle = '#1a1010';
   ctx.beginPath(); ctx.arc(hx - 2.2, hy - 1, 1.1, 0, 6.28); ctx.fill();
@@ -1885,10 +1909,21 @@ function drawPerson(id, agent, globalIdx, W, H) {
   ctx.fillStyle = 'rgba(255,255,255,0.6)';
   ctx.beginPath(); ctx.arc(hx - 1.8, hy - 1.5, 0.45, 0, 6.28); ctx.fill();
   ctx.beginPath(); ctx.arc(hx + 1.9, hy - 1.5, 0.45, 0, 6.28); ctx.fill();
-  // Mouth (tiny arc)
-  const moodVal = agent.mood || 0;
-  ctx.strokeStyle = dim(skin, 0.55); ctx.lineWidth = 0.8;
-  ctx.beginPath(); ctx.arc(hx - 0.3, hy + 2.5, 1.8, 0.1, Math.PI - 0.1, moodVal < -0.2); ctx.stroke();
+
+  // Mouth — quadratic bezier, depth proportional to mood
+  // moodCurve > 0 → bows down (smile), < 0 → bows up (frown)
+  const mouthW = 2.2;
+  const mCurve = moodVal * 3.8;
+  const mouthY = hy + 2.8;
+  // colour: rosy for happy, muted for neutral, dark for sad
+  const mr = moodVal > 0 ? Math.round(185 - moodVal * 20) : 140;
+  const mg = moodVal > 0 ? 90 : Math.round(90 - Math.abs(moodVal) * 40);
+  const mb = moodVal > 0 ? 90 : Math.round(90 - Math.abs(moodVal) * 20);
+  ctx.strokeStyle = `rgba(${mr},${mg},${mb},0.85)`; ctx.lineWidth = 1.0; ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(hx - mouthW, mouthY);
+  ctx.quadraticCurveTo(hx, mouthY + mCurve, hx + mouthW, mouthY);
+  ctx.stroke();
 
   ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
 
