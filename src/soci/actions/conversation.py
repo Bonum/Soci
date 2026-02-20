@@ -82,8 +82,8 @@ async def initiate_conversation(
     llm: ClaudeClient,
     clock: SimClock,
     conversation_id: str,
-) -> Conversation:
-    """Start a conversation between two agents."""
+) -> Optional[Conversation]:
+    """Start a conversation between two agents. Returns None if LLM unavailable."""
     from soci.engine.llm import CONVERSATION_INITIATE_PROMPT, MODEL_SONNET
 
     # Build relationship context
@@ -113,6 +113,10 @@ async def initiate_conversation(
         temperature=initiator.persona.llm_temperature,
         max_tokens=512,
     )
+
+    # LLM unavailable — skip conversation entirely
+    if not result:
+        return None
 
     message = result.get("message", f"Hey, {target.name}.")
     topic = result.get("topic", "small talk")
@@ -182,6 +186,11 @@ async def continue_conversation(
         temperature=responder.persona.llm_temperature,
         max_tokens=512,
     )
+
+    # LLM unavailable (rate-limited / circuit breaker) — end conversation cleanly
+    if not result:
+        conversation.is_active = False
+        return last_turn
 
     message = result.get("message", "Hmm, interesting.")
 

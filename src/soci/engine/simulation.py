@@ -495,6 +495,8 @@ class Simulation:
         conv = await initiate_conversation(
             initiator, target, self.llm, self.clock, conv_id,
         )
+        if conv is None:
+            return  # LLM unavailable — skip this conversation
         self.active_conversations[conv_id] = conv
 
         # Both agents are now in conversation
