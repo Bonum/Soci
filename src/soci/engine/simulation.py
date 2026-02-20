@@ -456,8 +456,8 @@ class Simulation:
 
     async def _handle_social_interactions(self, agents: list[Agent]) -> None:
         """Check if any idle co-located agents should start conversations."""
-        # Don't flood with conversations — scale with population
-        max_convos = max(3, len(self.agents) // 5)
+        # Hard cap: at most 2 simultaneous conversations to keep LLM calls low
+        max_convos = 2
         if len(self.active_conversations) >= max_convos:
             return
 

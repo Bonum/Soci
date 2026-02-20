@@ -35,7 +35,7 @@ class Conversation:
     turns: list[ConversationTurn] = field(default_factory=list)
     topic: str = ""
     is_active: bool = True
-    max_turns: int = 6
+    max_turns: int = 3
 
     @property
     def is_finished(self) -> bool:
