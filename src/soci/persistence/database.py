@@ -98,7 +98,10 @@ class Database:
             )
         row = await cursor.fetchone()
         if row:
-            return json.loads(row[0])
+            try:
+                return json.loads(row[0])
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.warning(f"Corrupt snapshot in DB, ignoring: {e}")
         return None
 
     async def list_snapshots(self) -> list[dict]:

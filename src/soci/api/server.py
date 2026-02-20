@@ -275,8 +275,13 @@ async def lifespan(app: FastAPI):
     data_dir = Path(os.environ.get("SOCI_DATA_DIR", "data"))
     await load_state_from_github(data_dir)
 
-    # Try to resume
-    sim = await load_simulation(db, llm)
+    # Try to resume — any failure falls back to a fresh simulation
+    sim = None
+    try:
+        sim = await load_simulation(db, llm)
+    except Exception as e:
+        logger.warning(f"Failed to load saved simulation, starting fresh: {e}")
+
     if sim is None:
         # Create new
         config_dir = Path(__file__).parents[3] / "config"
