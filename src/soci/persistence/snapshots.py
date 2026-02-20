@@ -57,9 +57,13 @@ async def load_simulation(
         json_name = name or "autosave"
         path = SNAPSHOTS_DIR / f"{json_name}.json"
         if path.exists():
-            with open(path, "r", encoding="utf-8") as f:
-                state = json.load(f)
-            logger.info(f"Loaded snapshot from JSON fallback: {path}")
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    state = json.load(f)
+                logger.info(f"Loaded snapshot from JSON fallback: {path}")
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.warning(f"Snapshot file corrupt or empty, ignoring: {path} ({e})")
+                state = None
 
     if not state:
         logger.info(f"No snapshot found: {name or 'latest'} — will start fresh")

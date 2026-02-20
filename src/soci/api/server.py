@@ -142,7 +142,10 @@ async def load_state_from_github(data_dir: Path) -> bool:
                 logger.info("No GitHub state file found — starting fresh")
                 return False
             resp.raise_for_status()
-            content = base64.b64decode(resp.json()["content"]).decode("utf-8")
+            content = base64.b64decode(resp.json()["content"]).decode("utf-8").strip()
+            if not content:
+                logger.warning("GitHub state file is empty — starting fresh")
+                return False
             local_path = data_dir / "snapshots" / "autosave.json"
             local_path.parent.mkdir(parents=True, exist_ok=True)
             local_path.write_text(content, encoding="utf-8")
