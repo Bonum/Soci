@@ -12,7 +12,8 @@ import aiosqlite
 
 logger = logging.getLogger(__name__)
 
-DB_DIR = Path("data")
+# SOCI_DATA_DIR env var lets you point at a persistent disk (e.g. /var/data on Render).
+DB_DIR = Path(os.environ.get("SOCI_DATA_DIR", "data"))
 DEFAULT_DB = DB_DIR / "soci.db"
 
 SCHEMA = """

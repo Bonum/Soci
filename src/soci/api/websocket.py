@@ -69,22 +69,16 @@ async def websocket_stream(websocket: WebSocket):
         from soci.api.server import get_simulation
         sim = get_simulation()
 
-        # Store the original callback
-        original_callback = sim.on_event
+        # Send the full current state immediately so the client is in sync
+        # before the next tick fires (avoids "Day 1 6:00" on fresh connects).
+        state = sim.get_state_summary()
+        await manager.send_personal(websocket, {
+            "type": "tick",
+            "tick": sim.clock.total_ticks,
+            "time": sim.clock.datetime_str,
+            "state": state,
+        })
 
-        # Add our own callback that also sends to WebSocket
-        async def ws_event_handler(msg: str):
-            if original_callback:
-                original_callback(msg)
-            await manager.broadcast({
-                "type": "event",
-                "message": msg,
-                "tick": sim.clock.total_ticks,
-                "time": sim.clock.datetime_str,
-            })
-
-        # We can't easily replace the sync callback with async,
-        # so instead we poll the simulation state
         last_tick = sim.clock.total_ticks
         while True:
             try:

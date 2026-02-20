@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
@@ -14,7 +15,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-SNAPSHOTS_DIR = Path("data") / "snapshots"
+SNAPSHOTS_DIR = Path(os.environ.get("SOCI_DATA_DIR", "data")) / "snapshots"
 
 
 async def save_simulation(

@@ -191,7 +191,10 @@ async def lifespan(app: FastAPI):
     _simulation = sim
 
     # Start background simulation
-    _sim_task = asyncio.create_task(simulation_loop(sim, db, tick_delay=2.0))
+    # SOCI_TICK_DELAY: seconds to sleep between ticks (default 0.5).
+    # Set to 0 to let LLM latency pace the simulation naturally.
+    tick_delay = float(os.environ.get("SOCI_TICK_DELAY", "0.5"))
+    _sim_task = asyncio.create_task(simulation_loop(sim, db, tick_delay=tick_delay))
 
     yield
 
