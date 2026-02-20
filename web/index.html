@@ -2891,7 +2891,8 @@ async function fetchSecondaryData() {
 }
 
 function connectWebSocket() {
-  const wsUrl = `ws://${window.location.host}/ws/stream`;
+  const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${wsProto}//${window.location.host}/ws/stream`;
   ws = new WebSocket(wsUrl);
 
   ws.onopen = () => {
