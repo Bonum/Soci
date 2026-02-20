@@ -93,12 +93,9 @@ async def simulation_loop(sim: Simulation, db: Database, tick_delay: float = 2.0
 
             await sim.tick()
 
-            # Auto-save every 24 ticks (~6 sim-hours); push to GitHub every 96 ticks (~1 sim-day)
+            # Auto-save every 24 ticks (~6 sim-hours)
             if sim.clock.total_ticks % 24 == 0:
                 await save_simulation(sim, db, "autosave")
-                if sim.clock.total_ticks % 96 == 0:
-                    data_dir_bg = Path(os.environ.get("SOCI_DATA_DIR", "data"))
-                    asyncio.create_task(save_state_to_github(data_dir_bg))
 
             # At high speeds, skip the delay entirely
             delay = tick_delay * _sim_speed
@@ -116,30 +113,34 @@ async def simulation_loop(sim: Simulation, db: Database, tick_delay: float = 2.0
 
 
 async def load_state_from_github(data_dir: Path) -> bool:
-    """Fetch autosave.json from GitHub and write it locally so load_simulation() can find it.
+    """Fetch autosave.json from the simulation-state branch on GitHub.
+
+    Reads from GITHUB_STATE_BRANCH (default: "simulation-state") so pushes
+    never touch the master branch and never trigger Render auto-deploys.
 
     Env vars:
-        GITHUB_TOKEN  — personal access token with repo read/write
-        GITHUB_REPO   — "owner/repo" e.g. "alice/soci"
-        GITHUB_STATE_FILE — path inside repo (default: "state/autosave.json")
+        GITHUB_TOKEN       — personal access token with repo read/write
+        GITHUB_REPO        — "owner/repo" e.g. "alice/soci"
+        GITHUB_STATE_BRANCH — branch name (default: "simulation-state")
+        GITHUB_STATE_FILE  — path inside repo (default: "state/autosave.json")
     """
     token = os.environ.get("GITHUB_TOKEN", "")
     repo = os.environ.get("GITHUB_REPO", "")
     if not token or not repo:
         return False
     path = os.environ.get("GITHUB_STATE_FILE", "state/autosave.json")
+    branch = os.environ.get("GITHUB_STATE_BRANCH", "simulation-state")
+    headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.get(
                 f"https://api.github.com/repos/{repo}/contents/{path}",
-                headers={
-                    "Authorization": f"token {token}",
-                    "Accept": "application/vnd.github.v3+json",
-                },
+                params={"ref": branch},
+                headers=headers,
                 timeout=30.0,
             )
             if resp.status_code == 404:
-                logger.info("No GitHub state file found — starting fresh")
+                logger.info(f"No GitHub state on branch '{branch}' — starting fresh")
                 return False
             resp.raise_for_status()
             content = base64.b64decode(resp.json()["content"]).decode("utf-8").strip()
@@ -149,7 +150,7 @@ async def load_state_from_github(data_dir: Path) -> bool:
             local_path = data_dir / "snapshots" / "autosave.json"
             local_path.parent.mkdir(parents=True, exist_ok=True)
             local_path.write_text(content, encoding="utf-8")
-            logger.info(f"Loaded state from GitHub ({len(content):,} bytes)")
+            logger.info(f"Loaded state from GitHub branch '{branch}' ({len(content):,} bytes)")
             return True
     except Exception as e:
         logger.warning(f"Could not load state from GitHub: {e}")
@@ -157,12 +158,13 @@ async def load_state_from_github(data_dir: Path) -> bool:
 
 
 async def save_state_to_github(data_dir: Path) -> bool:
-    """Push autosave.json to GitHub for durable cross-deploy persistence."""
+    """Push autosave.json to the simulation-state branch (never touches master)."""
     token = os.environ.get("GITHUB_TOKEN", "")
     repo = os.environ.get("GITHUB_REPO", "")
     if not token or not repo:
         return False
     path = os.environ.get("GITHUB_STATE_FILE", "state/autosave.json")
+    branch = os.environ.get("GITHUB_STATE_BRANCH", "simulation-state")
     local_path = data_dir / "snapshots" / "autosave.json"
     if not local_path.exists():
         logger.warning("No autosave.json to push to GitHub")
@@ -170,38 +172,51 @@ async def save_state_to_github(data_dir: Path) -> bool:
     try:
         content_bytes = local_path.read_bytes()
         encoded = base64.b64encode(content_bytes).decode("ascii")
+        headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
         async with httpx.AsyncClient() as client:
-            # Fetch current SHA (needed to update an existing file)
+            # Fetch current file SHA on the state branch (needed to update)
             sha: Optional[str] = None
             get_resp = await client.get(
                 f"https://api.github.com/repos/{repo}/contents/{path}",
-                headers={
-                    "Authorization": f"token {token}",
-                    "Accept": "application/vnd.github.v3+json",
-                },
+                params={"ref": branch},
+                headers=headers,
                 timeout=30.0,
             )
             if get_resp.status_code == 200:
                 sha = get_resp.json().get("sha")
+            elif get_resp.status_code == 404:
+                # Branch or file doesn't exist yet — create the branch from master
+                ref_resp = await client.get(
+                    f"https://api.github.com/repos/{repo}/git/ref/heads/master",
+                    headers=headers,
+                    timeout=15.0,
+                )
+                if ref_resp.status_code == 200:
+                    master_sha = ref_resp.json()["object"]["sha"]
+                    await client.post(
+                        f"https://api.github.com/repos/{repo}/git/refs",
+                        headers=headers,
+                        json={"ref": f"refs/heads/{branch}", "sha": master_sha},
+                        timeout=15.0,
+                    )
+                    logger.info(f"Created GitHub branch '{branch}' for state storage")
 
             body: dict = {
-                "message": "chore: update simulation state [skip ci]",
+                "message": "chore: save simulation state",
                 "content": encoded,
+                "branch": branch,
             }
             if sha:
                 body["sha"] = sha
 
             put_resp = await client.put(
                 f"https://api.github.com/repos/{repo}/contents/{path}",
-                headers={
-                    "Authorization": f"token {token}",
-                    "Accept": "application/vnd.github.v3+json",
-                },
+                headers=headers,
                 json=body,
                 timeout=60.0,
             )
             put_resp.raise_for_status()
-            logger.info(f"Saved state to GitHub ({len(content_bytes):,} bytes)")
+            logger.info(f"Saved state to GitHub branch '{branch}' ({len(content_bytes):,} bytes)")
             return True
     except Exception as e:
         logger.warning(f"Could not save state to GitHub: {e}")
