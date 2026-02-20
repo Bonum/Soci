@@ -5,6 +5,11 @@ Usage:
 
 Controls:
     Press Ctrl+C to pause and save the simulation.
+
+Persistence:
+    The simulation auto-saves every 6 in-game hours and on exit.
+    Next run automatically resumes from the last save.
+    Use --fresh to discard the save and start a new city.
 """
 
 from __future__ import annotations
@@ -117,7 +122,7 @@ async def run_simulation(
     ticks: int = 96,
     max_agents: int = 100,
     tick_delay: float = 0.5,
-    resume: bool = False,
+    fresh: bool = False,
     generate: bool = False,
     provider: str = "",
     model: str = "",
@@ -140,13 +145,21 @@ async def run_simulation(
     await db.connect()
 
     sim = None
-    if resume:
+    if not fresh:
+        # Always try to resume from the last autosave
         sim = await load_simulation(db, llm)
         if sim:
-            console.print(f"[green]Resumed simulation from Day {sim.clock.day}, {sim.clock.time_str}[/]")
+            console.print(
+                f"[green]Resumed simulation: Day {sim.clock.day}, {sim.clock.time_str} "
+                f"(tick {sim.clock.total_ticks}, {len(sim.agents)} agents)[/]"
+            )
 
     if sim is None:
-        # Create new simulation
+        if fresh:
+            console.print("[yellow]Starting fresh simulation (ignoring any previous save).[/]")
+        else:
+            console.print("[dim]No previous save found — starting new simulation.[/]")
+
         config_dir = Path(__file__).parent / "config"
         city = City.from_yaml(str(config_dir / "city.yaml"))
         clock = SimClock(tick_minutes=15, hour=6, minute=0)
@@ -228,7 +241,8 @@ def main():
     parser.add_argument("--ticks", type=int, default=96, help="Number of ticks to simulate (default: 96 = 1 day)")
     parser.add_argument("--agents", type=int, default=100, help="Max number of agents (default: 100)")
     parser.add_argument("--speed", type=float, default=0.5, help="Delay between ticks in seconds (default: 0.5)")
-    parser.add_argument("--resume", action="store_true", help="Resume from last save")
+    parser.add_argument("--fresh", action="store_true",
+                        help="Discard the autosave and start a brand-new simulation")
     parser.add_argument("--generate", action="store_true",
                         help="Generate procedural agents to fill up to --agents count")
     parser.add_argument("--provider", type=str, default="", choices=["", "claude", "groq", "ollama"],
@@ -248,7 +262,7 @@ def main():
         ticks=args.ticks,
         max_agents=args.agents,
         tick_delay=args.speed,
-        resume=args.resume,
+        fresh=args.fresh,
         generate=args.generate,
         provider=args.provider,
         model=args.model,

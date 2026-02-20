@@ -52,15 +52,16 @@ async def load_simulation(
 
     state = await db.load_snapshot(name)
     if not state:
-        # Try loading from JSON file
-        if name:
-            path = SNAPSHOTS_DIR / f"{name}.json"
-            if path.exists():
-                with open(path, "r", encoding="utf-8") as f:
-                    state = json.load(f)
+        # Fall back to JSON file (autosave.json when no name given)
+        json_name = name or "autosave"
+        path = SNAPSHOTS_DIR / f"{json_name}.json"
+        if path.exists():
+            with open(path, "r", encoding="utf-8") as f:
+                state = json.load(f)
+            logger.info(f"Loaded snapshot from JSON fallback: {path}")
 
     if not state:
-        logger.warning(f"No snapshot found: {name or 'latest'}")
+        logger.info(f"No snapshot found: {name or 'latest'} — will start fresh")
         return None
 
     sim = Simulation.from_dict(state, llm)

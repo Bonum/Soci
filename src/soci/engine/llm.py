@@ -524,7 +524,6 @@ class GroqClient:
                     body = e.response.text[:200] if e.response.text else ""
                     logger.warning(f"Groq 429 (json): waiting {retry_after:.0f}s — {body[:100]}")
                     await asyncio.sleep(retry_after)
-                    await asyncio.sleep(wait)
                 else:
                     logger.error(f"Groq JSON error: {e.response.status_code}")
                     if attempt == self.max_retries - 1:
@@ -581,10 +580,10 @@ def create_llm_client(
         default_model = model or MODEL_HAIKU
         return ClaudeClient(default_model=default_model)
     elif provider == PROVIDER_GROQ:
-        default_model = model or MODEL_GROQ_LLAMA_8B
+        default_model = model or os.environ.get("GROQ_MODEL", MODEL_GROQ_LLAMA_8B)
         return GroqClient(default_model=default_model)
     elif provider == PROVIDER_OLLAMA:
-        default_model = model or MODEL_LLAMA
+        default_model = model or os.environ.get("OLLAMA_MODEL", MODEL_LLAMA)
         return OllamaClient(base_url=ollama_url, default_model=default_model)
     else:
         raise ValueError(f"Unknown LLM provider: {provider}. Use 'claude', 'groq', or 'ollama'.")
