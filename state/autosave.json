@@ -1145,11 +1145,11 @@
   "clock": {
     "day": 2,
     "hour": 6,
-    "minute": 0,
+    "minute": 30,
     "tick_minutes": 15,
-    "total_ticks": 96,
+    "total_ticks": 98,
     "time_of_day": "dawn",
-    "time_str": "06:00"
+    "time_str": "06:30"
   },
   "agents": {
     "elena": {
@@ -1910,8 +1910,8 @@
           "energy": 0.8
         }
       },
-      "action_ticks_remaining": 4,
-      "mood": -0.091,
+      "action_ticks_remaining": 2,
+      "mood": -0.089,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
@@ -1922,7 +1922,7 @@
         "Walking back to office",
         "Working — afternoon block"
       ],
-      "has_plan_today": true,
+      "has_plan_today": false,
       "last_llm_tick": -1,
       "is_player": false,
       "partner_id": null
@@ -2633,8 +2633,8 @@
           "energy": 0.8
         }
       },
-      "action_ticks_remaining": 3,
-      "mood": -0.003,
+      "action_ticks_remaining": 1,
+      "mood": -0.002,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
@@ -2645,7 +2645,7 @@
         "Walking back to library",
         "Working — afternoon block"
       ],
-      "has_plan_today": true,
+      "has_plan_today": false,
       "last_llm_tick": -1,
       "is_player": false,
       "partner_id": null
@@ -3395,8 +3395,8 @@
           "energy": 0.8
         }
       },
-      "action_ticks_remaining": 4,
-      "mood": -0.011,
+      "action_ticks_remaining": 2,
+      "mood": -0.01,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
@@ -3407,7 +3407,7 @@
         "Walking back to gym",
         "Working — afternoon block"
       ],
-      "has_plan_today": true,
+      "has_plan_today": false,
       "last_llm_tick": -1,
       "is_player": false,
       "partner_id": null
@@ -4131,8 +4131,8 @@
           "energy": 0.8
         }
       },
-      "action_ticks_remaining": 4,
-      "mood": -0.004,
+      "action_ticks_remaining": 2,
+      "mood": -0.003,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
@@ -4143,7 +4143,7 @@
         "Walking back to library",
         "Working — afternoon block"
       ],
-      "has_plan_today": true,
+      "has_plan_today": false,
       "last_llm_tick": -1,
       "is_player": false,
       "partner_id": null
@@ -4840,41 +4840,46 @@
             "involved_agents": [],
             "access_count": 0,
             "last_accessed_tick": 0
+          },
+          {
+            "id": 51,
+            "tick": 97,
+            "day": 2,
+            "time_str": "06:15",
+            "type": "plan",
+            "content": "My plan for today: Morning routine — getting ready; Having breakfast at home; Commuting to library; Working — morning block; Walking to lunch at restaurant; Lunch break; Walking back to library; Working — afternoon block",
+            "importance": 6,
+            "location": "house_helen",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
           }
         ],
-        "next_id": 51,
-        "importance_accumulator": 0.0,
+        "next_id": 52,
+        "importance_accumulator": 6.0,
         "reflection_threshold": 50.0,
         "max_memories": 500
       },
       "needs": {
         "hunger": 0.0,
-        "energy": 1.0,
-        "social": 0.35,
-        "purpose": 0.72,
-        "comfort": 0.825,
-        "fun": 0.17
+        "energy": 0.985,
+        "social": 0.34,
+        "purpose": 0.712,
+        "comfort": 0.82,
+        "fun": 0.158
       },
       "relationships": {},
-      "state": "sleeping",
+      "state": "idle",
       "location": "house_helen",
-      "current_action": {
-        "type": "sleep",
-        "target": "house_helen",
-        "detail": "Sleeping",
-        "duration_ticks": 32,
-        "needs_satisfied": {
-          "energy": 0.8
-        }
-      },
-      "action_ticks_remaining": 1,
+      "current_action": null,
+      "action_ticks_remaining": 0,
       "mood": 0.009,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
         "Commuting to library",
         "Working — morning block",
-        "Walking to lunch at grocery",
+        "Walking to lunch at restaurant",
         "Lunch break",
         "Walking back to library",
         "Working — afternoon block"
@@ -6018,33 +6023,80 @@
             "involved_agents": [],
             "access_count": 0,
             "last_accessed_tick": 0
+          },
+          {
+            "id": 85,
+            "tick": 96,
+            "day": 2,
+            "time_str": "06:00",
+            "type": "observation",
+            "content": "Alice Fontaine notices something unusual in their surroundings.",
+            "importance": 7,
+            "location": "house_helen",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
+          },
+          {
+            "id": 86,
+            "tick": 96,
+            "day": 2,
+            "time_str": "06:00",
+            "type": "plan",
+            "content": "My plan for today: Morning routine — getting ready; Having breakfast at home; Commuting to ; Working — morning block; Walking to lunch at grocery; Lunch break; Walking back to ; Working — afternoon block",
+            "importance": 6,
+            "location": "house_helen",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
+          },
+          {
+            "id": 87,
+            "tick": 96,
+            "day": 2,
+            "time_str": "06:00",
+            "type": "observation",
+            "content": "Alice Fontaine is Desperately need to eat — skipping routine.",
+            "importance": 3,
+            "location": "house_helen",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
           }
         ],
-        "next_id": 85,
-        "importance_accumulator": 17.0,
+        "next_id": 88,
+        "importance_accumulator": 33.0,
         "reflection_threshold": 50.0,
         "max_memories": 500
       },
       "needs": {
-        "hunger": 0.0,
+        "hunger": 0.25,
         "energy": 0.0,
-        "social": 0.04,
-        "purpose": 0.464,
-        "comfort": 0.92,
+        "social": 0.02,
+        "purpose": 0.448,
+        "comfort": 0.91,
         "fun": 0.0
       },
       "relationships": {},
-      "state": "idle",
+      "state": "eating",
       "location": "house_helen",
-      "current_action": null,
-      "action_ticks_remaining": 0,
-      "mood": -0.225,
+      "current_action": {
+        "type": "eat",
+        "target": "house_helen",
+        "detail": "Desperately need to eat — skipping routine",
+        "duration_ticks": 2,
+        "needs_satisfied": {
+          "hunger": 0.5
+        }
+      },
+      "action_ticks_remaining": 1,
+      "mood": -0.233,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
         "Commuting to ",
         "Working — morning block",
-        "Walking to lunch at restaurant",
+        "Walking to lunch at grocery",
         "Lunch break",
         "Walking back to ",
         "Working — afternoon block"
@@ -6825,8 +6877,8 @@
           "energy": 0.8
         }
       },
-      "action_ticks_remaining": 4,
-      "mood": -0.101,
+      "action_ticks_remaining": 2,
+      "mood": -0.099,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
@@ -6837,7 +6889,7 @@
         "Walking back to grocery",
         "Working — afternoon block"
       ],
-      "has_plan_today": true,
+      "has_plan_today": false,
       "last_llm_tick": -1,
       "is_player": false,
       "partner_id": null
@@ -7740,8 +7792,8 @@
             "importance": 7,
             "location": "house_diana",
             "involved_agents": [],
-            "access_count": 3,
-            "last_accessed_tick": 92
+            "access_count": 5,
+            "last_accessed_tick": 96
           },
           {
             "id": 67,
@@ -7753,8 +7805,8 @@
             "importance": 7,
             "location": "house_diana",
             "involved_agents": [],
-            "access_count": 3,
-            "last_accessed_tick": 92
+            "access_count": 5,
+            "last_accessed_tick": 96
           },
           {
             "id": 68,
@@ -7766,8 +7818,8 @@
             "importance": 7,
             "location": "house_diana",
             "involved_agents": [],
-            "access_count": 3,
-            "last_accessed_tick": 92
+            "access_count": 5,
+            "last_accessed_tick": 96
           },
           {
             "id": 69,
@@ -7779,8 +7831,8 @@
             "importance": 7,
             "location": "house_diana",
             "involved_agents": [],
-            "access_count": 3,
-            "last_accessed_tick": 92
+            "access_count": 5,
+            "last_accessed_tick": 96
           },
           {
             "id": 70,
@@ -7792,8 +7844,8 @@
             "importance": 7,
             "location": "house_diana",
             "involved_agents": [],
-            "access_count": 3,
-            "last_accessed_tick": 92
+            "access_count": 5,
+            "last_accessed_tick": 96
           },
           {
             "id": 71,
@@ -7805,8 +7857,8 @@
             "importance": 7,
             "location": "house_diana",
             "involved_agents": [],
-            "access_count": 3,
-            "last_accessed_tick": 92
+            "access_count": 5,
+            "last_accessed_tick": 96
           },
           {
             "id": 72,
@@ -7818,8 +7870,8 @@
             "importance": 7,
             "location": "house_diana",
             "involved_agents": [],
-            "access_count": 3,
-            "last_accessed_tick": 92
+            "access_count": 5,
+            "last_accessed_tick": 96
           },
           {
             "id": 73,
@@ -7831,8 +7883,8 @@
             "importance": 7,
             "location": "house_diana",
             "involved_agents": [],
-            "access_count": 3,
-            "last_accessed_tick": 92
+            "access_count": 5,
+            "last_accessed_tick": 96
           },
           {
             "id": 74,
@@ -7857,8 +7909,8 @@
             "importance": 7,
             "location": "house_diana",
             "involved_agents": [],
-            "access_count": 1,
-            "last_accessed_tick": 92
+            "access_count": 3,
+            "last_accessed_tick": 96
           },
           {
             "id": 76,
@@ -7870,8 +7922,8 @@
             "importance": 7,
             "location": "house_diana",
             "involved_agents": [],
-            "access_count": 1,
-            "last_accessed_tick": 92
+            "access_count": 3,
+            "last_accessed_tick": 96
           },
           {
             "id": 77,
@@ -7896,8 +7948,8 @@
             "importance": 7,
             "location": "house_diana",
             "involved_agents": [],
-            "access_count": 0,
-            "last_accessed_tick": 0
+            "access_count": 2,
+            "last_accessed_tick": 96
           },
           {
             "id": 79,
@@ -7909,8 +7961,8 @@
             "importance": 7,
             "location": "house_diana",
             "involved_agents": [],
-            "access_count": 0,
-            "last_accessed_tick": 0
+            "access_count": 2,
+            "last_accessed_tick": 96
           },
           {
             "id": 80,
@@ -7922,21 +7974,73 @@
             "importance": 7,
             "location": "house_diana",
             "involved_agents": [],
+            "access_count": 2,
+            "last_accessed_tick": 96
+          },
+          {
+            "id": 81,
+            "tick": 96,
+            "day": 2,
+            "time_str": "06:00",
+            "type": "observation",
+            "content": "Marco Delgado notices something unusual in their surroundings.",
+            "importance": 7,
+            "location": "house_diana",
+            "involved_agents": [],
+            "access_count": 2,
+            "last_accessed_tick": 96
+          },
+          {
+            "id": 82,
+            "tick": 96,
+            "day": 2,
+            "time_str": "06:00",
+            "type": "plan",
+            "content": "My plan for today: Morning routine — getting ready; Having breakfast at home; Commuting to grocery; Working — morning block; Walking to lunch at bakery; Lunch break; Walking back to grocery; Working — afternoon block",
+            "importance": 6,
+            "location": "house_diana",
+            "involved_agents": [],
+            "access_count": 2,
+            "last_accessed_tick": 96
+          },
+          {
+            "id": 83,
+            "tick": 96,
+            "day": 2,
+            "time_str": "06:00",
+            "type": "observation",
+            "content": "Marco Delgado is Marco Delgado wanders aimlessly.",
+            "importance": 3,
+            "location": "house_diana",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
+          },
+          {
+            "id": 84,
+            "tick": 97,
+            "day": 2,
+            "time_str": "06:15",
+            "type": "observation",
+            "content": "Marco Delgado gets an unexpected phone call from an old friend.",
+            "importance": 7,
+            "location": "house_diana",
+            "involved_agents": [],
             "access_count": 0,
             "last_accessed_tick": 0
           }
         ],
-        "next_id": 81,
-        "importance_accumulator": 38.0,
+        "next_id": 85,
+        "importance_accumulator": 7.0,
         "reflection_threshold": 50.0,
         "max_memories": 500
       },
       "needs": {
         "hunger": 0.0,
         "energy": 0.0,
-        "social": 0.04,
-        "purpose": 0.496,
-        "comfort": 0.92,
+        "social": 0.02,
+        "purpose": 0.48,
+        "comfort": 0.91,
         "fun": 0.0
       },
       "relationships": {},
@@ -7944,7 +8048,7 @@
       "location": "house_diana",
       "current_action": null,
       "action_ticks_remaining": 0,
-      "mood": -0.214,
+      "mood": -0.223,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
@@ -8587,41 +8691,46 @@
             "involved_agents": [],
             "access_count": 0,
             "last_accessed_tick": 0
+          },
+          {
+            "id": 46,
+            "tick": 97,
+            "day": 2,
+            "time_str": "06:15",
+            "type": "plan",
+            "content": "My plan for today: Morning routine — getting ready; Having breakfast at home; Commuting to cafe; Working — morning block; Walking to lunch at restaurant; Lunch break; Walking back to cafe; Working — afternoon block",
+            "importance": 6,
+            "location": "cafe",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
           }
         ],
-        "next_id": 46,
-        "importance_accumulator": 125.0,
+        "next_id": 47,
+        "importance_accumulator": 131.0,
         "reflection_threshold": 50.0,
         "max_memories": 500
       },
       "needs": {
         "hunger": 0.0,
-        "energy": 1.0,
-        "social": 0.35,
-        "purpose": 0.768,
-        "comfort": 0.825,
-        "fun": 0.17
+        "energy": 0.985,
+        "social": 0.34,
+        "purpose": 0.76,
+        "comfort": 0.82,
+        "fun": 0.158
       },
       "relationships": {},
-      "state": "sleeping",
+      "state": "idle",
       "location": "cafe",
-      "current_action": {
-        "type": "sleep",
-        "target": "house_kai",
-        "detail": "Sleeping",
-        "duration_ticks": 32,
-        "needs_satisfied": {
-          "energy": 0.8
-        }
-      },
-      "action_ticks_remaining": 1,
-      "mood": 0.023,
+      "current_action": null,
+      "action_ticks_remaining": 0,
+      "mood": 0.022,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
         "Commuting to cafe",
         "Working — morning block",
-        "Walking to lunch at grocery",
+        "Walking to lunch at restaurant",
         "Lunch break",
         "Walking back to cafe",
         "Working — afternoon block"
@@ -9389,7 +9498,7 @@
           "energy": 0.8
         }
       },
-      "action_ticks_remaining": 3,
+      "action_ticks_remaining": 1,
       "mood": -0.077,
       "daily_plan": [
         "Morning routine — getting ready",
@@ -9401,7 +9510,7 @@
         "Walking back to office",
         "Working — afternoon block"
       ],
-      "has_plan_today": true,
+      "has_plan_today": false,
       "last_llm_tick": -1,
       "is_player": false,
       "partner_id": null
@@ -10177,8 +10286,8 @@
           "energy": 0.8
         }
       },
-      "action_ticks_remaining": 4,
-      "mood": -0.017,
+      "action_ticks_remaining": 2,
+      "mood": -0.015,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
@@ -10189,7 +10298,7 @@
         "Walking back to office",
         "Working — afternoon block"
       ],
-      "has_plan_today": true,
+      "has_plan_today": false,
       "last_llm_tick": -1,
       "is_player": false,
       "partner_id": null
@@ -10900,8 +11009,8 @@
           "energy": 0.8
         }
       },
-      "action_ticks_remaining": 3,
-      "mood": 0.001,
+      "action_ticks_remaining": 1,
+      "mood": 0.002,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
@@ -10912,7 +11021,7 @@
         "Walking back to bar",
         "Working — afternoon block"
       ],
-      "has_plan_today": true,
+      "has_plan_today": false,
       "last_llm_tick": -1,
       "is_player": false,
       "partner_id": null
@@ -11662,8 +11771,8 @@
           "energy": 0.8
         }
       },
-      "action_ticks_remaining": 4,
-      "mood": -0.083,
+      "action_ticks_remaining": 2,
+      "mood": -0.082,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
@@ -11674,7 +11783,7 @@
         "Walking back to office",
         "Working — afternoon block"
       ],
-      "has_plan_today": true,
+      "has_plan_today": false,
       "last_llm_tick": -1,
       "is_player": false,
       "partner_id": null
@@ -12450,8 +12559,8 @@
           "energy": 0.8
         }
       },
-      "action_ticks_remaining": 3,
-      "mood": -0.009,
+      "action_ticks_remaining": 1,
+      "mood": -0.008,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
@@ -12462,7 +12571,7 @@
         "Walking back to restaurant",
         "Working — afternoon block"
       ],
-      "has_plan_today": true,
+      "has_plan_today": false,
       "last_llm_tick": -1,
       "is_player": false,
       "partner_id": null
@@ -13199,8 +13308,8 @@
           "energy": 0.8
         }
       },
-      "action_ticks_remaining": 4,
-      "mood": -0.013,
+      "action_ticks_remaining": 2,
+      "mood": -0.012,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
@@ -13211,7 +13320,7 @@
         "Walking back to restaurant",
         "Working — afternoon block"
       ],
-      "has_plan_today": true,
+      "has_plan_today": false,
       "last_llm_tick": -1,
       "is_player": false,
       "partner_id": null
@@ -13961,8 +14070,8 @@
           "energy": 0.8
         }
       },
-      "action_ticks_remaining": 4,
-      "mood": -0.087,
+      "action_ticks_remaining": 2,
+      "mood": -0.086,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
@@ -13973,7 +14082,7 @@
         "Walking back to gym",
         "Working — afternoon block"
       ],
-      "has_plan_today": true,
+      "has_plan_today": false,
       "last_llm_tick": -1,
       "is_player": false,
       "partner_id": null
@@ -14697,7 +14806,7 @@
           "energy": 0.8
         }
       },
-      "action_ticks_remaining": 4,
+      "action_ticks_remaining": 2,
       "mood": -0.004,
       "daily_plan": [
         "Morning routine — getting ready",
@@ -14709,7 +14818,7 @@
         "Walking back to cafe",
         "Working — afternoon block"
       ],
-      "has_plan_today": true,
+      "has_plan_today": false,
       "last_llm_tick": -1,
       "is_player": false,
       "partner_id": null
@@ -15435,18 +15544,10 @@
         "fun": 0.0
       },
       "relationships": {},
-      "state": "sleeping",
+      "state": "idle",
       "location": "house_frank",
-      "current_action": {
-        "type": "sleep",
-        "target": "house_frank",
-        "detail": "Sleeping",
-        "duration_ticks": 32,
-        "needs_satisfied": {
-          "energy": 0.8
-        }
-      },
-      "action_ticks_remaining": 2,
+      "current_action": null,
+      "action_ticks_remaining": 0,
       "mood": -0.072,
       "daily_plan": [
         "Morning routine — getting ready",
@@ -15458,7 +15559,7 @@
         "Walking back to ",
         "Working — afternoon block"
       ],
-      "has_plan_today": true,
+      "has_plan_today": false,
       "last_llm_tick": -1,
       "is_player": false,
       "partner_id": null
@@ -16234,8 +16335,8 @@
           "energy": 0.8
         }
       },
-      "action_ticks_remaining": 5,
-      "mood": -0.089,
+      "action_ticks_remaining": 3,
+      "mood": -0.088,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
@@ -16246,7 +16347,7 @@
         "Walking back to ",
         "Working — afternoon block"
       ],
-      "has_plan_today": true,
+      "has_plan_today": false,
       "last_llm_tick": -1,
       "is_player": false,
       "partner_id": null
@@ -16996,8 +17097,8 @@
           "energy": 0.8
         }
       },
-      "action_ticks_remaining": 3,
-      "mood": -0.089,
+      "action_ticks_remaining": 1,
+      "mood": -0.088,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
@@ -17008,7 +17109,7 @@
         "Walking back to library",
         "Working — afternoon block"
       ],
-      "has_plan_today": true,
+      "has_plan_today": false,
       "last_llm_tick": -1,
       "is_player": false,
       "partner_id": null
@@ -17757,8 +17858,8 @@
           "energy": 0.8
         }
       },
-      "action_ticks_remaining": 4,
-      "mood": -0.089,
+      "action_ticks_remaining": 2,
+      "mood": -0.088,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
@@ -17769,7 +17870,7 @@
         "Walking back to factory",
         "Working — afternoon block"
       ],
-      "has_plan_today": true,
+      "has_plan_today": false,
       "last_llm_tick": -1,
       "is_player": false,
       "partner_id": null
@@ -18855,10 +18956,49 @@
             "involved_agents": [],
             "access_count": 0,
             "last_accessed_tick": 0
+          },
+          {
+            "id": 81,
+            "tick": 96,
+            "day": 2,
+            "time_str": "06:00",
+            "type": "observation",
+            "content": "Quinn Ali finds a forgotten note in their pocket.",
+            "importance": 7,
+            "location": "house_gen_02",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
+          },
+          {
+            "id": 82,
+            "tick": 96,
+            "day": 2,
+            "time_str": "06:00",
+            "type": "plan",
+            "content": "My plan for today: Morning routine — getting ready; Having breakfast at home; Commuting to school; Studying — morning block; Walking to lunch at restaurant; Lunch break; Walking back to school; Studying — afternoon block",
+            "importance": 6,
+            "location": "house_gen_02",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
+          },
+          {
+            "id": 83,
+            "tick": 97,
+            "day": 2,
+            "time_str": "06:15",
+            "type": "observation",
+            "content": "Quinn Ali notices something unusual in their surroundings.",
+            "importance": 7,
+            "location": "house_gen_02",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
           }
         ],
-        "next_id": 81,
-        "importance_accumulator": 49.0,
+        "next_id": 84,
+        "importance_accumulator": 69.0,
         "reflection_threshold": 50.0,
         "max_memories": 500
       },
@@ -18866,8 +19006,8 @@
         "hunger": 0.0,
         "energy": 0.0,
         "social": 0.0,
-        "purpose": 0.496,
-        "comfort": 0.67,
+        "purpose": 0.48,
+        "comfort": 0.66,
         "fun": 0.0
       },
       "relationships": {},
@@ -18875,13 +19015,13 @@
       "location": "house_gen_02",
       "current_action": null,
       "action_ticks_remaining": 0,
-      "mood": -0.272,
+      "mood": -0.279,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
         "Commuting to school",
         "Studying — morning block",
-        "Walking to lunch at cafe",
+        "Walking to lunch at restaurant",
         "Lunch break",
         "Walking back to school",
         "Studying — afternoon block"
@@ -19569,34 +19709,39 @@
             "involved_agents": [],
             "access_count": 0,
             "last_accessed_tick": 0
+          },
+          {
+            "id": 50,
+            "tick": 97,
+            "day": 2,
+            "time_str": "06:15",
+            "type": "plan",
+            "content": "My plan for today: Morning routine — getting ready; Having breakfast at home; Commuting to hospital; Working — morning block; Walking to lunch at restaurant; Lunch break; Walking back to hospital; Working — afternoon block",
+            "importance": 6,
+            "location": "house_gen_03",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
           }
         ],
-        "next_id": 50,
-        "importance_accumulator": 313.0,
+        "next_id": 51,
+        "importance_accumulator": 319.0,
         "reflection_threshold": 50.0,
         "max_memories": 500
       },
       "needs": {
         "hunger": 0.0,
-        "energy": 1.0,
-        "social": 0.35,
-        "purpose": 0.72,
-        "comfort": 0.825,
-        "fun": 0.17
+        "energy": 0.985,
+        "social": 0.34,
+        "purpose": 0.712,
+        "comfort": 0.82,
+        "fun": 0.158
       },
       "relationships": {},
-      "state": "sleeping",
+      "state": "idle",
       "location": "house_gen_03",
-      "current_action": {
-        "type": "sleep",
-        "target": "house_gen_03",
-        "detail": "Sleeping",
-        "duration_ticks": 32,
-        "needs_satisfied": {
-          "energy": 0.8
-        }
-      },
-      "action_ticks_remaining": 1,
+      "current_action": null,
+      "action_ticks_remaining": 0,
       "mood": 0.009,
       "daily_plan": [
         "Morning routine — getting ready",
@@ -20278,41 +20423,46 @@
             "involved_agents": [],
             "access_count": 0,
             "last_accessed_tick": 0
+          },
+          {
+            "id": 49,
+            "tick": 97,
+            "day": 2,
+            "time_str": "06:15",
+            "type": "plan",
+            "content": "My plan for today: Morning routine — getting ready; Having breakfast at home; Commuting to factory; Working — morning block; Walking to lunch at bakery; Lunch break; Walking back to factory; Working — afternoon block",
+            "importance": 6,
+            "location": "house_gen_04",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
           }
         ],
-        "next_id": 49,
-        "importance_accumulator": 306.0,
+        "next_id": 50,
+        "importance_accumulator": 312.0,
         "reflection_threshold": 50.0,
         "max_memories": 500
       },
       "needs": {
         "hunger": 0.0,
-        "energy": 1.0,
-        "social": 0.35,
-        "purpose": 0.728,
-        "comfort": 0.825,
-        "fun": 0.17
+        "energy": 0.985,
+        "social": 0.34,
+        "purpose": 0.72,
+        "comfort": 0.82,
+        "fun": 0.158
       },
       "relationships": {},
-      "state": "sleeping",
+      "state": "idle",
       "location": "house_gen_04",
-      "current_action": {
-        "type": "sleep",
-        "target": "house_gen_04",
-        "detail": "Sleeping",
-        "duration_ticks": 32,
-        "needs_satisfied": {
-          "energy": 0.8
-        }
-      },
-      "action_ticks_remaining": 1,
-      "mood": 0.012,
+      "current_action": null,
+      "action_ticks_remaining": 0,
+      "mood": 0.011,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
         "Commuting to factory",
         "Working — morning block",
-        "Walking to lunch at cafe",
+        "Walking to lunch at bakery",
         "Lunch break",
         "Walking back to factory",
         "Working — afternoon block"
@@ -21415,8 +21565,8 @@
             "importance": 7,
             "location": "house_gen_05",
             "involved_agents": [],
-            "access_count": 8,
-            "last_accessed_tick": 95
+            "access_count": 10,
+            "last_accessed_tick": 97
           },
           {
             "id": 82,
@@ -21428,8 +21578,8 @@
             "importance": 7,
             "location": "house_gen_05",
             "involved_agents": [],
-            "access_count": 8,
-            "last_accessed_tick": 95
+            "access_count": 10,
+            "last_accessed_tick": 97
           },
           {
             "id": 83,
@@ -21454,8 +21604,8 @@
             "importance": 7,
             "location": "house_gen_05",
             "involved_agents": [],
-            "access_count": 6,
-            "last_accessed_tick": 95
+            "access_count": 8,
+            "last_accessed_tick": 97
           },
           {
             "id": 85,
@@ -21467,8 +21617,8 @@
             "importance": 7,
             "location": "house_gen_05",
             "involved_agents": [],
-            "access_count": 6,
-            "last_accessed_tick": 95
+            "access_count": 8,
+            "last_accessed_tick": 97
           },
           {
             "id": 86,
@@ -21493,8 +21643,8 @@
             "importance": 7,
             "location": "house_gen_05",
             "involved_agents": [],
-            "access_count": 5,
-            "last_accessed_tick": 95
+            "access_count": 7,
+            "last_accessed_tick": 97
           },
           {
             "id": 88,
@@ -21506,8 +21656,8 @@
             "importance": 7,
             "location": "house_gen_05",
             "involved_agents": [],
-            "access_count": 5,
-            "last_accessed_tick": 95
+            "access_count": 7,
+            "last_accessed_tick": 97
           },
           {
             "id": 89,
@@ -21532,8 +21682,8 @@
             "importance": 7,
             "location": "house_gen_05",
             "involved_agents": [],
-            "access_count": 4,
-            "last_accessed_tick": 95
+            "access_count": 6,
+            "last_accessed_tick": 97
           },
           {
             "id": 91,
@@ -21545,8 +21695,8 @@
             "importance": 7,
             "location": "house_gen_05",
             "involved_agents": [],
-            "access_count": 4,
-            "last_accessed_tick": 95
+            "access_count": 6,
+            "last_accessed_tick": 97
           },
           {
             "id": 92,
@@ -21571,8 +21721,8 @@
             "importance": 7,
             "location": "house_gen_05",
             "involved_agents": [],
-            "access_count": 2,
-            "last_accessed_tick": 95
+            "access_count": 4,
+            "last_accessed_tick": 97
           },
           {
             "id": 94,
@@ -21584,8 +21734,8 @@
             "importance": 7,
             "location": "house_gen_05",
             "involved_agents": [],
-            "access_count": 2,
-            "last_accessed_tick": 95
+            "access_count": 4,
+            "last_accessed_tick": 97
           },
           {
             "id": 95,
@@ -21610,8 +21760,8 @@
             "importance": 7,
             "location": "house_gen_05",
             "involved_agents": [],
-            "access_count": 1,
-            "last_accessed_tick": 95
+            "access_count": 3,
+            "last_accessed_tick": 97
           },
           {
             "id": 97,
@@ -21623,8 +21773,8 @@
             "importance": 7,
             "location": "house_gen_05",
             "involved_agents": [],
-            "access_count": 1,
-            "last_accessed_tick": 95
+            "access_count": 3,
+            "last_accessed_tick": 97
           },
           {
             "id": 98,
@@ -21638,19 +21788,71 @@
             "involved_agents": [],
             "access_count": 0,
             "last_accessed_tick": 0
+          },
+          {
+            "id": 99,
+            "tick": 96,
+            "day": 2,
+            "time_str": "06:00",
+            "type": "observation",
+            "content": "Gabriel Rios notices something unusual in their surroundings.",
+            "importance": 7,
+            "location": "house_gen_05",
+            "involved_agents": [],
+            "access_count": 2,
+            "last_accessed_tick": 97
+          },
+          {
+            "id": 100,
+            "tick": 97,
+            "day": 2,
+            "time_str": "06:15",
+            "type": "observation",
+            "content": "Gabriel Rios notices something unusual in their surroundings.",
+            "importance": 7,
+            "location": "house_gen_05",
+            "involved_agents": [],
+            "access_count": 2,
+            "last_accessed_tick": 97
+          },
+          {
+            "id": 101,
+            "tick": 97,
+            "day": 2,
+            "time_str": "06:15",
+            "type": "plan",
+            "content": "My plan for today: Lazy morning — sleeping in and lounging; Going to restaurant for brunch; Enjoying brunch at restaurant; Heading home; Going to gym; Working out at the gym; Chilling at home; Heading to park",
+            "importance": 6,
+            "location": "house_gen_05",
+            "involved_agents": [],
+            "access_count": 2,
+            "last_accessed_tick": 97
+          },
+          {
+            "id": 102,
+            "tick": 97,
+            "day": 2,
+            "time_str": "06:15",
+            "type": "observation",
+            "content": "Gabriel Rios is Gabriel Rios wanders aimlessly.",
+            "importance": 3,
+            "location": "house_gen_05",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
           }
         ],
-        "next_id": 99,
-        "importance_accumulator": 34.0,
+        "next_id": 103,
+        "importance_accumulator": 0.0,
         "reflection_threshold": 50.0,
         "max_memories": 500
       },
       "needs": {
         "hunger": 0.0,
         "energy": 0.0,
-        "social": 0.19,
+        "social": 0.17,
         "purpose": 0.0,
-        "comfort": 0.88,
+        "comfort": 0.87,
         "fun": 0.0
       },
       "relationships": {},
@@ -21664,16 +21866,16 @@
         "needs_satisfied": {}
       },
       "action_ticks_remaining": 1,
-      "mood": -0.276,
+      "mood": -0.285,
       "daily_plan": [
         "Lazy morning — sleeping in and lounging",
-        "Leisurely breakfast at home",
-        "Going to cafe",
-        "Hanging out at the cafe",
+        "Going to restaurant for brunch",
+        "Enjoying brunch at restaurant",
         "Heading home",
+        "Going to gym",
+        "Working out at the gym",
         "Chilling at home",
-        "Heading to town_square",
-        "Lunch out"
+        "Heading to park"
       ],
       "has_plan_today": true,
       "last_llm_tick": -1,
@@ -22542,8 +22744,8 @@
           "energy": 0.8
         }
       },
-      "action_ticks_remaining": 4,
-      "mood": 0.11,
+      "action_ticks_remaining": 2,
+      "mood": 0.114,
       "daily_plan": [
         "Lazy morning — sleeping in and lounging",
         "Leisurely breakfast at home",
@@ -22554,7 +22756,7 @@
         "Heading to town_square",
         "Lunch out"
       ],
-      "has_plan_today": true,
+      "has_plan_today": false,
       "last_llm_tick": -1,
       "is_player": false,
       "partner_id": null
@@ -23560,10 +23762,49 @@
             "involved_agents": [],
             "access_count": 0,
             "last_accessed_tick": 0
+          },
+          {
+            "id": 75,
+            "tick": 96,
+            "day": 2,
+            "time_str": "06:00",
+            "type": "observation",
+            "content": "Tessa Luna suddenly craves something completely different.",
+            "importance": 7,
+            "location": "house_gen_07",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
+          },
+          {
+            "id": 76,
+            "tick": 96,
+            "day": 2,
+            "time_str": "06:00",
+            "type": "plan",
+            "content": "My plan for today: Morning routine — getting ready; Having breakfast at home; Commuting to school; Studying — morning block; Walking to lunch at restaurant; Lunch break; Walking back to school; Studying — afternoon block",
+            "importance": 6,
+            "location": "house_gen_07",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
+          },
+          {
+            "id": 77,
+            "tick": 97,
+            "day": 2,
+            "time_str": "06:15",
+            "type": "observation",
+            "content": "Tessa Luna suddenly remembers something important they forgot to do.",
+            "importance": 7,
+            "location": "house_gen_07",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
           }
         ],
-        "next_id": 75,
-        "importance_accumulator": 21.0,
+        "next_id": 78,
+        "importance_accumulator": 41.0,
         "reflection_threshold": 50.0,
         "max_memories": 500
       },
@@ -23571,8 +23812,8 @@
         "hunger": 0.0,
         "energy": 0.0,
         "social": 0.0,
-        "purpose": 0.528,
-        "comfort": 0.67,
+        "purpose": 0.512,
+        "comfort": 0.66,
         "fun": 0.0
       },
       "relationships": {},
@@ -23580,13 +23821,13 @@
       "location": "house_gen_07",
       "current_action": null,
       "action_ticks_remaining": 0,
-      "mood": -0.263,
+      "mood": -0.271,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
         "Commuting to school",
         "Studying — morning block",
-        "Walking to lunch at bakery",
+        "Walking to lunch at restaurant",
         "Lunch break",
         "Walking back to school",
         "Studying — afternoon block"
@@ -24251,18 +24492,10 @@
         "fun": 0.0
       },
       "relationships": {},
-      "state": "sleeping",
+      "state": "idle",
       "location": "house_gen_08",
-      "current_action": {
-        "type": "sleep",
-        "target": "house_gen_08",
-        "detail": "Sleeping",
-        "duration_ticks": 32,
-        "needs_satisfied": {
-          "energy": 0.8
-        }
-      },
-      "action_ticks_remaining": 2,
+      "current_action": null,
+      "action_ticks_remaining": 0,
       "mood": -0.063,
       "daily_plan": [
         "Morning routine — getting ready",
@@ -24274,7 +24507,7 @@
         "Walking back to office",
         "Working — afternoon block"
       ],
-      "has_plan_today": true,
+      "has_plan_today": false,
       "last_llm_tick": -1,
       "is_player": false,
       "partner_id": null
@@ -24985,8 +25218,8 @@
           "energy": 0.8
         }
       },
-      "action_ticks_remaining": 8,
-      "mood": -0.02,
+      "action_ticks_remaining": 6,
+      "mood": -0.019,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
@@ -24997,7 +25230,7 @@
         "Walking back to school",
         "Studying — afternoon block"
       ],
-      "has_plan_today": true,
+      "has_plan_today": false,
       "last_llm_tick": -1,
       "is_player": false,
       "partner_id": null
@@ -25733,44 +25966,49 @@
             "involved_agents": [],
             "access_count": 0,
             "last_accessed_tick": 0
+          },
+          {
+            "id": 54,
+            "tick": 97,
+            "day": 2,
+            "time_str": "06:15",
+            "type": "plan",
+            "content": "My plan for today: Lazy morning — sleeping in and lounging; Leisurely breakfast at home; Going to gym; Working out at the gym; Heading home; Chilling at home; Heading to park; Lunch out",
+            "importance": 6,
+            "location": "house_gen_10",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
           }
         ],
-        "next_id": 54,
-        "importance_accumulator": 325.0,
+        "next_id": 55,
+        "importance_accumulator": 331.0,
         "reflection_threshold": 50.0,
         "max_memories": 500
       },
       "needs": {
-        "hunger": 0.2,
-        "energy": 1.0,
-        "social": 0.96,
-        "purpose": 0.148,
-        "comfort": 0.995,
-        "fun": 0.872
+        "hunger": 0.16,
+        "energy": 0.985,
+        "social": 0.95,
+        "purpose": 0.14,
+        "comfort": 0.99,
+        "fun": 0.86
       },
       "relationships": {},
-      "state": "sleeping",
+      "state": "idle",
       "location": "house_gen_10",
-      "current_action": {
-        "type": "sleep",
-        "target": "house_gen_10",
-        "detail": "Sleeping",
-        "duration_ticks": 28,
-        "needs_satisfied": {
-          "energy": 0.8
-        }
-      },
-      "action_ticks_remaining": 1,
-      "mood": 0.208,
+      "current_action": null,
+      "action_ticks_remaining": 0,
+      "mood": 0.204,
       "daily_plan": [
         "Lazy morning — sleeping in and lounging",
-        "Going to cafe for brunch",
-        "Enjoying brunch at cafe",
+        "Leisurely breakfast at home",
+        "Going to gym",
+        "Working out at the gym",
         "Heading home",
-        "Going to cafe",
-        "Hanging out at the cafe",
         "Chilling at home",
-        "Heading to town_square"
+        "Heading to park",
+        "Lunch out"
       ],
       "has_plan_today": true,
       "last_llm_tick": -1,
@@ -25816,8 +26054,8 @@
             "importance": 6,
             "location": "house_gen_11",
             "involved_agents": [],
-            "access_count": 6,
-            "last_accessed_tick": 70
+            "access_count": 8,
+            "last_accessed_tick": 97
           },
           {
             "id": 1,
@@ -25920,8 +26158,8 @@
             "importance": 7,
             "location": "town_square",
             "involved_agents": [],
-            "access_count": 3,
-            "last_accessed_tick": 70
+            "access_count": 5,
+            "last_accessed_tick": 97
           },
           {
             "id": 9,
@@ -25933,8 +26171,8 @@
             "importance": 7,
             "location": "town_square",
             "involved_agents": [],
-            "access_count": 3,
-            "last_accessed_tick": 70
+            "access_count": 5,
+            "last_accessed_tick": 97
           },
           {
             "id": 10,
@@ -25946,8 +26184,8 @@
             "importance": 7,
             "location": "town_square",
             "involved_agents": [],
-            "access_count": 3,
-            "last_accessed_tick": 70
+            "access_count": 5,
+            "last_accessed_tick": 97
           },
           {
             "id": 11,
@@ -25959,8 +26197,8 @@
             "importance": 7,
             "location": "town_square",
             "involved_agents": [],
-            "access_count": 3,
-            "last_accessed_tick": 70
+            "access_count": 5,
+            "last_accessed_tick": 97
           },
           {
             "id": 12,
@@ -25972,8 +26210,8 @@
             "importance": 7,
             "location": "town_square",
             "involved_agents": [],
-            "access_count": 3,
-            "last_accessed_tick": 70
+            "access_count": 5,
+            "last_accessed_tick": 97
           },
           {
             "id": 13,
@@ -25985,8 +26223,8 @@
             "importance": 7,
             "location": "town_square",
             "involved_agents": [],
-            "access_count": 3,
-            "last_accessed_tick": 70
+            "access_count": 5,
+            "last_accessed_tick": 97
           },
           {
             "id": 14,
@@ -25998,8 +26236,8 @@
             "importance": 7,
             "location": "town_square",
             "involved_agents": [],
-            "access_count": 3,
-            "last_accessed_tick": 70
+            "access_count": 5,
+            "last_accessed_tick": 97
           },
           {
             "id": 15,
@@ -26011,8 +26249,8 @@
             "importance": 7,
             "location": "town_square",
             "involved_agents": [],
-            "access_count": 3,
-            "last_accessed_tick": 70
+            "access_count": 5,
+            "last_accessed_tick": 97
           },
           {
             "id": 16,
@@ -26024,8 +26262,8 @@
             "importance": 7,
             "location": "town_square",
             "involved_agents": [],
-            "access_count": 3,
-            "last_accessed_tick": 70
+            "access_count": 5,
+            "last_accessed_tick": 97
           },
           {
             "id": 17,
@@ -26050,8 +26288,8 @@
             "importance": 7,
             "location": "town_square",
             "involved_agents": [],
-            "access_count": 3,
-            "last_accessed_tick": 70
+            "access_count": 5,
+            "last_accessed_tick": 97
           },
           {
             "id": 19,
@@ -26063,8 +26301,8 @@
             "importance": 7,
             "location": "town_square",
             "involved_agents": [],
-            "access_count": 3,
-            "last_accessed_tick": 70
+            "access_count": 5,
+            "last_accessed_tick": 97
           },
           {
             "id": 20,
@@ -26089,8 +26327,8 @@
             "importance": 3,
             "location": "town_square",
             "involved_agents": [],
-            "access_count": 2,
-            "last_accessed_tick": 70
+            "access_count": 4,
+            "last_accessed_tick": 97
           },
           {
             "id": 22,
@@ -26102,21 +26340,34 @@
             "importance": 3,
             "location": "town_square",
             "involved_agents": [],
-            "access_count": 0,
-            "last_accessed_tick": 0
+            "access_count": 2,
+            "last_accessed_tick": 97
+          },
+          {
+            "id": 23,
+            "tick": 96,
+            "day": 2,
+            "time_str": "06:00",
+            "type": "plan",
+            "content": "My plan for today: Late morning routine; Having brunch; Going to town_square; People-watching at the square; Heading home; Heading to cafe for shift; Working the evening shift at cafe; Heading home after shift",
+            "importance": 6,
+            "location": "town_square",
+            "involved_agents": [],
+            "access_count": 2,
+            "last_accessed_tick": 97
           }
         ],
-        "next_id": 23,
-        "importance_accumulator": 3.0,
+        "next_id": 24,
+        "importance_accumulator": 9.0,
         "reflection_threshold": 50.0,
         "max_memories": 500
       },
       "needs": {
         "hunger": 0.0,
-        "energy": 0.505,
-        "social": 0.04,
-        "purpose": 0.492,
-        "comfort": 0.52,
+        "energy": 0.475,
+        "social": 0.02,
+        "purpose": 0.476,
+        "comfort": 0.51,
         "fun": 0.0
       },
       "relationships": {},
@@ -26124,7 +26375,7 @@
       "location": "town_square",
       "current_action": null,
       "action_ticks_remaining": 0,
-      "mood": -0.184,
+      "mood": -0.197,
       "daily_plan": [
         "Late morning routine",
         "Having brunch",
@@ -27119,43 +27370,72 @@
             "involved_agents": [],
             "access_count": 0,
             "last_accessed_tick": 0
+          },
+          {
+            "id": 73,
+            "tick": 96,
+            "day": 2,
+            "time_str": "06:00",
+            "type": "observation",
+            "content": "Jian Ramos overhears an interesting conversation nearby.",
+            "importance": 7,
+            "location": "house_gen_12",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
+          },
+          {
+            "id": 74,
+            "tick": 97,
+            "day": 2,
+            "time_str": "06:15",
+            "type": "observation",
+            "content": "Jian Ramos gets an unexpected phone call from an old friend.",
+            "importance": 7,
+            "location": "house_gen_12",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
+          },
+          {
+            "id": 75,
+            "tick": 97,
+            "day": 2,
+            "time_str": "06:15",
+            "type": "plan",
+            "content": "My plan for today: Morning routine — getting ready; Having breakfast at home; Commuting to school; Studying — morning block; Walking to lunch at cafe; Lunch break; Walking back to school; Studying — afternoon block",
+            "importance": 6,
+            "location": "house_gen_12",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
           }
         ],
-        "next_id": 73,
-        "importance_accumulator": 175.0,
+        "next_id": 76,
+        "importance_accumulator": 195.0,
         "reflection_threshold": 50.0,
         "max_memories": 500
       },
       "needs": {
         "hunger": 0.0,
-        "energy": 0.002,
-        "social": 0.04,
-        "purpose": 0.532,
+        "energy": 0.0,
+        "social": 0.02,
+        "purpose": 0.516,
         "comfort": 0.91,
-        "fun": 0.006
+        "fun": 0.0
       },
       "relationships": {},
-      "state": "relaxing",
+      "state": "idle",
       "location": "house_gen_12",
-      "current_action": {
-        "type": "relax",
-        "target": "house_gen_12",
-        "detail": "Watching TV",
-        "duration_ticks": 26,
-        "needs_satisfied": {
-          "comfort": 0.25,
-          "fun": 0.15,
-          "energy": 0.05
-        }
-      },
-      "action_ticks_remaining": 1,
-      "mood": -0.209,
+      "current_action": null,
+      "action_ticks_remaining": 0,
+      "mood": -0.218,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
         "Commuting to school",
         "Studying — morning block",
-        "Walking to lunch at grocery",
+        "Walking to lunch at cafe",
         "Lunch break",
         "Walking back to school",
         "Studying — afternoon block"
@@ -27818,18 +28098,10 @@
         "fun": 0.158
       },
       "relationships": {},
-      "state": "sleeping",
+      "state": "idle",
       "location": "house_gen_13",
-      "current_action": {
-        "type": "sleep",
-        "target": "house_gen_13",
-        "detail": "Sleeping",
-        "duration_ticks": 32,
-        "needs_satisfied": {
-          "energy": 0.8
-        }
-      },
-      "action_ticks_remaining": 2,
+      "current_action": null,
+      "action_ticks_remaining": 0,
       "mood": 0.011,
       "daily_plan": [
         "Morning routine — getting ready",
@@ -27841,7 +28113,7 @@
         "Walking back to office",
         "Working — afternoon block"
       ],
-      "has_plan_today": true,
+      "has_plan_today": false,
       "last_llm_tick": -1,
       "is_player": false,
       "partner_id": null
@@ -28514,19 +28786,11 @@
         "fun": 0.158
       },
       "relationships": {},
-      "state": "sleeping",
+      "state": "idle",
       "location": "house_gen_14",
-      "current_action": {
-        "type": "sleep",
-        "target": "house_gen_14",
-        "detail": "Sleeping",
-        "duration_ticks": 32,
-        "needs_satisfied": {
-          "energy": 0.8
-        }
-      },
-      "action_ticks_remaining": 2,
-      "mood": 0.006,
+      "current_action": null,
+      "action_ticks_remaining": 0,
+      "mood": 0.007,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
@@ -28537,7 +28801,7 @@
         "Walking back to office",
         "Working — afternoon block"
       ],
-      "has_plan_today": true,
+      "has_plan_today": false,
       "last_llm_tick": -1,
       "is_player": false,
       "partner_id": null
@@ -29167,41 +29431,46 @@
             "involved_agents": [],
             "access_count": 0,
             "last_accessed_tick": 0
+          },
+          {
+            "id": 46,
+            "tick": 97,
+            "day": 2,
+            "time_str": "06:15",
+            "type": "plan",
+            "content": "My plan for today: Morning routine — getting ready; Having breakfast at home; Commuting to factory; Working — morning block; Walking to lunch at bakery; Lunch break; Walking back to factory; Working — afternoon block",
+            "importance": 6,
+            "location": "house_gen_15",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
           }
         ],
-        "next_id": 46,
-        "importance_accumulator": 132.0,
+        "next_id": 47,
+        "importance_accumulator": 138.0,
         "reflection_threshold": 50.0,
         "max_memories": 500
       },
       "needs": {
         "hunger": 0.0,
-        "energy": 1.0,
-        "social": 0.35,
-        "purpose": 0.76,
-        "comfort": 0.825,
-        "fun": 0.17
+        "energy": 0.985,
+        "social": 0.34,
+        "purpose": 0.752,
+        "comfort": 0.82,
+        "fun": 0.158
       },
       "relationships": {},
-      "state": "sleeping",
+      "state": "idle",
       "location": "house_gen_15",
-      "current_action": {
-        "type": "sleep",
-        "target": "house_gen_15",
-        "detail": "Sleeping",
-        "duration_ticks": 32,
-        "needs_satisfied": {
-          "energy": 0.8
-        }
-      },
-      "action_ticks_remaining": 1,
-      "mood": 0.021,
+      "current_action": null,
+      "action_ticks_remaining": 0,
+      "mood": 0.019,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
         "Commuting to factory",
         "Working — morning block",
-        "Walking to lunch at cafe",
+        "Walking to lunch at bakery",
         "Lunch break",
         "Walking back to factory",
         "Working — afternoon block"
@@ -29957,8 +30226,8 @@
           "energy": 0.8
         }
       },
-      "action_ticks_remaining": 3,
-      "mood": -0.083,
+      "action_ticks_remaining": 1,
+      "mood": -0.082,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
@@ -29969,7 +30238,7 @@
         "Walking back to factory",
         "Working — afternoon block"
       ],
-      "has_plan_today": true,
+      "has_plan_today": false,
       "last_llm_tick": -1,
       "is_player": false,
       "partner_id": null
@@ -30303,19 +30572,32 @@
             "involved_agents": [],
             "access_count": 0,
             "last_accessed_tick": 0
+          },
+          {
+            "id": 23,
+            "tick": 96,
+            "day": 2,
+            "time_str": "06:00",
+            "type": "plan",
+            "content": "My plan for today: Late morning routine; Having brunch; Going to town_square; People-watching at the square; Heading home; Heading to restaurant for shift; Working the evening shift at restaurant; Heading home after shift",
+            "importance": 6,
+            "location": "street_north",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
           }
         ],
-        "next_id": 23,
-        "importance_accumulator": 12.0,
+        "next_id": 24,
+        "importance_accumulator": 18.0,
         "reflection_threshold": 50.0,
         "max_memories": 500
       },
       "needs": {
         "hunger": 0.0,
-        "energy": 0.49,
+        "energy": 0.46,
         "social": 0.0,
-        "purpose": 0.492,
-        "comfort": 0.62,
+        "purpose": 0.476,
+        "comfort": 0.61,
         "fun": 0.0
       },
       "relationships": {},
@@ -30323,12 +30605,12 @@
       "location": "street_north",
       "current_action": null,
       "action_ticks_remaining": 0,
-      "mood": -0.186,
+      "mood": -0.196,
       "daily_plan": [
         "Late morning routine",
         "Having brunch",
-        "Going to library",
-        "Reading at the library",
+        "Going to town_square",
+        "People-watching at the square",
         "Heading home",
         "Heading to restaurant for shift",
         "Working the evening shift at restaurant",
@@ -31148,44 +31430,49 @@
             "involved_agents": [],
             "access_count": 0,
             "last_accessed_tick": 0
+          },
+          {
+            "id": 60,
+            "tick": 97,
+            "day": 2,
+            "time_str": "06:15",
+            "type": "plan",
+            "content": "My plan for today: Lazy morning — sleeping in and lounging; Leisurely breakfast at home; Going to cafe; Hanging out at the cafe; Heading home; Chilling at home; Heading to cafe; Lunch out",
+            "importance": 6,
+            "location": "town_square",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
           }
         ],
-        "next_id": 60,
-        "importance_accumulator": 371.0,
+        "next_id": 61,
+        "importance_accumulator": 377.0,
         "reflection_threshold": 50.0,
         "max_memories": 500
       },
       "needs": {
         "hunger": 0.0,
-        "energy": 1.0,
-        "social": 0.91,
-        "purpose": 0.148,
-        "comfort": 0.995,
-        "fun": 0.922
+        "energy": 0.985,
+        "social": 0.9,
+        "purpose": 0.14,
+        "comfort": 0.99,
+        "fun": 0.91
       },
       "relationships": {},
-      "state": "sleeping",
+      "state": "idle",
       "location": "town_square",
-      "current_action": {
-        "type": "sleep",
-        "target": "house_gen_18",
-        "detail": "Sleeping",
-        "duration_ticks": 28,
-        "needs_satisfied": {
-          "energy": 0.8
-        }
-      },
-      "action_ticks_remaining": 1,
-      "mood": 0.153,
+      "current_action": null,
+      "action_ticks_remaining": 0,
+      "mood": 0.154,
       "daily_plan": [
         "Lazy morning — sleeping in and lounging",
-        "Going to cafe for brunch",
-        "Enjoying brunch at cafe",
+        "Leisurely breakfast at home",
+        "Going to cafe",
+        "Hanging out at the cafe",
         "Heading home",
-        "Going to town_square",
-        "People-watching at the square",
         "Chilling at home",
-        "Heading to restaurant"
+        "Heading to cafe",
+        "Lunch out"
       ],
       "has_plan_today": true,
       "last_llm_tick": -1,
@@ -32169,10 +32456,49 @@
             "involved_agents": [],
             "access_count": 0,
             "last_accessed_tick": 0
+          },
+          {
+            "id": 73,
+            "tick": 96,
+            "day": 2,
+            "time_str": "06:00",
+            "type": "observation",
+            "content": "Patrick Singh notices something unusual in their surroundings.",
+            "importance": 7,
+            "location": "house_gen_19",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
+          },
+          {
+            "id": 74,
+            "tick": 96,
+            "day": 2,
+            "time_str": "06:00",
+            "type": "plan",
+            "content": "My plan for today: Morning routine — getting ready; Having breakfast at home; Commuting to school; Studying — morning block; Walking to lunch at bakery; Lunch break; Walking back to school; Studying — afternoon block",
+            "importance": 6,
+            "location": "house_gen_19",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
+          },
+          {
+            "id": 75,
+            "tick": 97,
+            "day": 2,
+            "time_str": "06:15",
+            "type": "observation",
+            "content": "Patrick Singh notices something unusual in their surroundings.",
+            "importance": 7,
+            "location": "house_gen_19",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
           }
         ],
-        "next_id": 73,
-        "importance_accumulator": 7.0,
+        "next_id": 76,
+        "importance_accumulator": 27.0,
         "reflection_threshold": 50.0,
         "max_memories": 500
       },
@@ -32180,8 +32506,8 @@
         "hunger": 0.0,
         "energy": 0.0,
         "social": 0.0,
-        "purpose": 0.528,
-        "comfort": 0.67,
+        "purpose": 0.512,
+        "comfort": 0.66,
         "fun": 0.0
       },
       "relationships": {},
@@ -32189,7 +32515,7 @@
       "location": "house_gen_19",
       "current_action": null,
       "action_ticks_remaining": 0,
-      "mood": -0.263,
+      "mood": -0.271,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
@@ -33196,19 +33522,58 @@
             "involved_agents": [],
             "access_count": 1,
             "last_accessed_tick": 95
+          },
+          {
+            "id": 74,
+            "tick": 96,
+            "day": 2,
+            "time_str": "06:00",
+            "type": "observation",
+            "content": "Kenneth Owusu suddenly craves something completely different.",
+            "importance": 7,
+            "location": "house_gen_20",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
+          },
+          {
+            "id": 75,
+            "tick": 96,
+            "day": 2,
+            "time_str": "06:00",
+            "type": "plan",
+            "content": "My plan for today: Morning routine — getting ready; Having breakfast at home; Commuting to school; Studying — morning block; Walking to lunch at grocery; Lunch break; Walking back to school; Studying — afternoon block",
+            "importance": 6,
+            "location": "house_gen_20",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
+          },
+          {
+            "id": 76,
+            "tick": 97,
+            "day": 2,
+            "time_str": "06:15",
+            "type": "observation",
+            "content": "Kenneth Owusu suddenly remembers something important they forgot to do.",
+            "importance": 7,
+            "location": "house_gen_20",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
           }
         ],
-        "next_id": 74,
-        "importance_accumulator": 0.0,
+        "next_id": 77,
+        "importance_accumulator": 20.0,
         "reflection_threshold": 50.0,
         "max_memories": 500
       },
       "needs": {
         "hunger": 0.0,
         "energy": 0.0,
-        "social": 0.04,
-        "purpose": 0.528,
-        "comfort": 0.67,
+        "social": 0.02,
+        "purpose": 0.512,
+        "comfort": 0.66,
         "fun": 0.0
       },
       "relationships": {},
@@ -33216,13 +33581,13 @@
       "location": "house_gen_20",
       "current_action": null,
       "action_ticks_remaining": 0,
-      "mood": -0.241,
+      "mood": -0.252,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
         "Commuting to school",
         "Studying — morning block",
-        "Walking to lunch at bakery",
+        "Walking to lunch at grocery",
         "Lunch break",
         "Walking back to school",
         "Studying — afternoon block"
@@ -33533,19 +33898,32 @@
             "involved_agents": [],
             "access_count": 1,
             "last_accessed_tick": 69
+          },
+          {
+            "id": 21,
+            "tick": 96,
+            "day": 2,
+            "time_str": "06:00",
+            "type": "plan",
+            "content": "My plan for today: Late morning routine; Having brunch; Going to cafe; Hanging out at the cafe; Heading home; Heading to cafe for shift; Working the evening shift at cafe; Heading home after shift",
+            "importance": 6,
+            "location": "house_gen_21",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
           }
         ],
-        "next_id": 21,
-        "importance_accumulator": 0.0,
+        "next_id": 22,
+        "importance_accumulator": 6.0,
         "reflection_threshold": 50.0,
         "max_memories": 500
       },
       "needs": {
         "hunger": 0.0,
-        "energy": 0.49,
+        "energy": 0.46,
         "social": 0.0,
-        "purpose": 0.492,
-        "comfort": 0.52,
+        "purpose": 0.476,
+        "comfort": 0.51,
         "fun": 0.0
       },
       "relationships": {},
@@ -33553,12 +33931,12 @@
       "location": "house_gen_21",
       "current_action": null,
       "action_ticks_remaining": 0,
-      "mood": -0.201,
+      "mood": -0.212,
       "daily_plan": [
         "Late morning routine",
         "Having brunch",
-        "Going to gym",
-        "Working out at the gym",
+        "Going to cafe",
+        "Hanging out at the cafe",
         "Heading home",
         "Heading to cafe for shift",
         "Working the evening shift at cafe",
@@ -34285,8 +34663,8 @@
           "energy": 0.8
         }
       },
-      "action_ticks_remaining": 8,
-      "mood": -0.093,
+      "action_ticks_remaining": 6,
+      "mood": -0.091,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
@@ -34297,7 +34675,7 @@
         "Walking back to school",
         "Studying — afternoon block"
       ],
-      "has_plan_today": true,
+      "has_plan_today": false,
       "last_llm_tick": -1,
       "is_player": false,
       "partner_id": null
@@ -35291,19 +35669,58 @@
             "involved_agents": [],
             "access_count": 0,
             "last_accessed_tick": 0
+          },
+          {
+            "id": 74,
+            "tick": 96,
+            "day": 2,
+            "time_str": "06:00",
+            "type": "observation",
+            "content": "Noah Snow suddenly craves something completely different.",
+            "importance": 7,
+            "location": "house_gen_23",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
+          },
+          {
+            "id": 75,
+            "tick": 96,
+            "day": 2,
+            "time_str": "06:00",
+            "type": "plan",
+            "content": "My plan for today: Morning routine — getting ready; Having breakfast at home; Commuting to school; Studying — morning block; Walking to lunch at grocery; Lunch break; Walking back to school; Studying — afternoon block",
+            "importance": 6,
+            "location": "house_gen_23",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
+          },
+          {
+            "id": 76,
+            "tick": 97,
+            "day": 2,
+            "time_str": "06:15",
+            "type": "observation",
+            "content": "Noah Snow gets an unexpected phone call from an old friend.",
+            "importance": 7,
+            "location": "house_gen_23",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
           }
         ],
-        "next_id": 74,
-        "importance_accumulator": 42.0,
+        "next_id": 77,
+        "importance_accumulator": 62.0,
         "reflection_threshold": 50.0,
         "max_memories": 500
       },
       "needs": {
         "hunger": 0.0,
         "energy": 0.0,
-        "social": 0.04,
-        "purpose": 0.496,
-        "comfort": 0.67,
+        "social": 0.02,
+        "purpose": 0.48,
+        "comfort": 0.66,
         "fun": 0.0
       },
       "relationships": {},
@@ -35311,13 +35728,13 @@
       "location": "house_gen_23",
       "current_action": null,
       "action_ticks_remaining": 0,
-      "mood": -0.251,
+      "mood": -0.261,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
         "Commuting to school",
         "Studying — morning block",
-        "Walking to lunch at restaurant",
+        "Walking to lunch at grocery",
         "Lunch break",
         "Walking back to school",
         "Studying — afternoon block"
@@ -35588,19 +36005,32 @@
             "involved_agents": [],
             "access_count": 1,
             "last_accessed_tick": 82
+          },
+          {
+            "id": 18,
+            "tick": 96,
+            "day": 2,
+            "time_str": "06:00",
+            "type": "plan",
+            "content": "My plan for today: Late morning routine; Having brunch; Going to park; Taking a walk in the park; Heading home; Heading to restaurant for shift; Working the evening shift at restaurant; Heading home after shift",
+            "importance": 6,
+            "location": "house_gen_24",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
           }
         ],
-        "next_id": 18,
-        "importance_accumulator": 0.0,
+        "next_id": 19,
+        "importance_accumulator": 6.0,
         "reflection_threshold": 50.0,
         "max_memories": 500
       },
       "needs": {
         "hunger": 0.0,
-        "energy": 0.505,
-        "social": 0.04,
-        "purpose": 0.492,
-        "comfort": 0.52,
+        "energy": 0.475,
+        "social": 0.02,
+        "purpose": 0.476,
+        "comfort": 0.51,
         "fun": 0.0
       },
       "relationships": {},
@@ -35608,12 +36038,12 @@
       "location": "house_gen_24",
       "current_action": null,
       "action_ticks_remaining": 0,
-      "mood": -0.181,
+      "mood": -0.194,
       "daily_plan": [
         "Late morning routine",
         "Having brunch",
-        "Going to town_square",
-        "People-watching at the square",
+        "Going to park",
+        "Taking a walk in the park",
         "Heading home",
         "Heading to restaurant for shift",
         "Working the evening shift at restaurant",
@@ -36301,7 +36731,7 @@
           "energy": 0.8
         }
       },
-      "action_ticks_remaining": 4,
+      "action_ticks_remaining": 2,
       "mood": -0.006,
       "daily_plan": [
         "Morning routine — getting ready",
@@ -36313,7 +36743,7 @@
         "Walking back to office",
         "Working — afternoon block"
       ],
-      "has_plan_today": true,
+      "has_plan_today": false,
       "last_llm_tick": -1,
       "is_player": false,
       "partner_id": null
@@ -36554,19 +36984,32 @@
             "involved_agents": [],
             "access_count": 0,
             "last_accessed_tick": 0
+          },
+          {
+            "id": 16,
+            "tick": 96,
+            "day": 2,
+            "time_str": "06:00",
+            "type": "plan",
+            "content": "My plan for today: Late morning routine; Having brunch; Going to cinema; Watching a movie; Heading home; Heading to restaurant for shift; Working the evening shift at restaurant; Heading home after shift",
+            "importance": 6,
+            "location": "house_gen_26",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
           }
         ],
-        "next_id": 16,
-        "importance_accumulator": 83.0,
+        "next_id": 17,
+        "importance_accumulator": 89.0,
         "reflection_threshold": 50.0,
         "max_memories": 500
       },
       "needs": {
         "hunger": 0.0,
-        "energy": 0.49,
+        "energy": 0.46,
         "social": 0.0,
-        "purpose": 0.492,
-        "comfort": 0.52,
+        "purpose": 0.476,
+        "comfort": 0.51,
         "fun": 0.0
       },
       "relationships": {},
@@ -36574,7 +37017,7 @@
       "location": "house_gen_26",
       "current_action": null,
       "action_ticks_remaining": 0,
-      "mood": -0.192,
+      "mood": -0.205,
       "daily_plan": [
         "Late morning routine",
         "Having brunch",
@@ -37280,34 +37723,39 @@
             "involved_agents": [],
             "access_count": 0,
             "last_accessed_tick": 0
+          },
+          {
+            "id": 51,
+            "tick": 97,
+            "day": 2,
+            "time_str": "06:15",
+            "type": "plan",
+            "content": "My plan for today: Morning routine — getting ready; Having breakfast at home; Commuting to factory; Working — morning block; Walking to lunch at grocery; Lunch break; Walking back to factory; Working — afternoon block",
+            "importance": 6,
+            "location": "house_gen_27",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
           }
         ],
-        "next_id": 51,
-        "importance_accumulator": 320.0,
+        "next_id": 52,
+        "importance_accumulator": 326.0,
         "reflection_threshold": 50.0,
         "max_memories": 500
       },
       "needs": {
         "hunger": 0.0,
-        "energy": 1.0,
-        "social": 0.34,
-        "purpose": 0.712,
-        "comfort": 0.82,
-        "fun": 0.158
+        "energy": 0.985,
+        "social": 0.33,
+        "purpose": 0.704,
+        "comfort": 0.815,
+        "fun": 0.146
       },
       "relationships": {},
-      "state": "sleeping",
+      "state": "idle",
       "location": "house_gen_27",
-      "current_action": {
-        "type": "sleep",
-        "target": "house_gen_27",
-        "detail": "Sleeping",
-        "duration_ticks": 31,
-        "needs_satisfied": {
-          "energy": 0.8
-        }
-      },
-      "action_ticks_remaining": 1,
+      "current_action": null,
+      "action_ticks_remaining": 0,
       "mood": 0.002,
       "daily_plan": [
         "Morning routine — getting ready",
@@ -38275,19 +38723,58 @@
             "involved_agents": [],
             "access_count": 0,
             "last_accessed_tick": 0
+          },
+          {
+            "id": 71,
+            "tick": 96,
+            "day": 2,
+            "time_str": "06:00",
+            "type": "observation",
+            "content": "Evelyn Thompson notices something unusual in their surroundings.",
+            "importance": 7,
+            "location": "house_gen_28",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
+          },
+          {
+            "id": 72,
+            "tick": 96,
+            "day": 2,
+            "time_str": "06:00",
+            "type": "plan",
+            "content": "My plan for today: Morning routine — getting ready; Having breakfast at home; Commuting to school; Studying — morning block; Walking to lunch at grocery; Lunch break; Walking back to school; Studying — afternoon block",
+            "importance": 6,
+            "location": "house_gen_28",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
+          },
+          {
+            "id": 73,
+            "tick": 97,
+            "day": 2,
+            "time_str": "06:15",
+            "type": "observation",
+            "content": "Evelyn Thompson finds a forgotten note in their pocket.",
+            "importance": 7,
+            "location": "house_gen_28",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
           }
         ],
-        "next_id": 71,
-        "importance_accumulator": 56.0,
+        "next_id": 74,
+        "importance_accumulator": 76.0,
         "reflection_threshold": 50.0,
         "max_memories": 500
       },
       "needs": {
         "hunger": 0.0,
         "energy": 0.0,
-        "social": 0.04,
-        "purpose": 0.512,
-        "comfort": 0.67,
+        "social": 0.02,
+        "purpose": 0.496,
+        "comfort": 0.66,
         "fun": 0.0
       },
       "relationships": {},
@@ -38295,13 +38782,13 @@
       "location": "house_gen_28",
       "current_action": null,
       "action_ticks_remaining": 0,
-      "mood": -0.247,
+      "mood": -0.257,
       "daily_plan": [
         "Morning routine — getting ready",
         "Having breakfast at home",
         "Commuting to school",
         "Studying — morning block",
-        "Walking to lunch at restaurant",
+        "Walking to lunch at grocery",
         "Lunch break",
         "Walking back to school",
         "Studying — afternoon block"
@@ -38573,19 +39060,32 @@
             "involved_agents": [],
             "access_count": 0,
             "last_accessed_tick": 0
+          },
+          {
+            "id": 18,
+            "tick": 96,
+            "day": 2,
+            "time_str": "06:00",
+            "type": "plan",
+            "content": "My plan for today: Late morning routine; Having brunch; Going to gym; Working out at the gym; Heading home; Heading to bar for shift; Working the evening shift at bar; Heading home after shift",
+            "importance": 6,
+            "location": "house_gen_29",
+            "involved_agents": [],
+            "access_count": 0,
+            "last_accessed_tick": 0
           }
         ],
-        "next_id": 18,
-        "importance_accumulator": 101.0,
+        "next_id": 19,
+        "importance_accumulator": 107.0,
         "reflection_threshold": 50.0,
         "max_memories": 500
       },
       "needs": {
         "hunger": 0.0,
-        "energy": 0.505,
+        "energy": 0.475,
         "social": 0.0,
-        "purpose": 0.492,
-        "comfort": 0.52,
+        "purpose": 0.476,
+        "comfort": 0.51,
         "fun": 0.0
       },
       "relationships": {},
@@ -38593,12 +39093,12 @@
       "location": "house_gen_29",
       "current_action": null,
       "action_ticks_remaining": 0,
-      "mood": -0.198,
+      "mood": -0.209,
       "daily_plan": [
         "Late morning routine",
         "Having brunch",
-        "Going to sports_field",
-        "Playing sports at the field",
+        "Going to gym",
+        "Working out at the gym",
         "Heading home",
         "Heading to bar for shift",
         "Working the evening shift at bar",
@@ -39425,7 +39925,7 @@
         "max_memories": 500
       },
       "needs": {
-        "hunger": 0.2,
+        "hunger": 0.16,
         "energy": 1.0,
         "social": 0.93,
         "purpose": 0.14,
@@ -39433,19 +39933,11 @@
         "fun": 0.86
       },
       "relationships": {},
-      "state": "sleeping",
+      "state": "idle",
       "location": "house_gen_30",
-      "current_action": {
-        "type": "sleep",
-        "target": "house_gen_30",
-        "detail": "Sleeping",
-        "duration_ticks": 28,
-        "needs_satisfied": {
-          "energy": 0.8
-        }
-      },
-      "action_ticks_remaining": 2,
-      "mood": 0.199,
+      "current_action": null,
+      "action_ticks_remaining": 0,
+      "mood": 0.196,
       "daily_plan": [
         "Lazy morning — sleeping in and lounging",
         "Going to restaurant for brunch",
@@ -39456,7 +39948,7 @@
         "Chilling at home",
         "Heading to cafe"
       ],
-      "has_plan_today": true,
+      "has_plan_today": false,
       "last_llm_tick": -1,
       "is_player": false,
       "partner_id": null
@@ -39474,7 +39966,7 @@
           "cinema"
         ],
         "duration_ticks": 8,
-        "remaining_ticks": 6
+        "remaining_ticks": 4
       }
     ],
     "event_counter": 14,
@@ -39482,7 +39974,7 @@
   },
   "entropy": {
     "event_injection_interval": 10,
-    "ticks_since_event": 6,
+    "ticks_since_event": 8,
     "action_history": {
       "elena": [
         "sleep",
@@ -39525,8 +40017,8 @@
         "relax",
         "relax",
         "relax",
-        "relax",
-        "wander"
+        "wander",
+        "eat"
       ],
       "rosa": [
         "sleep",
@@ -40052,7 +40544,7 @@
         "relax",
         "relax",
         "relax",
-        "relax",
+        "wander",
         "wander",
         "wander"
       ],
@@ -40087,7 +40579,7 @@
         "relax",
         "relax",
         "relax",
-        "relax",
+        "wander",
         "wander",
         "wander",
         "wander",
@@ -40586,5 +41078,5 @@
       ]
     }
   },
-  "conversation_counter": 7
+  "conversation_counter": 9
 }
