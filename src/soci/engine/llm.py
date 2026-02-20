@@ -396,6 +396,36 @@ class GroqClient:
         self._min_request_interval = 60.0 / max_rpm
         self._last_request_time: float = 0.0
         self._rate_lock = asyncio.Lock()
+        # Circuit breaker: if Groq returns a long retry-after (daily quota),
+        # skip all calls until the quota window resets.
+        self._rate_limited_until: float = 0.0  # monotonic timestamp
+
+    def _is_quota_exhausted(self) -> bool:
+        """Return True if we are inside a long-wait circuit-breaker window."""
+        import time
+        return time.monotonic() < self._rate_limited_until
+
+    def _handle_429(self, retry_after_str: str, attempt: int) -> float:
+        """Parse retry-after and update circuit breaker. Returns seconds to sleep.
+
+        Short waits (≤15s, per-minute limit) → return the wait so caller retries.
+        Long waits (>15s, daily quota) → arm the circuit breaker and return 0
+        so the caller gives up immediately instead of blocking for minutes.
+        """
+        import time
+        try:
+            retry_after = float(retry_after_str)
+        except (ValueError, TypeError):
+            retry_after = max(3.0, 2 ** attempt + 1)
+
+        if retry_after > 15:
+            self._rate_limited_until = time.monotonic() + retry_after
+            logger.warning(
+                f"Groq quota exhausted — skipping LLM calls for {retry_after:.0f}s "
+                f"(until quota resets). Simulation continues without LLM."
+            )
+            return 0.0  # caller should give up immediately
+        return retry_after  # short per-minute limit — wait and retry
 
     async def _wait_for_rate_limit(self) -> None:
         """Wait if needed to stay under the RPM limit."""
@@ -429,6 +459,10 @@ class GroqClient:
             "max_tokens": max_tokens,
         }
 
+        if self._is_quota_exhausted():
+            logger.debug("Groq quota circuit breaker active — skipping complete()")
+            return ""
+
         for attempt in range(self.max_retries):
             try:
                 await self._wait_for_rate_limit()
@@ -447,15 +481,14 @@ class GroqClient:
 
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 429:
-                    # Rate limited — respect retry-after header
-                    retry_after_str = e.response.headers.get("retry-after", "")
-                    try:
-                        retry_after = min(float(retry_after_str), 120)  # Cap at 2min
-                    except (ValueError, TypeError):
-                        retry_after = max(3, 2 ** attempt + 1)
                     body = e.response.text[:200] if e.response.text else ""
-                    logger.warning(f"Groq 429: waiting {retry_after:.0f}s — {body[:100]}")
-                    await asyncio.sleep(retry_after)
+                    sleep_for = self._handle_429(
+                        e.response.headers.get("retry-after", ""), attempt
+                    )
+                    logger.warning(f"Groq 429: {body[:120]}")
+                    if sleep_for == 0:
+                        return ""  # quota exhausted — skip immediately
+                    await asyncio.sleep(sleep_for)
                 elif e.response.status_code == 401:
                     raise ValueError("Invalid GROQ_API_KEY")
                 else:
@@ -497,6 +530,10 @@ class GroqClient:
             "response_format": {"type": "json_object"},
         }
 
+        if self._is_quota_exhausted():
+            logger.debug("Groq quota circuit breaker active — skipping complete_json()")
+            return {}
+
         for attempt in range(self.max_retries):
             try:
                 await self._wait_for_rate_limit()
@@ -516,14 +553,14 @@ class GroqClient:
 
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 429:
-                    retry_after_str = e.response.headers.get("retry-after", "")
-                    try:
-                        retry_after = min(float(retry_after_str), 120)
-                    except (ValueError, TypeError):
-                        retry_after = max(3, 2 ** attempt + 1)
                     body = e.response.text[:200] if e.response.text else ""
-                    logger.warning(f"Groq 429 (json): waiting {retry_after:.0f}s — {body[:100]}")
-                    await asyncio.sleep(retry_after)
+                    sleep_for = self._handle_429(
+                        e.response.headers.get("retry-after", ""), attempt
+                    )
+                    logger.warning(f"Groq 429 (json): {body[:120]}")
+                    if sleep_for == 0:
+                        return {}  # quota exhausted — skip immediately
+                    await asyncio.sleep(sleep_for)
                 else:
                     logger.error(f"Groq JSON error: {e.response.status_code}")
                     if attempt == self.max_retries - 1:
