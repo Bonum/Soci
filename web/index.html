@@ -234,27 +234,23 @@ const WORLD_H = 1.0;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 10.0;
 
-// Road network
+// Road network — full grid connecting every building
 const ROADS = [
-  // Horizontal roads
+  // === Horizontal roads (full width) ===
+  { x1: 0.03, y1: 0.22, x2: 0.97, y2: 0.22, width: 10, name: 'North Access' },
   { x1: 0.03, y1: 0.28, x2: 0.97, y2: 0.28, width: 14, name: 'North Road' },
+  { x1: 0.03, y1: 0.43, x2: 0.97, y2: 0.43, width: 10, name: 'Mid Road' },
   { x1: 0.03, y1: 0.58, x2: 0.97, y2: 0.58, width: 14, name: 'South Road' },
-  // Main vertical street
-  { x1: 0.50, y1: 0.13, x2: 0.50, y2: 0.90, width: 16, name: 'Main Street' },
-  // West avenue
+  { x1: 0.03, y1: 0.72, x2: 0.97, y2: 0.72, width: 10, name: 'South Connector' },
+  { x1: 0.03, y1: 0.80, x2: 0.97, y2: 0.80, width: 10, name: 'South Access' },
+  // === Vertical roads (full height) ===
+  { x1: 0.08, y1: 0.20, x2: 0.08, y2: 0.82, width: 7  },
   { x1: 0.15, y1: 0.20, x2: 0.15, y2: 0.82, width: 10 },
-  // East avenue
+  { x1: 0.30, y1: 0.20, x2: 0.30, y2: 0.82, width: 8  },
+  { x1: 0.50, y1: 0.13, x2: 0.50, y2: 0.90, width: 16, name: 'Main Street' },
+  { x1: 0.70, y1: 0.20, x2: 0.70, y2: 0.82, width: 8  },
   { x1: 0.85, y1: 0.20, x2: 0.85, y2: 0.82, width: 10 },
-  // Mid connectors
-  { x1: 0.15, y1: 0.43, x2: 0.50, y2: 0.43, width: 6 },
-  { x1: 0.50, y1: 0.43, x2: 0.85, y2: 0.43, width: 6 },
-  { x1: 0.15, y1: 0.72, x2: 0.50, y2: 0.72, width: 6 },
-  { x1: 0.50, y1: 0.72, x2: 0.85, y2: 0.72, width: 6 },
-  // Extra connectors
-  { x1: 0.30, y1: 0.28, x2: 0.30, y2: 0.43, width: 6 },
-  { x1: 0.70, y1: 0.28, x2: 0.70, y2: 0.43, width: 6 },
-  { x1: 0.30, y1: 0.58, x2: 0.30, y2: 0.72, width: 6 },
-  { x1: 0.70, y1: 0.58, x2: 0.70, y2: 0.72, width: 6 },
+  { x1: 0.92, y1: 0.20, x2: 0.92, y2: 0.82, width: 7  },
 ];
 
 // Slot grid for procedurally generated houses — all slots in VALID city ground (y≥0.20).
@@ -391,8 +387,9 @@ let panX = 0, panY = 0;
 let zoom = 1.0;
 // Movement tracking — previous location + road waypoints for smooth walking
 let agentPrevLocations = {};   // {id: locationId} last known location
-let agentWaypoints = {};       // {id: {x,y}} intermediate road point during transit
+let agentWaypoints = {};       // {id: [{x,y},...]} L-shaped road waypoint queue
 let agentFacingRight = {};     // {id: bool} last known horizontal facing direction
+let agentMovingUp = {};        // {id: bool} true when moving toward top of screen (back view)
 let locCrowdCount = {};        // {locationId: count} — used by drawPerson to scale agents
 let isDragging = false, dragStartX = 0, dragStartY = 0, dragPanStartX = 0, dragPanStartY = 0;
 // Rectangle-zoom state
@@ -581,13 +578,13 @@ function animate() {
     const p = agentPositions[id];
     const agent = agents[id];
 
-    // If there's a road waypoint, move toward it first
-    const wp = agentWaypoints[id];
-    if (wp) {
-      const d = Math.hypot(p.x - wp.x, p.y - wp.y);
-      if (d < 4) delete agentWaypoints[id];  // arrived at waypoint
+    // Consume road waypoint queue (L-shaped routing)
+    const wps = agentWaypoints[id];
+    if (wps && wps.length > 0) {
+      const d = Math.hypot(p.x - wps[0].x, p.y - wps[0].y);
+      if (d < 4) { wps.shift(); if (wps.length === 0) delete agentWaypoints[id]; }
     }
-    const dest = agentWaypoints[id] || target;
+    const dest = (agentWaypoints[id] && agentWaypoints[id].length) ? agentWaypoints[id][0] : target;
 
     // Moving agents travel slower so the walk is visible; others snap faster
     const isMoving = agent && (agent.state === 'moving');
@@ -1731,26 +1728,34 @@ function computeAgentTarget(id, agent, globalIdx, byLoc, W, H) {
   }
   if (!agentPositions[id]) agentPositions[id] = {...agentTargets[id]};
 
-  // ── Road-waypoint routing for moving agents ──────────────────
-  // When location changes while moving, insert a road waypoint so
-  // the agent walks along the street grid instead of cutting straight.
+  // ── L-shaped road routing for moving agents ──────────────────
+  // On destination change, compute a 2-waypoint L-shaped path via the
+  // road grid so agents walk along streets instead of cutting diagonals.
   const prevLoc = agentPrevLocations[id];
   if (agent.state === 'moving' && prevLoc && prevLoc !== loc) {
     const prevPos = allPos[prevLoc];
     if (prevPos && agentPositions[id]) {
-      const midX = (prevPos.x + pos.x) / 2;
-      const midY = (prevPos.y + pos.y) / 2;
-      // Snap midpoint to nearest horizontal or vertical road
-      const hRoads = [0.28, 0.43, 0.58, 0.72];
-      const vRoads = [0.15, 0.30, 0.50, 0.70, 0.85];
-      const nearH = hRoads.reduce((b, r) => Math.abs(midY - r) < Math.abs(midY - b) ? r : b, hRoads[0]);
-      const nearV = vRoads.reduce((b, r) => Math.abs(midX - r) < Math.abs(midX - b) ? r : b, vRoads[0]);
-      const useH = Math.abs(midY - nearH) <= Math.abs(midX - nearV);
-      const jitter = (localIdx % 3 - 1) * 7;  // lane spread
-      agentWaypoints[id] = {
-        x: (useH ? midX : nearV) * W + (useH ? jitter : 0),
-        y: (useH ? nearH : midY) * H + (useH ? 0 : jitter),
-      };
+      const srcX = prevPos.x, srcY = prevPos.y;
+      const dstX = pos.x,     dstY = pos.y;
+      const hRoads = [0.22, 0.28, 0.43, 0.58, 0.72, 0.80];
+      const vRoads = [0.08, 0.15, 0.30, 0.50, 0.70, 0.85, 0.92];
+      const midY = (srcY + dstY) / 2, midX = (srcX + dstX) / 2;
+      const bestH = hRoads.reduce((b, r) => Math.abs(midY - r) < Math.abs(midY - b) ? r : b, hRoads[0]);
+      const bestV = vRoads.reduce((b, r) => Math.abs(midX - r) < Math.abs(midX - b) ? r : b, vRoads[0]);
+      const lo = (localIdx % 3 - 1) * 5;  // lane spread keeps agents from stacking
+      if (Math.abs(dstX - srcX) >= Math.abs(dstY - srcY)) {
+        // Primarily horizontal: exit to H-road, slide across, drop to destination
+        agentWaypoints[id] = [
+          { x: srcX * W + lo, y: bestH * H },
+          { x: dstX * W + lo, y: bestH * H },
+        ];
+      } else {
+        // Primarily vertical: exit to V-road, travel up/down, approach destination
+        agentWaypoints[id] = [
+          { x: bestV * W, y: srcY * H + lo },
+          { x: bestV * W, y: dstY * H + lo },
+        ];
+      }
     }
   }
   agentPrevLocations[id] = loc;
@@ -1784,10 +1789,19 @@ function drawPerson(id, agent, globalIdx, W, H) {
   const armSwing = walkAnim ? Math.sin(walkPhase) * 10  : 0;
   const tY = -10 + bounce;   // torso top Y — hoisted so profile view can use it
 
-  // Facing direction: update when there is significant horizontal movement
-  const destPt = agentWaypoints[id] || agentTargets[id];
-  if (destPt && walkAnim && Math.abs(destPt.x - ax) > 2) agentFacingRight[id] = destPt.x > ax;
+  // Facing direction — track dominant movement axis (H or V)
+  const destPt = (agentWaypoints[id] && agentWaypoints[id].length) ? agentWaypoints[id][0] : agentTargets[id];
+  if (destPt && walkAnim) {
+    const ddx = destPt.x - ax, ddy = destPt.y - ay;
+    if (Math.abs(ddx) > Math.abs(ddy) + 5) {
+      agentFacingRight[id] = ddx > 0;
+      agentMovingUp[id] = false;
+    } else if (Math.abs(ddy) > Math.abs(ddx) + 5) {
+      agentMovingUp[id] = ddy < 0;
+    }
+  }
   const facingRight = agentFacingRight[id] !== false; // default right
+  const movingUp = agentMovingUp[id] === true;
 
   // Skin & hair
   const skinTones = ['#f5dbb8','#d4a574','#c68642','#8d5524','#e8c4a0','#f0c090'];
@@ -1801,6 +1815,168 @@ function drawPerson(id, agent, globalIdx, W, H) {
   ctx.translate(ax, ay);
   ctx.scale(scale, scale);
   if (isSel) { ctx.shadowColor = color; ctx.shadowBlur = 14; }
+
+  // ══════════════════════════════════════════════════════════════
+  // SLEEPING VIEW — agent lying on a bed
+  // ══════════════════════════════════════════════════════════════
+  if (isSleeping) {
+    const bw = 22, bh = 10;
+    // Bed frame
+    ctx.fillStyle = '#5c3d1a';
+    ctx.beginPath(); ctx.roundRect(-bw/2 - 1, -bh/2 - 1, bw + 2, bh + 2, 2); ctx.fill();
+    // Mattress
+    ctx.fillStyle = '#c9a97a';
+    ctx.beginPath(); ctx.roundRect(-bw/2, -bh/2, bw, bh, 1); ctx.fill();
+    // Pillow at head-end (right side)
+    ctx.fillStyle = '#f0e8e0';
+    ctx.beginPath(); ctx.roundRect(bw/2 - 9, -bh/2 + 1, 8, bh - 2, 2); ctx.fill();
+    // Blanket covering body (left portion)
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.roundRect(-bw/2 + 1, -bh/2 + 1.5, bw - 11, bh - 3, 1); ctx.fill();
+    // Blanket fold highlight
+    ctx.fillStyle = dim(color, 1.25);
+    ctx.beginPath(); ctx.roundRect(-bw/2 + 1, -bh/2 + 1.5, bw - 11, 2.5, 1); ctx.fill();
+    // Head resting on pillow
+    ctx.fillStyle = skin;
+    ctx.beginPath(); ctx.arc(bw/2 - 5, 0, 3.5, 0, 6.28); ctx.fill();
+    // Hair
+    ctx.fillStyle = hairColor;
+    ctx.beginPath(); ctx.arc(bw/2 - 5, -0.5, 4.2, Math.PI * 0.85, Math.PI * 2.15); ctx.fill();
+    // Closed eyes (two small arcs)
+    ctx.strokeStyle = dim(skin, 0.45); ctx.lineWidth = 0.7; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(bw/2 - 3.5, -0.3, 1.0, Math.PI * 1.1, Math.PI * 0.0); ctx.stroke();
+    ctx.beginPath(); ctx.arc(bw/2 - 6.5, -0.3, 1.0, Math.PI * 1.1, Math.PI * 0.0); ctx.stroke();
+    // ZZZ bubbles
+    const zt = animFrame * 0.04;
+    ctx.font = 'bold 8px Segoe UI'; ctx.textAlign = 'left';
+    for (let i = 0; i < 3; i++) {
+      ctx.globalAlpha = 0.3 + i * 0.25; ctx.fillStyle = '#8ab4f8';
+      ctx.fillText('z', bw/2 - 2 + i * 5, -bh/2 - 4 - i * 5 + Math.sin(zt + i) * 2);
+    }
+    ctx.globalAlpha = 1;
+    if (agent.partner_id) drawHeart(bw/2 - 5, -bh/2 - 14 + Math.sin(animFrame * 0.04) * 2, 3.5, 'rgba(233,30,144,0.8)');
+    if (isSel) {
+      ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.roundRect(-bw/2 - 4, -bh/2 - 4, bw + 8, bh + 8, 4); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
+    ctx.restore();
+    const fnS = (agent.name || id).split(' ')[0];
+    ctx.font = `${isSel ? 'bold ' : ''}8px Segoe UI`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillText(fnS, ax + 1, ay + 8 * scale + 1);
+    ctx.fillStyle = isSel ? '#fff' : '#c8c8d8'; ctx.fillText(fnS, ax, ay + 8 * scale);
+    return;
+  }
+
+  if (walkAnim && movingUp) {
+    // ══════════════════════════════════════════════════════════
+    // BACK VIEW — agent walking away (toward top of screen)
+    // Same figure as front view but no face; hair covers back.
+    // ══════════════════════════════════════════════════════════
+    const twB = gender === 'female' ? 7 : 8;
+    const bwB = gender === 'female' ? 4.5 : 6;
+    const hxB = 1, hyB = tY - 10, hrB = 6.5;
+
+    // Ground shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.beginPath(); ctx.ellipse(3, 13, 8, 3, 0.2, 0, 6.28); ctx.fill();
+
+    // SHOES
+    const lFBX = -2.5 - legSwing * 0.35, lFBY = 12 + bounce + legSwing;
+    const rFBX =  2.5 + legSwing * 0.35, rFBY = 12 + bounce - legSwing;
+    ctx.fillStyle = shoeColor;
+    ctx.beginPath(); ctx.roundRect(lFBX - 3, lFBY - 1, 5, 2.5, 1); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(rFBX - 1.5, rFBY - 1, 5, 2.5, 1); ctx.fill();
+
+    // LEGS
+    ctx.lineWidth = 2.8; ctx.lineCap = 'round';
+    ctx.strokeStyle = pantsColor;
+    ctx.beginPath(); ctx.moveTo(-1.5, 4 + bounce);
+    ctx.lineTo(-1.5 - legSwing * 0.18, 8 + bounce + legSwing * 0.5);
+    ctx.lineTo(lFBX, lFBY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(1.5, 4 + bounce);
+    ctx.lineTo(1.5 + legSwing * 0.18, 8 + bounce - legSwing * 0.5);
+    ctx.lineTo(rFBX, rFBY); ctx.stroke();
+
+    // TORSO (back — darker gradient, spine crease)
+    const tGradB = ctx.createLinearGradient(-twB - 1, tY, twB + 1, tY + 13);
+    tGradB.addColorStop(0.00, dim(color, 0.62));
+    tGradB.addColorStop(0.50, dim(color, 0.78));
+    tGradB.addColorStop(1.00, dim(color, 0.50));
+    ctx.fillStyle = tGradB;
+    ctx.beginPath();
+    ctx.moveTo(-bwB, tY + 13); ctx.lineTo(-twB, tY + 2);
+    ctx.quadraticCurveTo(-twB, tY - 1, -twB + 3, tY - 1);
+    ctx.lineTo(twB - 3, tY - 1);
+    ctx.quadraticCurveTo(twB, tY - 1, twB, tY + 2);
+    ctx.lineTo(bwB, tY + 13); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = dim(color, 0.38); ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.moveTo(0, tY + 2); ctx.lineTo(0, tY + 12); ctx.stroke();
+    if (gender === 'female') {
+      const sGB = ctx.createLinearGradient(-bwB - 2, tY + 13, bwB + 2, tY + 17);
+      sGB.addColorStop(0, dim(color, 0.65)); sGB.addColorStop(1, dim(color, 0.50));
+      ctx.fillStyle = sGB;
+      ctx.beginPath();
+      ctx.moveTo(-bwB, tY + 13); ctx.lineTo(-bwB - 2.5, tY + 17 + bounce);
+      ctx.lineTo(bwB + 2.5, tY + 17 + bounce); ctx.lineTo(bwB, tY + 13);
+      ctx.closePath(); ctx.fill();
+    }
+
+    // ARMS (back — slightly dimmed skin)
+    const sBy = tY + 2;
+    ctx.strokeStyle = dim(skin, 0.78); ctx.lineWidth = 1.8; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-twB + 1, sBy);
+    ctx.lineTo(-twB - 3 + armSwing * 0.3, sBy + 5 + armSwing * 0.4);
+    ctx.lineTo(-twB - 4.5 + armSwing * 0.7, sBy + 9 + armSwing * 0.85); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(twB - 1, sBy);
+    ctx.lineTo(twB + 3 - armSwing * 0.3, sBy + 5 - armSwing * 0.4);
+    ctx.lineTo(twB + 4.5 - armSwing * 0.7, sBy + 9 - armSwing * 0.85); ctx.stroke();
+    ctx.fillStyle = dim(skin, 0.78);
+    ctx.beginPath(); ctx.arc(-twB - 4.5 + armSwing * 0.7, sBy + 9 + armSwing * 0.85, 1.1, 0, 6.28); ctx.fill();
+    ctx.beginPath(); ctx.arc(twB + 4.5 - armSwing * 0.7, sBy + 9 - armSwing * 0.85, 1.1, 0, 6.28); ctx.fill();
+
+    // NECK (back)
+    ctx.fillStyle = dim(skin, 0.72); ctx.fillRect(-1.5, tY - 3.5, 3, 4);
+
+    // HEAD (back of head — darker, no face features)
+    ctx.fillStyle = dim(skin, 0.78);
+    ctx.beginPath(); ctx.arc(hxB, hyB, hrB, 0, 6.28); ctx.fill();
+
+    // HAIR (back view — covers more of head than front)
+    ctx.fillStyle = hairColor;
+    if (gender === 'female') {
+      ctx.beginPath(); ctx.arc(hxB, hyB - 0.5, hrB + 1.0, Math.PI * 1.0, Math.PI * 2.0); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(hxB - hrB + 0.5, hyB + 4, 2.5, hrB * 0.95, -0.1, 0, 6.28); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(hxB + hrB - 0.5, hyB + 4, 2.2, hrB * 0.90,  0.1, 0, 6.28); ctx.fill();
+    } else if (gender === 'male') {
+      ctx.beginPath(); ctx.arc(hxB, hyB - 0.5, hrB + 0.5, Math.PI * 1.0, Math.PI * 2.0); ctx.fill();
+      ctx.fillRect(hxB - hrB - 0.5, hyB - 0.5, 3, hrB * 0.6);
+    } else {
+      ctx.beginPath(); ctx.arc(hxB, hyB - 0.5, hrB + 0.8, Math.PI * 1.0, Math.PI * 2.0); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(hxB - hrB + 0.5, hyB + 3, 2.2, hrB * 0.75, -0.1, 0, 6.28); ctx.fill();
+    }
+
+    if (agent.partner_id) drawHeart(hxB + 1, hyB - hrB - 10 + Math.sin(animFrame * 0.04) * 2, 3.5, 'rgba(233,30,144,0.8)');
+    if (isSel) {
+      ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.arc(hxB, hyB, hrB + 3, 0, 6.28); ctx.stroke(); ctx.setLineDash([]);
+    }
+    ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
+    ctx.restore();
+    const fnB = (agent.name || id).split(' ')[0];
+    ctx.font = `${isSel ? 'bold ' : ''}8px Segoe UI`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillText(fnB, ax + 1, ay + 14 * scale + 1);
+    ctx.fillStyle = isSel ? '#fff' : '#c8c8d8'; ctx.fillText(fnB, ax, ay + 14 * scale);
+    const mVB = agent.mood || 0, mwBL = 16, mxbB = ax - 8, mybB = ay + 14 * scale + 11;
+    ctx.fillStyle = 'rgba(15,52,96,0.45)'; ctx.fillRect(mxbB, mybB, mwBL, 2.5);
+    const mfB = (mVB + 1) / 2;
+    ctx.fillStyle = mfB > 0.6 ? '#4ecca3' : (mfB > 0.3 ? '#f0c040' : '#e94560');
+    ctx.fillRect(mxbB, mybB, mwBL * mfB, 2.5);
+    return;
+  }
 
   if (walkAnim) {
     // ══════════════════════════════════════════════════════════

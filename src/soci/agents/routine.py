@@ -356,36 +356,43 @@ class DailyRoutine:
 
     def _add_evening_block(self, persona: Persona, home: str,
                            t: int, sleep_h: int, sleep_m: int) -> int:
-        """Add evening entertainment. Returns updated time in minutes."""
+        """Add evening entertainment filling the full period until sleep.
+
+        Extroverts go out then wind down; introverts stay home the whole time.
+        Returns updated time in minutes.
+        """
         e = persona.extraversion
         sleep_t = sleep_h * 60 + sleep_m
-        available = max(0, (sleep_t - t) // 15)
-        if available <= 0:
+        if sleep_t <= t:
             return t
 
         if e >= 6:
-            # Extroverts go out
+            # Extroverts: go out, stay until ~30-45 min before sleep, then come home
             venue = self._rng.choice(["bar", "restaurant", "park", "cinema", "town_square"])
             h, m = t // 60, t % 60
-            t = self._add(h, m, "move", venue, 1, f"Heading to {venue}",
-                           {})
-            ent_ticks = min(available - 2, self._rng.randint(2, 4))
+            t = self._add(h, m, "move", venue, 1, f"Heading to {venue}", {})
+            wind_down_start = sleep_t - self._rng.randint(2, 3) * 15
+            ent_ticks = max(0, min((wind_down_start - t) // 15, self._rng.randint(4, 8)))
             if ent_ticks > 0:
                 h, m = t // 60, t % 60
                 t = self._add(h, m, "relax", venue, ent_ticks,
                                f"Socializing at {venue}",
                                {"fun": 0.3, "social": 0.3})
             # Head home
+            if t < sleep_t:
+                h, m = t // 60, t % 60
+                t = self._add(h, m, "move", home, 1, "Heading home", {})
+
+        # Wind down at home until sleep (covers all remaining time)
+        wind_down_ticks = max(0, (sleep_t - t) // 15)
+        if wind_down_ticks > 0:
             h, m = t // 60, t % 60
-            t = self._add(h, m, "move", home, 1, "Heading home",
-                           {})
-        else:
-            # Introverts stay home
-            ent_ticks = min(available, self._rng.randint(2, 4))
-            h, m = t // 60, t % 60
-            t = self._add(h, m, "relax", home, ent_ticks,
-                           "Relaxing at home",
-                           {"fun": 0.2, "comfort": 0.2})
+            detail = self._rng.choice([
+                "Reading before bed", "Watching TV", "Browsing the internet",
+                "Journaling", "Listening to music", "Winding down at home",
+            ])
+            t = self._add(h, m, "relax", home, wind_down_ticks, detail,
+                           {"comfort": 0.25, "fun": 0.15, "energy": 0.05})
 
         return t
 

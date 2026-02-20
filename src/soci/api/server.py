@@ -85,9 +85,9 @@ async def simulation_loop(sim: Simulation, db: Database, tick_delay: float = 2.0
                     sim._max_convos_this_tick = 1
                     sim._max_llm_calls_this_tick = 4
                 else:
-                    # Ollama / Claude: no rate limit cap
-                    sim._max_convos_this_tick = 0  # 0 = unlimited
-                    sim._max_llm_calls_this_tick = 0
+                    # Ollama / Claude: soft cap to keep ticks responsive
+                    sim._max_convos_this_tick = 3
+                    sim._max_llm_calls_this_tick = 10
 
             await sim.tick()
 
