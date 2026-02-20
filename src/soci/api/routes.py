@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
+from typing import Optional
 
 router = APIRouter()
 
@@ -17,6 +18,66 @@ class PlayerActionRequest(BaseModel):
 class PlayerJoinRequest(BaseModel):
     name: str
     background: str = "A newcomer to Soci City."
+
+
+# ── Auth models ───────────────────────────────────────────────────────────────
+
+class AuthRequest(BaseModel):
+    username: str
+    password: str
+
+
+class PlayerCreateRequest(BaseModel):
+    token: str
+    name: str
+    age: int = 30
+    occupation: str = "Newcomer"
+    background: str = "A newcomer to Soci City."
+    extraversion: int = 5
+    agreeableness: int = 7
+    openness: int = 6
+
+
+class PlayerUpdateRequest(BaseModel):
+    token: str
+    name: Optional[str] = None
+    age: Optional[int] = None
+    occupation: Optional[str] = None
+    background: Optional[str] = None
+    extraversion: Optional[int] = None
+    agreeableness: Optional[int] = None
+    openness: Optional[int] = None
+
+
+class PlayerTalkRequest(BaseModel):
+    token: str
+    target_id: str
+    message: str
+
+
+class PlayerMoveRequest(BaseModel):
+    token: str
+    location: str
+
+
+class PlayerPlanRequest(BaseModel):
+    token: str
+    plan_item: str
+
+
+# ── Helper ────────────────────────────────────────────────────────────────────
+
+async def _get_player_from_token(token: str):
+    """Validate token and return (user, agent). Raises 401/404 on failure."""
+    from soci.api.server import get_simulation, get_database
+    db = get_database()
+    sim = get_simulation()
+    user = await db.get_user_by_token(token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid or expired session token")
+    agent_id = user.get("agent_id")
+    agent = sim.agents.get(agent_id) if agent_id else None
+    return user, agent
 
 
 @router.get("/city")
@@ -200,6 +261,251 @@ async def get_stats():
         },
     }
 
+
+# ── Auth endpoints ────────────────────────────────────────────────────────────
+
+@router.post("/auth/register")
+async def auth_register(request: AuthRequest):
+    """Register a new user and auto-create their player agent."""
+    from soci.api.server import get_simulation, get_database
+    from soci.agents.agent import Agent
+    from soci.agents.persona import Persona
+    db = get_database()
+    sim = get_simulation()
+
+    if not request.username.strip():
+        raise HTTPException(status_code=400, detail="Username cannot be empty")
+    if len(request.password) < 3:
+        raise HTTPException(status_code=400, detail="Password must be at least 3 characters")
+
+    try:
+        user = await db.create_user(request.username.strip(), request.password)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+    # Auto-create default player agent at town_square
+    safe_name = request.username.strip()
+    player_id = f"player_{safe_name.lower().replace(' ', '_')}"
+    # Ensure unique ID
+    suffix = 1
+    base_id = player_id
+    while player_id in sim.agents:
+        player_id = f"{base_id}_{suffix}"
+        suffix += 1
+
+    persona = Persona(
+        id=player_id,
+        name=safe_name,
+        age=30,
+        occupation="Newcomer",
+        gender="unknown",
+        background="A newcomer to Soci City.",
+        home_location="town_square",
+        work_location="",
+        extraversion=5,
+        agreeableness=7,
+        openness=6,
+    )
+    agent = Agent(persona)
+    agent.is_player = True
+    sim.add_agent(agent)
+    await db.set_user_agent(safe_name, player_id)
+    user["agent_id"] = player_id
+
+    return user
+
+
+@router.post("/auth/login")
+async def auth_login(request: AuthRequest):
+    """Login and return session token."""
+    from soci.api.server import get_database
+    db = get_database()
+    user = await db.authenticate_user(request.username.strip(), request.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    return user
+
+
+@router.get("/auth/me")
+async def auth_me(authorization: str = Header(default="")):
+    """Verify session token and return current user info."""
+    token = authorization.removeprefix("Bearer ").strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="No token provided")
+    from soci.api.server import get_database
+    db = get_database()
+    user = await db.get_user_by_token(token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    return user
+
+
+@router.post("/auth/logout")
+async def auth_logout(authorization: str = Header(default="")):
+    """Invalidate session token."""
+    token = authorization.removeprefix("Bearer ").strip()
+    from soci.api.server import get_database
+    db = get_database()
+    await db.logout_user(token)
+    return {"ok": True}
+
+
+# ── Player management endpoints ───────────────────────────────────────────────
+
+@router.post("/player/create")
+async def player_create(request: PlayerCreateRequest):
+    """Create or replace the player's agent."""
+    from soci.api.server import get_simulation, get_database
+    from soci.agents.agent import Agent
+    from soci.agents.persona import Persona
+    db = get_database()
+    sim = get_simulation()
+    user = await db.get_user_by_token(request.token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    player_id = f"player_{request.name.lower().replace(' ', '_')}"
+    suffix = 1
+    base_id = player_id
+    while player_id in sim.agents and sim.agents[player_id].persona.name != request.name:
+        player_id = f"{base_id}_{suffix}"
+        suffix += 1
+
+    # Remove old agent if exists
+    old_id = user.get("agent_id")
+    if old_id and old_id in sim.agents:
+        loc = sim.city.get_location(sim.agents[old_id].location)
+        if loc:
+            loc.remove_agent(old_id)
+        del sim.agents[old_id]
+
+    persona = Persona(
+        id=player_id,
+        name=request.name,
+        age=request.age,
+        occupation=request.occupation,
+        background=request.background,
+        home_location="town_square",
+        work_location="",
+        extraversion=request.extraversion,
+        agreeableness=request.agreeableness,
+        openness=request.openness,
+    )
+    agent = Agent(persona)
+    agent.is_player = True
+    sim.add_agent(agent)
+    await db.set_user_agent(user["username"], player_id)
+    return {"agent_id": player_id}
+
+
+@router.put("/player/update")
+async def player_update(request: PlayerUpdateRequest):
+    """Update the player's persona fields in-place."""
+    user, agent = await _get_player_from_token(request.token)
+    if not agent:
+        raise HTTPException(status_code=404, detail="No player agent found")
+    p = agent.persona
+    if request.name is not None:
+        p.name = request.name
+        agent.name = request.name
+    if request.age is not None:
+        p.age = request.age
+    if request.occupation is not None:
+        p.occupation = request.occupation
+    if request.background is not None:
+        p.background = request.background
+    if request.extraversion is not None:
+        p.extraversion = max(1, min(10, request.extraversion))
+    if request.agreeableness is not None:
+        p.agreeableness = max(1, min(10, request.agreeableness))
+    if request.openness is not None:
+        p.openness = max(1, min(10, request.openness))
+    return {"ok": True}
+
+
+@router.post("/player/move")
+async def player_move(request: PlayerMoveRequest):
+    """Move the player to a city location."""
+    from soci.api.server import get_simulation
+    from soci.agents.agent import AgentAction, AgentState
+    sim = get_simulation()
+    user, agent = await _get_player_from_token(request.token)
+    if not agent:
+        raise HTTPException(status_code=404, detail="No player agent found")
+    loc = sim.city.get_location(request.location)
+    if not loc:
+        raise HTTPException(status_code=400, detail=f"Unknown location: {request.location}")
+    action = AgentAction(type="move", target=request.location, detail=f"Walking to {loc.name}", duration_ticks=1)
+    await sim._execute_action(agent, action)
+    return {"ok": True, "location": agent.location}
+
+
+@router.post("/player/talk")
+async def player_talk(request: PlayerTalkRequest):
+    """Send a message to an NPC and get their LLM-generated reply."""
+    from soci.api.server import get_simulation
+    from soci.actions.conversation import Conversation, ConversationTurn, continue_conversation
+    import uuid
+    sim = get_simulation()
+    user, player = await _get_player_from_token(request.token)
+    if not player:
+        raise HTTPException(status_code=404, detail="No player agent found")
+    target = sim.agents.get(request.target_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="Target agent not found")
+
+    # Build a conversation with the player's message as the opening turn
+    conv_id = f"player_conv_{uuid.uuid4().hex[:8]}"
+    conv = Conversation(
+        id=conv_id,
+        location=player.location,
+        participants=[player.id, target.id],
+        topic="player interaction",
+        max_turns=20,
+    )
+    player_turn = ConversationTurn(
+        speaker_id=player.id,
+        speaker_name=player.name,
+        message=request.message,
+        tick=sim.clock.total_ticks,
+    )
+    conv.add_turn(player_turn)
+
+    # Let the NPC respond via LLM
+    reply_turn = await continue_conversation(conv, target, player, sim.llm, sim.clock)
+
+    # Update relationship
+    target.relationships.get_or_create(player.id, player.name)
+    player.relationships.get_or_create(target.id, target.name)
+
+    # Add memory to both
+    player.add_observation(
+        tick=sim.clock.total_ticks, day=sim.clock.day, time_str=sim.clock.time_str,
+        content=f"I said to {target.name}: \"{request.message}\"",
+        importance=4, involved_agents=[target.id],
+    )
+    if reply_turn and reply_turn.speaker_id == target.id:
+        target.add_observation(
+            tick=sim.clock.total_ticks, day=sim.clock.day, time_str=sim.clock.time_str,
+            content=f"{player.name} talked to me: \"{request.message}\"",
+            importance=4, involved_agents=[player.id],
+        )
+        return {"reply": reply_turn.message, "inner_thought": reply_turn.inner_thought}
+
+    return {"reply": "(no response)", "inner_thought": ""}
+
+
+@router.post("/player/plan")
+async def player_add_plan(request: PlayerPlanRequest):
+    """Append an item to the player's daily plan."""
+    user, agent = await _get_player_from_token(request.token)
+    if not agent:
+        raise HTTPException(status_code=404, detail="No player agent found")
+    agent.daily_plan.append(request.plan_item)
+    return {"ok": True, "daily_plan": agent.daily_plan}
+
+
+# ── Legacy join/action (kept for compatibility) ───────────────────────────────
 
 @router.post("/player/join")
 async def player_join(request: PlayerJoinRequest):

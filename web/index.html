@@ -158,6 +158,77 @@
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: #1a1a2e; }
   ::-webkit-scrollbar-thumb { background: #0f3460; border-radius: 3px; }
+
+  /* ── Player / Auth UI ────────────────────────────────────────────── */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.72);
+    display: flex; align-items: center; justify-content: center; z-index: 1000;
+  }
+  .modal-box {
+    background: #0f1b35; border: 1px solid #1a3a6e; border-radius: 8px;
+    padding: 24px 28px; min-width: 300px; max-width: 420px; width: 90%;
+    color: #e0e0e0;
+  }
+  .modal-box h2 { color: #4ecca3; margin: 0 0 16px; font-size: 18px; }
+  .modal-box label { display: block; font-size: 11px; color: #888; margin: 10px 0 3px; }
+  .modal-box input, .modal-box textarea, .modal-box select {
+    width: 100%; box-sizing: border-box; background: #0a1628; border: 1px solid #1a3a6e;
+    color: #e0e0e0; padding: 7px 10px; border-radius: 4px; font-size: 13px;
+  }
+  .modal-box textarea { resize: vertical; min-height: 60px; font-family: inherit; }
+  .modal-box input[type=range] { padding: 4px 0; border: none; background: none; }
+  .modal-row { display: flex; gap: 10px; }
+  .modal-row > * { flex: 1; }
+  .modal-actions { display: flex; gap: 10px; margin-top: 18px; justify-content: flex-end; }
+  .btn-primary {
+    background: #4ecca3; color: #0a1628; border: none; padding: 8px 18px;
+    border-radius: 4px; cursor: pointer; font-weight: 700; font-size: 13px;
+  }
+  .btn-primary:hover { background: #3ab88e; }
+  .btn-secondary {
+    background: transparent; color: #a0a0c0; border: 1px solid #1a3a6e;
+    padding: 8px 18px; border-radius: 4px; cursor: pointer; font-size: 13px;
+  }
+  .btn-secondary:hover { color: #e0e0e0; border-color: #4ecca3; }
+  .btn-danger {
+    background: transparent; color: #e94560; border: 1px solid #e94560;
+    padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 11px;
+  }
+  .auth-switch { text-align: center; margin-top: 12px; font-size: 12px; color: #666; }
+  .auth-switch a { color: #4ecca3; cursor: pointer; text-decoration: underline; }
+  .auth-error { color: #e94560; font-size: 12px; margin-top: 8px; }
+  #player-panel {
+    background: rgba(78,204,163,0.06); border: 1px solid rgba(78,204,163,0.2);
+    border-radius: 6px; margin: 8px; padding: 10px 12px; display: none;
+  }
+  #player-panel .pp-header {
+    display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;
+  }
+  #player-panel .pp-title { color: #4ecca3; font-size: 11px; font-weight: 700; letter-spacing: 1px; }
+  #player-panel .pp-name { color: #e0e0e0; font-size: 13px; font-weight: 600; }
+  #player-panel .pp-loc { color: #888; font-size: 10px; }
+  .pp-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .pp-btn {
+    background: #0f3460; color: #a0a0c0; border: 1px solid #1a3a6e;
+    padding: 4px 10px; border-radius: 3px; cursor: pointer; font-size: 11px;
+  }
+  .pp-btn:hover { background: #1a4a80; color: #e0e0e0; }
+  .pp-move { display: flex; gap: 4px; margin-top: 6px; align-items: center; }
+  .pp-move select { flex: 1; background: #0a1628; color: #e0e0e0; border: 1px solid #1a3a6e; padding: 4px 6px; border-radius: 3px; font-size: 11px; }
+  .pp-move button { background: #4ecca3; color: #0a1628; border: none; padding: 4px 10px; border-radius: 3px; cursor: pointer; font-size: 11px; font-weight: 700; }
+  /* Chat panel */
+  #chat-panel {
+    border-top: 1px solid #1a3a6e; margin-top: 10px; padding-top: 10px; display: none;
+  }
+  #chat-panel .chat-header { color: #4ecca3; font-size: 11px; font-weight: 700; margin-bottom: 6px; display: flex; justify-content: space-between; }
+  #chat-messages { max-height: 180px; overflow-y: auto; font-size: 12px; margin-bottom: 8px; }
+  .chat-msg-you { color: #4ecca3; margin: 3px 0; }
+  .chat-msg-npc { color: #e0e0e0; margin: 3px 0; }
+  .chat-msg-thinking { color: #666; font-style: italic; margin: 3px 0; }
+  #chat-input-row { display: flex; gap: 6px; }
+  #chat-input { flex: 1; background: #0a1628; color: #e0e0e0; border: 1px solid #1a3a6e; padding: 6px 8px; border-radius: 3px; font-size: 12px; font-family: inherit; }
+  #chat-send { background: #4ecca3; color: #0a1628; border: none; padding: 6px 12px; border-radius: 3px; cursor: pointer; font-weight: 700; font-size: 12px; }
+  .slider-val { font-size: 12px; color: #4ecca3; min-width: 20px; text-align: right; }
 </style>
 </head>
 <body>
@@ -209,6 +280,23 @@
       <div class="sidebar-tab" data-tab="events" onclick="switchTab('events')">Events</div>
     </div>
     <div id="tab-agents" class="tab-content active">
+      <!-- Player panel (shown when logged in) -->
+      <div id="player-panel">
+        <div class="pp-header">
+          <span class="pp-title">YOU</span>
+          <button class="btn-danger" onclick="authLogout()" style="padding:2px 8px;font-size:10px">Logout</button>
+        </div>
+        <div id="pp-name" class="pp-name">Loading...</div>
+        <div id="pp-loc" class="pp-loc"></div>
+        <div class="pp-move">
+          <select id="pp-move-select"></select>
+          <button onclick="playerMove()">Go</button>
+        </div>
+        <div class="pp-actions">
+          <button class="pp-btn" onclick="openProfileEditor()">Edit Profile</button>
+          <button class="pp-btn" onclick="openPlansModal()">My Plans</button>
+        </div>
+      </div>
       <div id="agent-detail"></div>
     </div>
     <div id="tab-conversations" class="tab-content">
@@ -219,6 +307,64 @@
     </div>
   </div>
 </div>
+<!-- Login / Register modal -->
+<div id="login-modal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <h2 id="auth-title">Welcome to Soci City</h2>
+    <div id="auth-error" class="auth-error" style="display:none"></div>
+    <label>Username</label>
+    <input type="text" id="auth-username" placeholder="Your name" autocomplete="username">
+    <label>Password</label>
+    <input type="password" id="auth-password" placeholder="Password" autocomplete="current-password">
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeLoginModal()">Skip</button>
+      <button class="btn-primary" id="auth-btn" onclick="authSubmit()">Login</button>
+    </div>
+    <div class="auth-switch" id="auth-switch-text">
+      No account? <a onclick="toggleAuthMode()">Register</a>
+    </div>
+  </div>
+</div>
+
+<!-- Agent Profile Editor modal -->
+<div id="profile-modal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <h2>Your Agent Profile</h2>
+    <div class="modal-row">
+      <div><label>Name</label><input type="text" id="pe-name" placeholder="Your name"></div>
+      <div><label>Age</label><input type="number" id="pe-age" min="16" max="90" value="30"></div>
+    </div>
+    <label>Occupation</label>
+    <input type="text" id="pe-occupation" placeholder="e.g. Artist, Engineer, Chef">
+    <label>Background (how you describe yourself)</label>
+    <textarea id="pe-background" rows="3" placeholder="A few sentences about yourself..."></textarea>
+    <label>Extraversion: <span id="pe-extra-val" class="slider-val">5</span></label>
+    <input type="range" id="pe-extraversion" min="1" max="10" value="5" oninput="document.getElementById('pe-extra-val').textContent=this.value">
+    <label>Agreeableness: <span id="pe-agree-val" class="slider-val">7</span></label>
+    <input type="range" id="pe-agreeableness" min="1" max="10" value="7" oninput="document.getElementById('pe-agree-val').textContent=this.value">
+    <label>Openness: <span id="pe-open-val" class="slider-val">6</span></label>
+    <input type="range" id="pe-openness" min="1" max="10" value="6" oninput="document.getElementById('pe-open-val').textContent=this.value">
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="document.getElementById('profile-modal').style.display='none'">Cancel</button>
+      <button class="btn-primary" onclick="saveProfile()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- My Plans modal -->
+<div id="plans-modal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <h2>My Plans</h2>
+    <div id="plans-list" style="font-size:12px;color:#a0a0c0;margin-bottom:12px;min-height:40px"></div>
+    <label>Add a plan</label>
+    <input type="text" id="plans-input" placeholder="e.g. Go to the cafe and meet someone" onkeydown="if(event.key==='Enter')addPlan()">
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="document.getElementById('plans-modal').style.display='none'">Close</button>
+      <button class="btn-primary" onclick="addPlan()">Add</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ============================================================
 // CONFIG
@@ -1816,6 +1962,17 @@ function drawPerson(id, agent, globalIdx, W, H) {
   ctx.scale(scale, scale);
   if (isSel) { ctx.shadowColor = color; ctx.shadowBlur = 14; }
 
+  // Gold ring for player-controlled agent
+  if (agent.is_player) {
+    ctx.beginPath();
+    ctx.arc(0, 0, 22, 0, Math.PI * 2);
+    ctx.strokeStyle = '#f0c040';
+    ctx.lineWidth = 2.5;
+    ctx.globalAlpha = 0.8;
+    ctx.stroke();
+    ctx.globalAlpha = 1.0;
+  }
+
   // ══════════════════════════════════════════════════════════════
   // SLEEPING VIEW — agent lying on a bed
   // ══════════════════════════════════════════════════════════════
@@ -2582,6 +2739,11 @@ function renderAgentDetail(data) {
 
     <div class="section-header">Recent Memories</div>
     ${memories.map(m=>`<div class="memory-item"><span class="memory-time">${m.time||''}</span> ${esc(m.content||'')}</div>`).join('')||'<div class="memory-item" style="color:#555">No memories yet</div>'}
+
+    ${playerToken && playerAgentId && data.id !== playerAgentId ? `
+    <div style="margin-top:10px">
+      <button class="btn-primary" style="width:100%" onclick="openChat('${data.id}')">Talk to ${esc(data.name||'them')}</button>
+    </div>` : ''}
   `;
 }
 
@@ -2687,6 +2849,7 @@ function processStateData(data) {
   document.getElementById('cost').textContent = $m ? `$${$m[1]}` : '$0.00';
 
   agents = data.agents || {};
+  renderPlayerPanel();
 
   const tick = clock.total_ticks || 0;
   if (tick !== lastTick) fetchSecondaryData();
@@ -2879,6 +3042,244 @@ function checkForNotableEvents() {
 }
 
 // ============================================================
+// PLAYER / AUTH
+// ============================================================
+let playerToken = localStorage.getItem('soci_token') || null;
+let playerUsername = localStorage.getItem('soci_username') || null;
+let playerAgentId = localStorage.getItem('soci_agent_id') || null;
+let chatTargetId = null;
+let chatHistory = [];
+let authMode = 'login'; // 'login' or 'register'
+
+function closeLoginModal() {
+  document.getElementById('login-modal').style.display = 'none';
+}
+
+function toggleAuthMode() {
+  authMode = authMode === 'login' ? 'register' : 'login';
+  document.getElementById('auth-title').textContent = authMode === 'login' ? 'Welcome to Soci City' : 'Create Account';
+  document.getElementById('auth-btn').textContent = authMode === 'login' ? 'Login' : 'Register';
+  document.getElementById('auth-switch-text').innerHTML = authMode === 'login'
+    ? 'No account? <a onclick="toggleAuthMode()">Register</a>'
+    : 'Have an account? <a onclick="toggleAuthMode()">Login</a>';
+  document.getElementById('auth-error').style.display = 'none';
+}
+
+async function authSubmit() {
+  const username = document.getElementById('auth-username').value.trim();
+  const password = document.getElementById('auth-password').value;
+  const errEl = document.getElementById('auth-error');
+  if (!username || !password) { errEl.textContent = 'Please fill in both fields'; errEl.style.display = 'block'; return; }
+  const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
+  try {
+    const res = await fetch(window.location.origin + endpoint, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({username, password})
+    });
+    const data = await res.json();
+    if (!res.ok) { errEl.textContent = data.detail || 'Error'; errEl.style.display = 'block'; return; }
+    playerToken = data.token;
+    playerUsername = data.username;
+    playerAgentId = data.agent_id || null;
+    localStorage.setItem('soci_token', playerToken);
+    localStorage.setItem('soci_username', playerUsername);
+    if (playerAgentId) localStorage.setItem('soci_agent_id', playerAgentId);
+    closeLoginModal();
+    renderPlayerPanel();
+  } catch(e) { errEl.textContent = 'Connection error'; errEl.style.display = 'block'; }
+}
+
+async function authLogout() {
+  if (playerToken) {
+    try { await fetch(window.location.origin + '/api/auth/logout', {method:'POST', headers:{'Authorization':'Bearer '+playerToken}}); } catch(e){}
+  }
+  playerToken = playerUsername = playerAgentId = null;
+  localStorage.removeItem('soci_token'); localStorage.removeItem('soci_username'); localStorage.removeItem('soci_agent_id');
+  document.getElementById('player-panel').style.display = 'none';
+  document.getElementById('chat-panel') && (document.getElementById('chat-panel').style.display = 'none');
+}
+
+function renderPlayerPanel() {
+  const panel = document.getElementById('player-panel');
+  if (!playerToken) { panel.style.display = 'none'; return; }
+  panel.style.display = 'block';
+  const agent = playerAgentId ? agents[playerAgentId] : null;
+  document.getElementById('pp-name').textContent = agent ? agent.name : (playerUsername || 'You');
+  const locName = agent ? (locations[agent.location]?.name || agent.location || '') : '';
+  document.getElementById('pp-loc').textContent = locName ? `@ ${locName}` : '';
+
+  // Populate move dropdown from known locations
+  const sel = document.getElementById('pp-move-select');
+  const locKeys = Object.keys(locations);
+  if (locKeys.length > 0) {
+    sel.innerHTML = locKeys.map(lid => {
+      const ln = locations[lid]?.name || lid;
+      const selected = agent && agent.location === lid ? ' selected' : '';
+      return `<option value="${lid}"${selected}>${ln}</option>`;
+    }).join('');
+  }
+}
+
+async function playerMove() {
+  if (!playerToken || !playerAgentId) return;
+  const location = document.getElementById('pp-move-select').value;
+  try {
+    const res = await fetch(window.location.origin + '/api/player/move', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({token: playerToken, location})
+    });
+    if (res.ok) renderPlayerPanel();
+  } catch(e){}
+}
+
+function openProfileEditor() {
+  if (!playerAgentId) return;
+  const agent = agents[playerAgentId];
+  if (agent) {
+    document.getElementById('pe-name').value = agent.name || '';
+    document.getElementById('pe-age').value = agent.age || 30;
+    document.getElementById('pe-occupation').value = agent.occupation || '';
+  }
+  document.getElementById('profile-modal').style.display = 'flex';
+}
+
+async function saveProfile() {
+  if (!playerToken) return;
+  const body = {
+    token: playerToken,
+    name: document.getElementById('pe-name').value.trim(),
+    age: parseInt(document.getElementById('pe-age').value)||30,
+    occupation: document.getElementById('pe-occupation').value.trim(),
+    background: document.getElementById('pe-background').value.trim(),
+    extraversion: parseInt(document.getElementById('pe-extraversion').value),
+    agreeableness: parseInt(document.getElementById('pe-agreeableness').value),
+    openness: parseInt(document.getElementById('pe-openness').value),
+  };
+  try {
+    const res = await fetch(window.location.origin + '/api/player/update', {
+      method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)
+    });
+    if (res.ok) { document.getElementById('profile-modal').style.display='none'; renderPlayerPanel(); }
+  } catch(e){}
+}
+
+function openPlansModal() {
+  if (!playerAgentId) return;
+  const agent = agents[playerAgentId];
+  const plans = agent?.daily_plan || [];
+  const listEl = document.getElementById('plans-list');
+  listEl.innerHTML = plans.length > 0
+    ? plans.map((p,i) => `<div style="padding:3px 0;border-bottom:1px solid #1a3a6e">${i+1}. ${esc(p)}</div>`).join('')
+    : '<div style="color:#555">No plans yet.</div>';
+  document.getElementById('plans-modal').style.display = 'flex';
+}
+
+async function addPlan() {
+  if (!playerToken) return;
+  const input = document.getElementById('plans-input');
+  const item = input.value.trim();
+  if (!item) return;
+  try {
+    const res = await fetch(window.location.origin + '/api/player/plan', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({token: playerToken, plan_item: item})
+    });
+    if (res.ok) { input.value = ''; openPlansModal(); }
+  } catch(e){}
+}
+
+// Chat with an NPC
+function openChat(targetId) {
+  chatTargetId = targetId;
+  chatHistory = [];
+  const target = agents[targetId];
+  let chatPanel = document.getElementById('chat-panel');
+  if (!chatPanel) {
+    chatPanel = document.createElement('div');
+    chatPanel.id = 'chat-panel';
+    document.getElementById('agent-detail').after(chatPanel);
+  }
+  chatPanel.style.display = 'block';
+  chatPanel.innerHTML = `
+    <div class="chat-header">
+      <span>Talking to ${esc(target?.name || targetId)}</span>
+      <span style="cursor:pointer;color:#888" onclick="closeChat()">✕ Close</span>
+    </div>
+    <div id="chat-messages"></div>
+    <div id="chat-input-row">
+      <input id="chat-input" type="text" placeholder="Say something..." onkeydown="if(event.key==='Enter')sendChat()">
+      <button id="chat-send" onclick="sendChat()">Send</button>
+    </div>`;
+}
+
+function closeChat() {
+  chatTargetId = null;
+  const p = document.getElementById('chat-panel');
+  if (p) p.style.display = 'none';
+}
+
+function appendChatMsg(cls, speaker, text) {
+  const el = document.getElementById('chat-messages');
+  if (!el) return;
+  const div = document.createElement('div');
+  div.className = cls;
+  div.innerHTML = `<b>${esc(speaker)}:</b> ${esc(text)}`;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+
+async function sendChat() {
+  if (!playerToken || !playerAgentId || !chatTargetId) return;
+  const input = document.getElementById('chat-input');
+  const message = input.value.trim();
+  if (!message) return;
+  input.value = '';
+  input.disabled = true;
+  document.getElementById('chat-send').disabled = true;
+  appendChatMsg('chat-msg-you', playerUsername || 'You', message);
+  appendChatMsg('chat-msg-thinking', agents[chatTargetId]?.name || '...', '...');
+  try {
+    const res = await fetch(window.location.origin + '/api/player/talk', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({token: playerToken, target_id: chatTargetId, message})
+    });
+    const el = document.getElementById('chat-messages');
+    if (el && el.lastChild) el.lastChild.remove(); // remove thinking...
+    if (res.ok) {
+      const data = await res.json();
+      appendChatMsg('chat-msg-npc', agents[chatTargetId]?.name || chatTargetId, data.reply || '(no reply)');
+    } else {
+      appendChatMsg('chat-msg-thinking', 'System', 'Could not get a response right now.');
+    }
+  } catch(e) {
+    const el = document.getElementById('chat-messages');
+    if (el && el.lastChild) el.lastChild.remove();
+    appendChatMsg('chat-msg-thinking', 'System', 'Connection error.');
+  }
+  input.disabled = false;
+  document.getElementById('chat-send').disabled = false;
+  input.focus();
+}
+
+async function checkSession() {
+  if (!playerToken) { document.getElementById('login-modal').style.display = 'flex'; return; }
+  try {
+    const res = await fetch(window.location.origin + '/api/auth/me', {headers:{'Authorization':'Bearer '+playerToken}});
+    if (res.ok) {
+      const data = await res.json();
+      playerUsername = data.username;
+      playerAgentId = data.agent_id;
+      if (playerAgentId) localStorage.setItem('soci_agent_id', playerAgentId);
+      renderPlayerPanel();
+    } else {
+      // Token expired
+      playerToken = null; localStorage.removeItem('soci_token');
+      document.getElementById('login-modal').style.display = 'flex';
+    }
+  } catch(e) { renderPlayerPanel(); }
+}
+
+// ============================================================
 // INIT
 // ============================================================
 initCanvas();
@@ -2887,6 +3288,7 @@ fetchState();
 fetchControls();
 connectWebSocket();
 setInterval(() => { if (!ws || ws.readyState !== WebSocket.OPEN) fetchState(); }, POLL_INTERVAL);
+checkSession();
 </script>
 </body>
 </html>

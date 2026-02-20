@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
+import secrets
 from pathlib import Path
 from typing import Optional
 
 import aiosqlite
 
 logger = logging.getLogger(__name__)
+
+
+def _hash_password(password: str, salt: str) -> str:
+    return hashlib.sha256(f"{salt}{password}".encode()).hexdigest()
 
 # SOCI_DATA_DIR env var lets you point at a persistent disk (e.g. /var/data on Render).
 DB_DIR = Path(os.environ.get("SOCI_DATA_DIR", "data"))
@@ -52,6 +58,16 @@ CREATE TABLE IF NOT EXISTS conversations (
 CREATE INDEX IF NOT EXISTS idx_event_tick ON event_log(tick);
 CREATE INDEX IF NOT EXISTS idx_event_agent ON event_log(agent_id);
 CREATE INDEX IF NOT EXISTS idx_conv_tick ON conversations(tick);
+
+CREATE TABLE IF NOT EXISTS users (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    username      TEXT    NOT NULL UNIQUE,
+    password_hash TEXT    NOT NULL,
+    salt          TEXT    NOT NULL,
+    token         TEXT    UNIQUE,
+    agent_id      TEXT,
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -172,3 +188,67 @@ class Database:
             }
             for r in rows
         ]
+
+    # ── Auth / user methods ──────────────────────────────────────────────────
+
+    async def create_user(self, username: str, password: str) -> dict:
+        """Create a new user. Raises ValueError if username taken."""
+        assert self._db is not None
+        salt = secrets.token_hex(16)
+        pw_hash = _hash_password(password, salt)
+        token = secrets.token_hex(32)
+        try:
+            await self._db.execute(
+                "INSERT INTO users (username, password_hash, salt, token) VALUES (?, ?, ?, ?)",
+                (username, pw_hash, salt, token),
+            )
+            await self._db.commit()
+        except aiosqlite.IntegrityError:
+            raise ValueError(f"Username '{username}' is already taken")
+        return {"username": username, "token": token, "agent_id": None}
+
+    async def authenticate_user(self, username: str, password: str) -> Optional[dict]:
+        """Verify credentials and return user dict with fresh token, or None."""
+        assert self._db is not None
+        cursor = await self._db.execute(
+            "SELECT username, password_hash, salt, agent_id FROM users WHERE username = ?",
+            (username,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        stored_hash = row[1]
+        salt = row[2]
+        if _hash_password(password, salt) != stored_hash:
+            return None
+        token = secrets.token_hex(32)
+        await self._db.execute(
+            "UPDATE users SET token = ? WHERE username = ?", (token, username)
+        )
+        await self._db.commit()
+        return {"username": row[0], "token": token, "agent_id": row[3]}
+
+    async def get_user_by_token(self, token: str) -> Optional[dict]:
+        """Look up a user by their session token."""
+        assert self._db is not None
+        cursor = await self._db.execute(
+            "SELECT username, agent_id FROM users WHERE token = ?", (token,)
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return {"username": row[0], "agent_id": row[1]}
+
+    async def set_user_agent(self, username: str, agent_id: str) -> None:
+        """Link a player agent to a user account."""
+        assert self._db is not None
+        await self._db.execute(
+            "UPDATE users SET agent_id = ? WHERE username = ?", (agent_id, username)
+        )
+        await self._db.commit()
+
+    async def logout_user(self, token: str) -> None:
+        """Invalidate a session token."""
+        assert self._db is not None
+        await self._db.execute("UPDATE users SET token = NULL WHERE token = ?", (token,))
+        await self._db.commit()
