@@ -33,6 +33,7 @@ class PlayerCreateRequest(BaseModel):
     age: int = 30
     occupation: str = "Newcomer"
     background: str = "A newcomer to Soci City."
+    gender: str = "unknown"
     extraversion: int = 5
     agreeableness: int = 7
     openness: int = 6
@@ -44,6 +45,7 @@ class PlayerUpdateRequest(BaseModel):
     age: Optional[int] = None
     occupation: Optional[str] = None
     background: Optional[str] = None
+    gender: Optional[str] = None
     extraversion: Optional[int] = None
     agreeableness: Optional[int] = None
     openness: Optional[int] = None
@@ -66,6 +68,22 @@ class PlayerPlanRequest(BaseModel):
 
 
 # ── Helper ────────────────────────────────────────────────────────────────────
+
+def _find_player_apartment(sim) -> str:
+    """Find an available residential location for a new player."""
+    preferred = [
+        "apartment_block_1", "apartment_block_2", "apartment_block_3",
+        "apt_northeast", "apt_northwest", "apt_southeast", "apt_southwest",
+    ]
+    for loc_id in preferred:
+        loc = sim.city.get_location(loc_id)
+        if loc and not loc.is_full:
+            return loc_id
+    for loc in sim.city.get_locations_in_zone("residential"):
+        if not loc.is_full:
+            return loc.id
+    return "town_square"
+
 
 async def _get_player_from_token(token: str):
     """Validate token and return (user, agent). Raises 401/404 on failure."""
@@ -283,7 +301,7 @@ async def auth_register(request: AuthRequest):
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
 
-    # Auto-create default player agent at town_square
+    # Auto-create default player agent with an apartment
     safe_name = request.username.strip()
     player_id = f"player_{safe_name.lower().replace(' ', '_')}"
     # Ensure unique ID
@@ -293,6 +311,7 @@ async def auth_register(request: AuthRequest):
         player_id = f"{base_id}_{suffix}"
         suffix += 1
 
+    home = _find_player_apartment(sim)
     persona = Persona(
         id=player_id,
         name=safe_name,
@@ -300,7 +319,7 @@ async def auth_register(request: AuthRequest):
         occupation="Newcomer",
         gender="unknown",
         background="A newcomer to Soci City.",
-        home_location="town_square",
+        home_location=home,
         work_location="",
         extraversion=5,
         agreeableness=7,
@@ -379,13 +398,15 @@ async def player_create(request: PlayerCreateRequest):
             loc.remove_agent(old_id)
         del sim.agents[old_id]
 
+    home = _find_player_apartment(sim)
     persona = Persona(
         id=player_id,
         name=request.name,
         age=request.age,
         occupation=request.occupation,
+        gender=request.gender,
         background=request.background,
-        home_location="town_square",
+        home_location=home,
         work_location="",
         extraversion=request.extraversion,
         agreeableness=request.agreeableness,
@@ -414,6 +435,8 @@ async def player_update(request: PlayerUpdateRequest):
         p.occupation = request.occupation
     if request.background is not None:
         p.background = request.background
+    if request.gender is not None:
+        p.gender = request.gender
     if request.extraversion is not None:
         p.extraversion = max(1, min(10, request.extraversion))
     if request.agreeableness is not None:

@@ -7,7 +7,7 @@ import logging
 import random
 from typing import Callable, Optional
 
-from soci.agents.agent import Agent, AgentAction
+from soci.agents.agent import Agent, AgentAction, AgentState
 from soci.agents.memory import MemoryType
 from soci.agents.persona import Persona, load_personas
 from soci.agents.generator import generate_personas
@@ -259,6 +259,9 @@ class Simulation:
                 if result and isinstance(result, AgentAction):
                     await self._execute_action(agent, result)
 
+        # 5b. Player auto-sleep: put idle players to sleep at night
+        self._handle_player_sleep()
+
         # 6. Handle active conversations (skip in 50x mode)
         if not self._skip_llm_this_tick:
             conv_coros = []
@@ -455,16 +458,23 @@ class Simulation:
         )
 
     async def _handle_social_interactions(self, agents: list[Agent]) -> None:
-        """Check if any idle co-located agents should start conversations."""
-        # Hard cap: at most 2 simultaneous conversations to keep LLM calls low
-        max_convos = 2
+        """Check if any co-located agents should start conversations."""
+        # Hard cap: at most 3 simultaneous conversations
+        max_convos = 3
         if len(self.active_conversations) >= max_convos:
             return
 
+        # States where an agent can initiate or join a conversation
+        _CONVERSABLE = {"idle", "eating", "relaxing", "working", "exercising", "shopping"}
+
         for agent in agents:
-            if agent.is_busy or agent.is_player:
+            # Skip sleeping, moving, or agents already in conversation
+            if agent.state.value not in _CONVERSABLE:
                 continue
-            # Check if already in a conversation
+            # Skip players (they initiate via the /player/talk API)
+            if agent.is_player:
+                continue
+            # Skip if already in a conversation
             in_conv = any(
                 agent.id in c.participants
                 for c in self.active_conversations.values()
@@ -472,11 +482,12 @@ class Simulation:
             if in_conv:
                 continue
 
+            # Potential partners: anyone at same location who is also conversable
             others = [
                 aid for aid in self.city.get_agents_at(agent.location)
                 if aid != agent.id
                 and aid in self.agents
-                and not self.agents[aid].is_busy
+                and self.agents[aid].state.value in _CONVERSABLE
                 and not any(aid in c.participants for c in self.active_conversations.values())
             ]
             if not others:
@@ -486,6 +497,38 @@ class Simulation:
             if partner_id and should_initiate_conversation(agent, partner_id, self.clock):
                 await self._start_conversation(agent, self.agents[partner_id])
                 break  # One new conversation per tick max
+
+    def _handle_player_sleep(self) -> None:
+        """Auto-sleep idle players during sleeping hours, wake them in the morning."""
+        for agent in self.agents.values():
+            if not agent.is_player:
+                continue
+            if self.clock.is_sleeping_hours:
+                if not agent.is_busy and agent.state.value != "sleeping":
+                    sleep_action = AgentAction(
+                        type="sleep",
+                        target=agent.persona.home_location,
+                        detail=f"{agent.name} goes to sleep for the night",
+                        duration_ticks=32,  # ~8 hours
+                        needs_satisfied={"energy": 0.9},
+                    )
+                    # Move home if needed (teleport — player is asleep)
+                    home = agent.persona.home_location
+                    if agent.location != home and self.city.get_location(home):
+                        old_loc = self.city.get_location(agent.location)
+                        new_loc = self.city.get_location(home)
+                        if old_loc:
+                            old_loc.remove_occupant(agent.id)
+                        new_loc.add_occupant(agent.id)
+                        agent.location = home
+                    agent.start_action(sleep_action)
+                    self._emit(f"  {agent.name} goes to sleep for the night.")
+            else:
+                # Wake player if still sleeping past sleeping hours
+                if agent.state.value == "sleeping":
+                    agent.state = AgentState.IDLE
+                    agent.current_action = None
+                    agent._action_ticks_remaining = 0
 
     async def _start_conversation(self, initiator: Agent, target: Agent) -> None:
         """Start a conversation between two agents."""
@@ -666,8 +709,6 @@ class Simulation:
         agents_list = list(self.agents.values())
 
         for agent in agents_list:
-            if agent.is_player:
-                continue
             loc = self.city.get_location(agent.location)
             if not loc:
                 continue
@@ -683,6 +724,19 @@ class Simulation:
 
                 # Skip if already married to someone else
                 if agent.partner_id and agent.partner_id != other_id:
+                    continue
+
+                # Gender-based attraction: opposite genders attract (nonbinary attracted to all)
+                a_gender = agent.persona.gender
+                o_gender = other.persona.gender
+                attracted = (
+                    a_gender == "unknown"
+                    or a_gender == "nonbinary"
+                    or o_gender == "unknown"
+                    or o_gender == "nonbinary"
+                    or a_gender != o_gender
+                )
+                if not attracted:
                     continue
 
                 # Attraction grows from positive interactions

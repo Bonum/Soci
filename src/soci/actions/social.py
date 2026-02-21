@@ -17,7 +17,7 @@ def should_initiate_conversation(agent: Agent, other_id: str, clock: SimClock) -
         return False
 
     # Extraversion drives conversation initiation
-    base_chance = agent.persona.extraversion / 40.0  # 0.025 to 0.25
+    base_chance = agent.persona.extraversion / 20.0  # 0.05 to 0.5
 
     # Boost if social need is low (lonely agents seek conversation)
     if agent.needs.social < 0.3:
