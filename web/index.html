@@ -2871,9 +2871,20 @@ function processStateData(data) {
       .replace(/^gemini-/, '');        // "gemini-2.0-flash" → "2.0-flash"
     const providerIcon = { gemini: '✦', groq: '⚡', claude: '◆', ollama: '🦙' };
     const icon = providerIcon[data.llm_provider] || '⚡';
+
+    // Status: limited > skipped > idle > active (calls happening)
+    const isLimited  = data.llm_status === 'limited';
+    const isSkipped  = data.llm_skipped === true;
+    const hasCalls   = (data.llm_calls_last_tick || 0) > 0;
+    let dotColor, statusTip;
+    if (isLimited)       { dotColor = '#e94560'; statusTip = 'quota / rate limit hit'; }
+    else if (isSkipped)  { dotColor = '#666';    statusTip = 'LLM skipped (fast mode)'; }
+    else if (hasCalls)   { dotColor = '#4ecca3'; statusTip = `${data.llm_calls_last_tick} calls this tick`; }
+    else                 { dotColor = '#f0c040'; statusTip = 'idle — no calls needed'; }
+
     const el = document.getElementById('llm-model');
-    el.textContent = `${icon} ${label}`;
-    el.title = `${data.llm_provider}: ${data.llm_model}`;
+    el.innerHTML = `${icon} ${label} <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${dotColor};vertical-align:middle;margin-left:2px"></span>`;
+    el.title = `${data.llm_provider}: ${data.llm_model} — ${statusTip}`;
   }
 
   agents = data.agents || {};

@@ -138,6 +138,7 @@ class ClaudeClient:
         self.max_retries = max_retries
         self.usage = LLMUsage()
         self.provider = PROVIDER_CLAUDE
+        self._rate_limited_until: float = 0.0  # monotonic timestamp
 
     async def complete(
         self,
@@ -168,6 +169,7 @@ class ClaudeClient:
 
             except anthropic.RateLimitError:
                 wait = 2 ** attempt
+                self._rate_limited_until = time.monotonic() + wait
                 logger.warning(f"Rate limited, waiting {wait}s (attempt {attempt + 1})")
                 time.sleep(wait)
             except anthropic.APIError as e:
@@ -175,7 +177,14 @@ class ClaudeClient:
                 if attempt == self.max_retries - 1:
                     raise
                 time.sleep(1)
+        self._rate_limited_until = time.monotonic() + 60  # mark as limited after all retries failed
         return ""
+
+    @property
+    def llm_status(self) -> str:
+        if time.monotonic() < self._rate_limited_until:
+            return "limited"
+        return "active"
 
     async def complete_json(
         self,
@@ -223,6 +232,13 @@ class OllamaClient:
         self.usage = LLMUsage()
         self.provider = PROVIDER_OLLAMA
         self._http = httpx.AsyncClient(timeout=180.0)
+        self._last_error: float = 0.0  # monotonic timestamp of last connection failure
+
+    @property
+    def llm_status(self) -> str:
+        if time.monotonic() - self._last_error < 30:
+            return "limited"   # recent connection error
+        return "active"
 
     async def complete(
         self,
@@ -265,6 +281,7 @@ class OllamaClient:
                 return data.get("message", {}).get("content", "")
 
             except httpx.ConnectError:
+                self._last_error = time.monotonic()
                 msg = (
                     f"Cannot connect to Ollama at {self.base_url}. "
                     "Make sure Ollama is running: 'ollama serve'"
@@ -587,6 +604,10 @@ class GroqClient:
         }
         return mapping.get(model, model)
 
+    @property
+    def llm_status(self) -> str:
+        return "limited" if self._is_quota_exhausted() else "active"
+
 
 # ============================================================
 # Google Gemini Client (free tier via OpenAI-compatible endpoint)
@@ -650,6 +671,10 @@ class GeminiClient:
             MODEL_GROQ_LLAMA_8B: MODEL_GEMINI_FLASH,
         }
         return mapping.get(model, model)
+
+    @property
+    def llm_status(self) -> str:
+        return "limited" if self._is_quota_exhausted() else "active"
 
     async def complete(
         self,

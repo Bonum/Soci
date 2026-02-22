@@ -838,6 +838,9 @@ class Simulation:
             "active_conversations": len(self.active_conversations),
             "llm_provider": getattr(self.llm, "provider", "unknown"),
             "llm_model": getattr(self.llm, "default_model", "unknown"),
+            "llm_status": getattr(self.llm, "llm_status", "active"),
+            "llm_calls_last_tick": self._llm_calls_this_tick,
+            "llm_skipped": self._skip_llm_this_tick,
             "llm_usage": self.llm.usage.summary(),
         }
 
