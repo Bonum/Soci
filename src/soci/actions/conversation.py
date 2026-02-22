@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import random
 from dataclasses import dataclass, field
 from typing import Optional, TYPE_CHECKING
 
@@ -114,9 +115,17 @@ async def initiate_conversation(
         max_tokens=512,
     )
 
-    # LLM unavailable — skip conversation entirely
+    # LLM unavailable — use scripted fallback so conversations still animate in the UI
     if not result:
-        return None
+        starters = [
+            {"message": f"Hey {target.name}, how's it going?", "topic": "greeting", "inner_thought": "Making small talk."},
+            {"message": f"Oh, {target.name}! Didn't expect to run into you here.", "topic": "chance meeting", "inner_thought": "Good to see a familiar face."},
+            {"message": "What have you been up to lately?", "topic": "small talk", "inner_thought": "Curious about their day."},
+            {"message": "Lovely weather today, isn't it?", "topic": "weather", "inner_thought": "Breaking the ice."},
+            {"message": f"Hi {target.name}! Have you heard any news lately?", "topic": "news", "inner_thought": "Looking for something to talk about."},
+            {"message": "I was just thinking about grabbing something to eat. You?", "topic": "food", "inner_thought": "Maybe we can go together."},
+        ]
+        result = random.choice(starters)
 
     message = result.get("message", f"Hey, {target.name}.")
     topic = result.get("topic", "small talk")
@@ -187,10 +196,17 @@ async def continue_conversation(
         max_tokens=512,
     )
 
-    # LLM unavailable (rate-limited / circuit breaker) — end conversation cleanly
+    # LLM unavailable — scripted response keeps conversation alive in the UI
     if not result:
-        conversation.is_active = False
-        return last_turn
+        replies = [
+            {"message": "Ha, yeah, I was just thinking the same thing!", "inner_thought": "Go with the flow.", "sentiment_delta": 0.05, "trust_delta": 0.02},
+            {"message": "Not too bad, honestly. Just keeping busy.", "inner_thought": "Keep it light.", "sentiment_delta": 0.03, "trust_delta": 0.01},
+            {"message": "Interesting! Tell me more.", "inner_thought": "Show some curiosity.", "sentiment_delta": 0.04, "trust_delta": 0.02},
+            {"message": "Yeah, it's been that kind of day.", "inner_thought": "Relate to them.", "sentiment_delta": 0.02, "trust_delta": 0.01},
+            {"message": "I hear you. Things have been a bit hectic on my end too.", "inner_thought": "Empathize.", "sentiment_delta": 0.04, "trust_delta": 0.03},
+            {"message": "Good point. I hadn't thought of it that way.", "inner_thought": "Give them credit.", "sentiment_delta": 0.05, "trust_delta": 0.03},
+        ]
+        result = random.choice(replies)
 
     message = result.get("message", "Hmm, interesting.")
 

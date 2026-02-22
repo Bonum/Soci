@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 PROVIDER_CLAUDE = "claude"
 PROVIDER_OLLAMA = "ollama"
 PROVIDER_GROQ = "groq"
+PROVIDER_GEMINI = "gemini"
 
 # Claude model IDs
 MODEL_SONNET = "claude-sonnet-4-5-20250929"
@@ -34,6 +35,10 @@ MODEL_GEMMA = "gemma2"
 MODEL_GROQ_LLAMA_8B = "llama-3.1-8b-instant"
 MODEL_GROQ_LLAMA_70B = "llama-3.3-70b-versatile"
 MODEL_GROQ_MIXTRAL = "mixtral-8x7b-32768"
+
+# Google Gemini model IDs (free tier via AI Studio)
+MODEL_GEMINI_FLASH = "gemini-2.0-flash"
+MODEL_GEMINI_PRO = "gemini-1.5-pro"
 
 # Approximate cost per 1M tokens (USD) — Ollama is free, Groq is very cheap
 COST_PER_1M = {
@@ -584,6 +589,192 @@ class GroqClient:
 
 
 # ============================================================
+# Google Gemini Client (free tier via OpenAI-compatible endpoint)
+# ============================================================
+
+class GeminiClient:
+    """Google Gemini via the OpenAI-compatible AI Studio endpoint.
+
+    Free tier (no credit card):
+      - gemini-2.0-flash: 15 RPM, 1 M tokens/day — plenty for a simulation.
+      - Get a free key at https://aistudio.google.com/apikey
+    Uses the OpenAI-compatible endpoint so no extra SDK is needed.
+    """
+
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        default_model: str = MODEL_GEMINI_FLASH,
+        max_retries: int = 3,
+        max_rpm: int = 14,  # stay under the 15 RPM free-tier limit
+    ) -> None:
+        self.api_key = api_key or os.environ.get("GEMINI_API_KEY", "")
+        if not self.api_key:
+            raise ValueError(
+                "GEMINI_API_KEY not set. "
+                "Get a free key at https://aistudio.google.com/apikey"
+            )
+        self.default_model = default_model
+        self.max_retries = max_retries
+        self.usage = LLMUsage()
+        self.provider = PROVIDER_GEMINI
+        self._http = httpx.AsyncClient(
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=60.0,
+        )
+        self._min_request_interval = 60.0 / max_rpm
+        self._last_request_time: float = 0.0
+        self._rate_lock = asyncio.Lock()
+        self._rate_limited_until: float = 0.0
+
+    def _is_quota_exhausted(self) -> bool:
+        return time.monotonic() < self._rate_limited_until
+
+    async def _wait_for_rate_limit(self) -> None:
+        async with self._rate_lock:
+            now = time.monotonic()
+            elapsed = now - self._last_request_time
+            if elapsed < self._min_request_interval:
+                await asyncio.sleep(self._min_request_interval - elapsed)
+            self._last_request_time = time.monotonic()
+
+    def _map_model(self, model: str) -> str:
+        """Map Claude/Groq model names to Gemini equivalents."""
+        mapping = {
+            MODEL_SONNET: self.default_model,
+            MODEL_HAIKU: self.default_model,
+            MODEL_GROQ_LLAMA_8B: MODEL_GEMINI_FLASH,
+        }
+        return mapping.get(model, model)
+
+    async def complete(
+        self,
+        system: str,
+        user_message: str,
+        model: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
+    ) -> str:
+        """Send a chat completion request to Gemini."""
+        if self._is_quota_exhausted():
+            logger.debug("Gemini quota circuit breaker active — skipping complete()")
+            return ""
+
+        model = self._map_model(model or self.default_model)
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_message},
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+
+        for attempt in range(self.max_retries):
+            try:
+                await self._wait_for_rate_limit()
+                resp = await self._http.post("chat/completions", json=payload)
+                resp.raise_for_status()
+                data = resp.json()
+                usage = data.get("usage", {})
+                self.usage.record(model, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
+                return data["choices"][0]["message"]["content"]
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 429:
+                    retry_after = e.response.headers.get("retry-after", "5")
+                    try:
+                        wait = float(retry_after)
+                    except (ValueError, TypeError):
+                        wait = 5.0
+                    if wait > 30:
+                        self._rate_limited_until = time.monotonic() + wait
+                        logger.warning(f"Gemini quota exhausted for {wait:.0f}s")
+                        return ""
+                    logger.warning(f"Gemini rate limited, waiting {wait}s")
+                    await asyncio.sleep(wait)
+                else:
+                    logger.error(f"Gemini HTTP error: {e.response.status_code}")
+                    if attempt == self.max_retries - 1:
+                        return ""
+                    await asyncio.sleep(1)
+            except Exception as e:
+                logger.error(f"Gemini error: {e}")
+                if attempt == self.max_retries - 1:
+                    return ""
+                await asyncio.sleep(1)
+        return ""
+
+    async def complete_json(
+        self,
+        system: str,
+        user_message: str,
+        model: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
+    ) -> dict:
+        """Send a JSON-mode request to Gemini."""
+        if self._is_quota_exhausted():
+            logger.debug("Gemini quota circuit breaker active — skipping complete_json()")
+            return {}
+
+        model = self._map_model(model or self.default_model)
+        json_instruction = (
+            "\n\nRespond ONLY with valid JSON. No markdown, no explanation, no extra text. "
+            "Just the JSON object."
+        )
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_message + json_instruction},
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "response_format": {"type": "json_object"},
+        }
+
+        for attempt in range(self.max_retries):
+            try:
+                await self._wait_for_rate_limit()
+                resp = await self._http.post("chat/completions", json=payload)
+                resp.raise_for_status()
+                data = resp.json()
+                usage = data.get("usage", {})
+                self.usage.record(model, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
+                text = data["choices"][0]["message"]["content"]
+                return _parse_json_response(text)
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 429:
+                    retry_after = e.response.headers.get("retry-after", "5")
+                    try:
+                        wait = float(retry_after)
+                    except (ValueError, TypeError):
+                        wait = 5.0
+                    if wait > 30:
+                        self._rate_limited_until = time.monotonic() + wait
+                        logger.warning(f"Gemini quota exhausted for {wait:.0f}s")
+                        return {}
+                    logger.warning(f"Gemini rate limited, waiting {wait}s")
+                    await asyncio.sleep(wait)
+                else:
+                    logger.error(f"Gemini JSON error: {e.response.status_code}")
+                    if attempt == self.max_retries - 1:
+                        return {}
+                    await asyncio.sleep(1)
+            except Exception as e:
+                logger.error(f"Gemini JSON error: {e}")
+                if attempt == self.max_retries - 1:
+                    return {}
+                await asyncio.sleep(1)
+        return {}
+
+
+# ============================================================
 # Factory — create the right client based on config
 # ============================================================
 
@@ -605,11 +796,13 @@ def create_llm_client(
         provider = os.environ.get("LLM_PROVIDER", "").lower()
 
     if not provider:
-        # Auto-detect: Claude → Groq → Ollama
+        # Auto-detect: Claude → Groq → Gemini → Ollama
         if os.environ.get("ANTHROPIC_API_KEY"):
             provider = PROVIDER_CLAUDE
         elif os.environ.get("GROQ_API_KEY"):
             provider = PROVIDER_GROQ
+        elif os.environ.get("GEMINI_API_KEY"):
+            provider = PROVIDER_GEMINI
         else:
             provider = PROVIDER_OLLAMA
 
@@ -619,11 +812,14 @@ def create_llm_client(
     elif provider == PROVIDER_GROQ:
         default_model = model or os.environ.get("GROQ_MODEL", MODEL_GROQ_LLAMA_8B)
         return GroqClient(default_model=default_model)
+    elif provider == PROVIDER_GEMINI:
+        default_model = model or os.environ.get("GEMINI_MODEL", MODEL_GEMINI_FLASH)
+        return GeminiClient(default_model=default_model)
     elif provider == PROVIDER_OLLAMA:
         default_model = model or os.environ.get("OLLAMA_MODEL", MODEL_LLAMA)
         return OllamaClient(base_url=ollama_url, default_model=default_model)
     else:
-        raise ValueError(f"Unknown LLM provider: {provider}. Use 'claude', 'groq', or 'ollama'.")
+        raise ValueError(f"Unknown LLM provider: {provider}. Use 'claude', 'groq', 'gemini', or 'ollama'.")
 
 
 # --- Prompt Templates ---

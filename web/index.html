@@ -748,8 +748,19 @@ function animate() {
     // Moving agents travel slower so the walk is visible; others snap faster
     const isMoving = agent && (agent.state === 'moving');
     const lerpRate = isMoving ? 0.022 : 0.07;
+    const prevX = p.x, prevY = p.y;
     p.x += (dest.x - p.x) * lerpRate;
     p.y += (dest.y - p.y) * lerpRate;
+    // Track facing direction from actual pixel delta — reliable for all path types
+    const mdx = p.x - prevX, mdy = p.y - prevY;
+    if (Math.abs(mdx) > 0.1 || Math.abs(mdy) > 0.1) {
+      if (Math.abs(mdy) > Math.abs(mdx)) {
+        agentMovingUp[id] = mdy < 0;   // moving up = back view
+      } else {
+        agentFacingRight[id] = mdx > 0; // moving horizontally = profile
+        agentMovingUp[id] = false;
+      }
+    }
   }
   draw();
   requestAnimationFrame(animate);
@@ -1948,17 +1959,7 @@ function drawPerson(id, agent, globalIdx, W, H) {
   const armSwing = walkAnim ? Math.sin(walkPhase) * 10  : 0;
   const tY = -10 + bounce;   // torso top Y — hoisted so profile view can use it
 
-  // Facing direction — track dominant movement axis (H or V)
-  const destPt = (agentWaypoints[id] && agentWaypoints[id].length) ? agentWaypoints[id][0] : agentTargets[id];
-  if (destPt && walkAnim) {
-    const ddx = destPt.x - ax, ddy = destPt.y - ay;
-    if (Math.abs(ddx) > Math.abs(ddy) + 5) {
-      agentFacingRight[id] = ddx > 0;
-      agentMovingUp[id] = false;
-    } else if (Math.abs(ddy) > Math.abs(ddx) + 5) {
-      agentMovingUp[id] = ddy < 0;
-    }
-  }
+  // Facing direction — maintained by animate() from position delta
   const facingRight = agentFacingRight[id] !== false; // default right
   const movingUp = agentMovingUp[id] === true;
 
