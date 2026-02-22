@@ -22,9 +22,9 @@ services:
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
+      - key: GITHUB_OWNER
+        value: Bonum
+      - key: GITHUB_REPO_NAME
+        value: Soci
       - key: GITHUB_TOKEN
-        sync: false
-      - key: GITHUB_OWNER      # e.g. Bonum  (no slash)
-        sync: false
-      - key: GITHUB_REPO_NAME  # e.g. Soci   (no slash)
         sync: false
