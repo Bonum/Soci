@@ -278,8 +278,7 @@ async def get_llm_providers():
         providers.append({"id": "groq",    "label": "Groq (Llama 8B)",    "icon": "⚡"})
     if os.environ.get("GEMINI_API_KEY"):
         providers.append({"id": "gemini",  "label": "Gemini 2.0 Flash",   "icon": "✦"})
-    if os.environ.get("HF_TOKEN"):
-        providers.append({"id": "hf",      "label": "HF Qwen 2.5 7B",     "icon": "🤗"})
+    providers.append(    {"id": "hf",      "label": "HF Qwen 2.5 7B",     "icon": "🤗"})
     providers.append(    {"id": "ollama",  "label": "Ollama (local)",      "icon": "🦙"})
     return {"current": current, "providers": providers}
 
