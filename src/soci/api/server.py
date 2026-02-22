@@ -230,7 +230,7 @@ def _choose_provider() -> str:
     """
     # Check explicit env vars first
     provider = os.environ.get("SOCI_PROVIDER", "").lower() or os.environ.get("LLM_PROVIDER", "").lower()
-    if provider in ("claude", "groq", "ollama"):
+    if provider in ("claude", "groq", "gemini", "ollama"):
         return provider
 
     # Check if keys are available

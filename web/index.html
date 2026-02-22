@@ -240,6 +240,7 @@
     <span><span id="weather-icon"></span> <span id="weather">Sunny</span></span>
     <span id="agent-count"><span class="dot green"></span> 0 agents</span>
     <span id="conv-count">0 convos</span>
+    <span id="llm-model" title="Active LLM model">⚡ —</span>
     <span class="controls">
       <button class="ctrl-btn" id="btn-pause" onclick="togglePause()" title="Pause/Resume">&#x23EF;</button>
       <button class="ctrl-btn" id="btn-slow" onclick="setSpeed(3.0)" title="Slow">&#x1F422;</button>
@@ -2861,6 +2862,19 @@ function processStateData(data) {
   const cm = usage.match(/calls:\s*(\d+)/i), $m = usage.match(/\$([0-9.]+)/);
   document.getElementById('api-calls').textContent = `API: ${cm?cm[1]:'0'}`;
   document.getElementById('cost').textContent = $m ? `$${$m[1]}` : '$0.00';
+
+  if (data.llm_provider && data.llm_model) {
+    // Compact model label: strip long date suffixes and version noise
+    let label = data.llm_model
+      .replace(/-\d{8}$/, '')          // remove trailing date e.g. -20251001
+      .replace(/-instant$/, '')        // groq suffix
+      .replace(/^gemini-/, '');        // "gemini-2.0-flash" → "2.0-flash"
+    const providerIcon = { gemini: '✦', groq: '⚡', claude: '◆', ollama: '🦙' };
+    const icon = providerIcon[data.llm_provider] || '⚡';
+    const el = document.getElementById('llm-model');
+    el.textContent = `${icon} ${label}`;
+    el.title = `${data.llm_provider}: ${data.llm_model}`;
+  }
 
   agents = data.agents || {};
   renderPlayerPanel();

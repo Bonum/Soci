@@ -836,6 +836,8 @@ class Simulation:
                 for aid, a in self.agents.items()
             },
             "active_conversations": len(self.active_conversations),
+            "llm_provider": getattr(self.llm, "provider", "unknown"),
+            "llm_model": getattr(self.llm, "default_model", "unknown"),
             "llm_usage": self.llm.usage.summary(),
         }
 
