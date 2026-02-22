@@ -826,8 +826,9 @@ class HFInferenceClient:
     ) -> None:
         self.api_key = api_key or os.environ.get("HF_TOKEN", "")
         if not self.api_key:
-            raise ValueError(
-                "HF_TOKEN not set. Get a free token at https://huggingface.co/settings/tokens"
+            logger.warning(
+                "HF_TOKEN not set — HF Inference will not make LLM calls. "
+                "Get a free token at https://huggingface.co/settings/tokens"
             )
         self.default_model = default_model
         self.max_retries = max_retries
@@ -858,6 +859,8 @@ class HFInferenceClient:
 
     @property
     def llm_status(self) -> str:
+        if not self.api_key:
+            return "limited"
         return "limited" if self._is_quota_exhausted() else "active"
 
     async def complete(
@@ -868,6 +871,8 @@ class HFInferenceClient:
         temperature: float = 0.7,
         max_tokens: int = 1024,
     ) -> str:
+        if not self.api_key:
+            return ""
         if self._is_quota_exhausted():
             logger.debug("HF quota circuit breaker active — skipping complete()")
             return ""
