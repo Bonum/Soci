@@ -132,6 +132,28 @@
   .toast.gossip { border-left-color: #9b59b6; }
   @keyframes toastIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
   @keyframes toastOut { from { opacity: 1; } to { opacity: 0; } }
+  #llm-model { cursor: pointer; user-select: none; }
+  #llm-model:hover { color: #fff; }
+  #llm-popup {
+    display: none; position: fixed; z-index: 9999;
+    background: #0d1b2e; border: 1px solid #1a3a6e;
+    border-radius: 8px; padding: 6px 0; min-width: 200px;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.6);
+    font-size: 13px;
+  }
+  #llm-popup .llm-pop-title {
+    padding: 6px 14px 8px; color: #4ecca3; font-size: 11px;
+    font-weight: 700; letter-spacing: 1px; border-bottom: 1px solid #0f3460;
+    margin-bottom: 4px;
+  }
+  #llm-popup .llm-opt {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 14px; cursor: pointer; color: #c8c8d8;
+    transition: background 0.15s;
+  }
+  #llm-popup .llm-opt:hover { background: #0f3460; color: #fff; }
+  #llm-popup .llm-opt.active { color: #4ecca3; }
+  #llm-popup .llm-opt .llm-check { width: 12px; text-align: center; font-size: 10px; }
   .section-header {
     font-size: 12px; color: #4ecca3; margin: 10px 0 4px 0; font-weight: 600;
     display: flex; align-items: center; gap: 6px;
@@ -266,6 +288,7 @@
     <canvas id="cityCanvas"></canvas>
     <div id="tooltip"></div>
     <div id="toast-container"></div>
+    <div id="llm-popup"><div class="llm-pop-title">SWITCH LLM</div></div>
     <input type="range" id="pan-x" min="0" max="100" value="0"
       style="position:absolute;bottom:4px;left:10px;right:10px;width:calc(100% - 20px);height:14px;opacity:0.5;z-index:50;"
       oninput="onPanSlider()">
@@ -3321,6 +3344,61 @@ async function checkSession() {
     }
   } catch(e) { renderPlayerPanel(); }
 }
+
+// ============================================================
+// LLM PROVIDER SWITCHER
+// ============================================================
+let _llmPopupOpen = false;
+
+document.getElementById('llm-model').addEventListener('click', async (e) => {
+  e.stopPropagation();
+  const popup = document.getElementById('llm-popup');
+  if (_llmPopupOpen) { popup.style.display = 'none'; _llmPopupOpen = false; return; }
+
+  // Position below the clicked element
+  const rect = e.currentTarget.getBoundingClientRect();
+  popup.style.left = rect.left + 'px';
+  popup.style.top  = (rect.bottom + 6) + 'px';
+
+  // Fetch available providers
+  try {
+    const res = await fetch(`${API_BASE}/llm/providers`);
+    const data = await res.json();
+    const existing = popup.querySelectorAll('.llm-opt');
+    existing.forEach(el => el.remove());
+
+    for (const p of data.providers) {
+      const row = document.createElement('div');
+      row.className = 'llm-opt' + (p.id === data.current ? ' active' : '');
+      row.innerHTML = `<span class="llm-check">${p.id === data.current ? '✔' : ''}</span>
+                       <span style="font-size:15px">${p.icon}</span>
+                       <span>${p.label}</span>`;
+      row.addEventListener('click', async () => {
+        popup.style.display = 'none'; _llmPopupOpen = false;
+        if (p.id === data.current) return;
+        try {
+          const r = await fetch(`${API_BASE}/llm/provider`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({provider: p.id}),
+          });
+          if (!r.ok) { const err = await r.json(); showToast(`LLM switch failed: ${err.detail}`, 'event'); return; }
+          showToast(`Switched to ${p.label}`, 'conv');
+        } catch (err) { showToast('LLM switch error', 'event'); }
+      });
+      popup.appendChild(row);
+    }
+    popup.style.display = 'block';
+    _llmPopupOpen = true;
+  } catch { showToast('Could not fetch providers', 'event'); }
+});
+
+document.addEventListener('click', () => {
+  if (_llmPopupOpen) {
+    document.getElementById('llm-popup').style.display = 'none';
+    _llmPopupOpen = false;
+  }
+});
 
 // ============================================================
 // INIT

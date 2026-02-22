@@ -261,6 +261,41 @@ async def get_conversations(include_history: bool = True, limit: int = 20):
     return result
 
 
+class SwitchProviderRequest(BaseModel):
+    provider: str
+
+
+@router.get("/llm/providers")
+async def get_llm_providers():
+    """Return available LLM providers (those with API keys set) and the current one."""
+    import os
+    from soci.api.server import get_llm_provider
+    current = get_llm_provider()
+    providers = []
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        providers.append({"id": "claude",  "label": "Claude (Anthropic)", "icon": "◆"})
+    if os.environ.get("GROQ_API_KEY"):
+        providers.append({"id": "groq",    "label": "Groq (Llama 8B)",    "icon": "⚡"})
+    if os.environ.get("GEMINI_API_KEY"):
+        providers.append({"id": "gemini",  "label": "Gemini 2.0 Flash",   "icon": "✦"})
+    providers.append(    {"id": "ollama",  "label": "Ollama (local)",      "icon": "🦙"})
+    return {"current": current, "providers": providers}
+
+
+@router.post("/llm/provider")
+async def set_llm_provider(req: SwitchProviderRequest):
+    """Hot-swap the active LLM provider."""
+    from soci.api.server import switch_llm_provider
+    valid = {"claude", "groq", "gemini", "ollama"}
+    if req.provider not in valid:
+        raise HTTPException(status_code=400, detail=f"Unknown provider '{req.provider}'")
+    try:
+        await switch_llm_provider(req.provider)
+        return {"ok": True, "provider": req.provider}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/stats")
 async def get_stats():
     """Get simulation statistics and LLM usage."""
