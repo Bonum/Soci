@@ -263,24 +263,29 @@ async def get_conversations(include_history: bool = True, limit: int = 20):
 
 class SwitchProviderRequest(BaseModel):
     provider: str
+    model: Optional[str] = None
 
 
 @router.get("/llm/providers")
 async def get_llm_providers():
     """Return available LLM providers (those with API keys set) and the current one."""
     import os
-    from soci.api.server import get_llm_provider
+    from soci.api.server import get_llm_provider, get_simulation
     current = get_llm_provider()
+    current_model = getattr(get_simulation().llm, "default_model", "")
     providers = []
     if os.environ.get("ANTHROPIC_API_KEY"):
-        providers.append({"id": "claude",  "label": "Claude (Anthropic)", "icon": "◆"})
+        providers.append({"id": "claude",  "label": "Claude Haiku",        "icon": "◆", "model": ""})
     if os.environ.get("GROQ_API_KEY"):
-        providers.append({"id": "groq",    "label": "Groq (Llama 8B)",    "icon": "⚡"})
+        providers.append({"id": "groq",    "label": "Groq Llama 8B",       "icon": "⚡", "model": ""})
     if os.environ.get("GEMINI_API_KEY"):
-        providers.append({"id": "gemini",  "label": "Gemini 2.0 Flash",   "icon": "✦"})
-    providers.append(    {"id": "hf",      "label": "HF Zephyr 7B",        "icon": "🤗"})
-    providers.append(    {"id": "ollama",  "label": "Ollama (local)",      "icon": "🦙"})
-    return {"current": current, "providers": providers}
+        providers.append({"id": "gemini",  "label": "Gemini 2.0 Flash",    "icon": "✦", "model": ""})
+    providers.append({"id": "hf", "model": "HuggingFaceH4/zephyr-7b-beta",           "label": "HF Zephyr 7B",    "icon": "🤗"})
+    providers.append({"id": "hf", "model": "Qwen/Qwen2.5-7B-Instruct",               "label": "HF Qwen 2.5 7B",  "icon": "🤗"})
+    providers.append({"id": "hf", "model": "meta-llama/Llama-3.2-3B-Instruct",       "label": "HF Llama 3.2 3B", "icon": "🤗"})
+    providers.append({"id": "hf", "model": "mistralai/Mistral-7B-Instruct-v0.3",     "label": "HF Mistral 7B",   "icon": "🤗"})
+    providers.append({"id": "ollama", "label": "Ollama (local)",           "icon": "🦙", "model": ""})
+    return {"current": current, "current_model": current_model, "providers": providers}
 
 
 @router.get("/llm/test")
@@ -309,8 +314,8 @@ async def set_llm_provider(req: SwitchProviderRequest):
     if req.provider not in valid:
         raise HTTPException(status_code=400, detail=f"Unknown provider '{req.provider}'")
     try:
-        await switch_llm_provider(req.provider)
-        return {"ok": True, "provider": req.provider}
+        await switch_llm_provider(req.provider, model=req.model or None)
+        return {"ok": True, "provider": req.provider, "model": req.model}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -3373,19 +3373,22 @@ document.getElementById('llm-model').addEventListener('click', async (e) => {
     existing.forEach(el => el.remove());
 
     for (const p of data.providers) {
+      const isActive = p.id === data.current && (p.model === data.current_model || (!p.model && p.id !== 'hf'));
       const row = document.createElement('div');
-      row.className = 'llm-opt' + (p.id === data.current ? ' active' : '');
-      row.innerHTML = `<span class="llm-check">${p.id === data.current ? '✔' : ''}</span>
+      row.className = 'llm-opt' + (isActive ? ' active' : '');
+      row.innerHTML = `<span class="llm-check">${isActive ? '✔' : ''}</span>
                        <span style="font-size:15px">${p.icon}</span>
                        <span>${p.label}</span>`;
       row.addEventListener('click', async () => {
         popup.style.display = 'none'; _llmPopupOpen = false;
-        if (p.id === data.current) return;
+        if (isActive) return;
         try {
+          const body = {provider: p.id};
+          if (p.model) body.model = p.model;
           const r = await fetch(`${API_BASE}/llm/provider`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({provider: p.id}),
+            body: JSON.stringify(body),
           });
           if (!r.ok) { const err = await r.json(); showToast(`LLM switch failed: ${err.detail}`, 'event'); return; }
           showToast(`Switched to ${p.label}`, 'conv');

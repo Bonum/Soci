@@ -57,14 +57,14 @@ def get_llm_provider() -> str:
     return _llm_provider
 
 
-async def switch_llm_provider(provider: str) -> None:
+async def switch_llm_provider(provider: str, model: Optional[str] = None) -> None:
     """Hot-swap the LLM client on the running simulation."""
     global _llm_provider, _simulation
     assert _simulation is not None, "Simulation not initialized"
-    new_llm = create_llm_client(provider=provider)
+    new_llm = create_llm_client(provider=provider, model=model)
     _simulation.llm = new_llm
     _llm_provider = provider
-    logger.info(f"LLM provider switched to: {provider} ({new_llm.__class__.__name__})")
+    logger.info(f"LLM provider switched to: {provider}/{model or 'default'} ({new_llm.__class__.__name__})")
 
 
 async def simulation_loop(sim: Simulation, db: Database, tick_delay: float = 2.0) -> None:
