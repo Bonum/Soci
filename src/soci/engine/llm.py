@@ -42,6 +42,7 @@ MODEL_GEMINI_FLASH = "gemini-2.0-flash"
 MODEL_GEMINI_PRO = "gemini-1.5-pro"
 
 # Hugging Face Serverless Inference model IDs (free, no credit card)
+MODEL_HF_ZEPHYR = "HuggingFaceH4/zephyr-7b-beta"    # default — ungated, no license needed
 MODEL_HF_LLAMA = "meta-llama/Llama-3.2-3B-Instruct"
 MODEL_HF_QWEN = "Qwen/Qwen2.5-7B-Instruct"
 MODEL_HF_MISTRAL = "mistralai/Mistral-7B-Instruct-v0.3"
@@ -821,7 +822,7 @@ class HFInferenceClient:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        default_model: str = MODEL_HF_QWEN,
+        default_model: str = MODEL_HF_ZEPHYR,
         max_retries: int = 3,
     ) -> None:
         self.api_key = api_key or os.environ.get("HF_TOKEN", "")
@@ -1017,7 +1018,7 @@ def create_llm_client(
         default_model = model or os.environ.get("GEMINI_MODEL", MODEL_GEMINI_FLASH)
         return GeminiClient(default_model=default_model)
     elif provider == PROVIDER_HF:
-        default_model = model or os.environ.get("HF_MODEL", MODEL_HF_QWEN)
+        default_model = model or os.environ.get("HF_MODEL", MODEL_HF_ZEPHYR)
         return HFInferenceClient(default_model=default_model)
     elif provider == PROVIDER_OLLAMA:
         default_model = model or os.environ.get("OLLAMA_MODEL", MODEL_LLAMA)
