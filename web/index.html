@@ -3413,8 +3413,8 @@ document.getElementById('llm-model').addEventListener('click', async (e) => {
         if (d.ok) {
           showToast(`✔ LLM OK — "${d.raw.slice(0,60)}"`, 'conv');
         } else {
-          const msg = d.auth_error ? `Auth error: ${d.auth_error.slice(0,80)}` : (d.error || d.raw || 'empty response');
-          showToast(`✘ LLM failed: ${msg}`, 'event');
+          const msg = (d.error || d.raw || 'empty response — model may not be on HF serverless API').slice(0, 120);
+          showToast(`✘ ${d.model}: ${msg}`, 'event');
         }
       } catch (err) { showToast('Test request failed', 'event'); }
     });

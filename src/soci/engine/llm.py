@@ -845,6 +845,7 @@ class HFInferenceClient:
         )
         self._rate_limited_until: float = 0.0
         self._auth_error: str = ""
+        self._last_error: str = ""   # last non-auth error for diagnostics
 
     def _is_quota_exhausted(self) -> bool:
         return time.monotonic() < self._rate_limited_until
@@ -935,11 +936,13 @@ class HFInferenceClient:
                     logger.warning(f"HF model loading ({status}), waiting {wait:.0f}s")
                     await asyncio.sleep(wait)
                 else:
+                    self._last_error = f"HTTP {status}: {body}"
                     logger.error(f"HF HTTP error: {status} {body}")
                     if attempt == self.max_retries - 1:
                         return ""
                     await asyncio.sleep(2)
             except Exception as e:
+                self._last_error = str(e)
                 logger.error(f"HF error: {e}")
                 if attempt == self.max_retries - 1:
                     return ""

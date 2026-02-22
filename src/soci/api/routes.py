@@ -299,9 +299,11 @@ async def test_llm():
             user_message='Reply with exactly: {"ok": true}',
             max_tokens=32,
         )
-        return {"ok": bool(raw), "raw": raw, "provider": getattr(sim.llm, "provider", "?"),
+        error_detail = getattr(sim.llm, "_auth_error", "") or getattr(sim.llm, "_last_error", "")
+        return {"ok": bool(raw), "raw": raw,
+                "provider": getattr(sim.llm, "provider", "?"),
                 "model": getattr(sim.llm, "default_model", "?"),
-                "auth_error": getattr(sim.llm, "_auth_error", "")}
+                "error": error_detail}
     except Exception as e:
         return {"ok": False, "raw": "", "error": str(e)}
 
