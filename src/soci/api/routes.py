@@ -278,6 +278,8 @@ async def get_llm_providers():
         providers.append({"id": "groq",    "label": "Groq (Llama 8B)",    "icon": "⚡"})
     if os.environ.get("GEMINI_API_KEY"):
         providers.append({"id": "gemini",  "label": "Gemini 2.0 Flash",   "icon": "✦"})
+    if os.environ.get("HF_TOKEN"):
+        providers.append({"id": "hf",      "label": "HF Qwen 2.5 7B",     "icon": "🤗"})
     providers.append(    {"id": "ollama",  "label": "Ollama (local)",      "icon": "🦙"})
     return {"current": current, "providers": providers}
 
@@ -286,7 +288,7 @@ async def get_llm_providers():
 async def set_llm_provider(req: SwitchProviderRequest):
     """Hot-swap the active LLM provider."""
     from soci.api.server import switch_llm_provider
-    valid = {"claude", "groq", "gemini", "ollama"}
+    valid = {"claude", "groq", "gemini", "hf", "ollama"}
     if req.provider not in valid:
         raise HTTPException(status_code=400, detail=f"Unknown provider '{req.provider}'")
     try:

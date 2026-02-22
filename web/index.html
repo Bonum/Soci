@@ -2892,7 +2892,7 @@ function processStateData(data) {
       .replace(/-\d{8}$/, '')          // remove trailing date e.g. -20251001
       .replace(/-instant$/, '')        // groq suffix
       .replace(/^gemini-/, '');        // "gemini-2.0-flash" → "2.0-flash"
-    const providerIcon = { gemini: '✦', groq: '⚡', claude: '◆', ollama: '🦙' };
+    const providerIcon = { gemini: '✦', groq: '⚡', claude: '◆', ollama: '🦙', hf: '🤗' };
     const icon = providerIcon[data.llm_provider] || '⚡';
 
     // Status: limited > skipped > idle > active (calls happening)

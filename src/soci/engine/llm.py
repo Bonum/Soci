@@ -19,6 +19,7 @@ PROVIDER_CLAUDE = "claude"
 PROVIDER_OLLAMA = "ollama"
 PROVIDER_GROQ = "groq"
 PROVIDER_GEMINI = "gemini"
+PROVIDER_HF = "hf"
 
 # Claude model IDs
 MODEL_SONNET = "claude-sonnet-4-5-20250929"
@@ -39,6 +40,11 @@ MODEL_GROQ_MIXTRAL = "mixtral-8x7b-32768"
 # Google Gemini model IDs (free tier via AI Studio)
 MODEL_GEMINI_FLASH = "gemini-2.0-flash"
 MODEL_GEMINI_PRO = "gemini-1.5-pro"
+
+# Hugging Face Serverless Inference model IDs (free, no credit card)
+MODEL_HF_LLAMA = "meta-llama/Llama-3.2-3B-Instruct"
+MODEL_HF_QWEN = "Qwen/Qwen2.5-7B-Instruct"
+MODEL_HF_MISTRAL = "mistralai/Mistral-7B-Instruct-v0.3"
 
 # Approximate cost per 1M tokens (USD) — Ollama is free, Groq is very cheap
 COST_PER_1M = {
@@ -800,6 +806,149 @@ class GeminiClient:
 
 
 # ============================================================
+# Hugging Face Serverless Inference Client (free tier)
+# ============================================================
+
+class HFInferenceClient:
+    """Hugging Face Serverless Inference via OpenAI-compatible endpoint.
+
+    Free tier (no credit card required):
+      - Llama-3.2-3B-Instruct, Qwen2.5-7B-Instruct, Mistral-7B, and many others.
+      - HF_TOKEN is auto-injected in HF Spaces — no manual setup needed.
+      - Get a token at https://huggingface.co/settings/tokens
+    """
+
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        default_model: str = MODEL_HF_QWEN,
+        max_retries: int = 3,
+    ) -> None:
+        self.api_key = api_key or os.environ.get("HF_TOKEN", "")
+        if not self.api_key:
+            raise ValueError(
+                "HF_TOKEN not set. Get a free token at https://huggingface.co/settings/tokens"
+            )
+        self.default_model = default_model
+        self.max_retries = max_retries
+        self.usage = LLMUsage()
+        self.provider = PROVIDER_HF
+        self._http = httpx.AsyncClient(
+            base_url="https://api-inference.huggingface.co/v1/",
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=120.0,  # HF can be slow under load
+        )
+        self._rate_limited_until: float = 0.0
+
+    def _is_quota_exhausted(self) -> bool:
+        return time.monotonic() < self._rate_limited_until
+
+    def _map_model(self, model: str) -> str:
+        """Map Claude/Groq/Gemini model names to HF equivalents."""
+        mapping = {
+            MODEL_SONNET: self.default_model,
+            MODEL_HAIKU: self.default_model,
+            MODEL_GROQ_LLAMA_8B: MODEL_HF_LLAMA,
+            MODEL_GEMINI_FLASH: self.default_model,
+        }
+        return mapping.get(model, self.default_model)
+
+    @property
+    def llm_status(self) -> str:
+        return "limited" if self._is_quota_exhausted() else "active"
+
+    async def complete(
+        self,
+        system: str,
+        user_message: str,
+        model: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
+    ) -> str:
+        if self._is_quota_exhausted():
+            logger.debug("HF quota circuit breaker active — skipping complete()")
+            return ""
+
+        model = self._map_model(model or self.default_model)
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_message},
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+
+        for attempt in range(self.max_retries):
+            try:
+                resp = await self._http.post("chat/completions", json=payload)
+                resp.raise_for_status()
+                data = resp.json()
+                usage = data.get("usage", {})
+                self.usage.record(model, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
+                return data["choices"][0]["message"]["content"]
+            except httpx.HTTPStatusError as e:
+                status = e.response.status_code
+                if status == 429:
+                    retry_after = e.response.headers.get("retry-after", "10")
+                    try:
+                        wait = float(retry_after)
+                    except (ValueError, TypeError):
+                        wait = 10.0
+                    if wait > 60:
+                        self._rate_limited_until = time.monotonic() + wait
+                        logger.warning(f"HF quota exhausted for {wait:.0f}s")
+                        return ""
+                    logger.warning(f"HF rate limited, waiting {wait}s")
+                    await asyncio.sleep(wait)
+                elif status in (503, 504):
+                    # Model loading / gateway timeout — back off and retry
+                    wait = 5.0 * (attempt + 1)
+                    logger.warning(f"HF model loading ({status}), waiting {wait}s")
+                    await asyncio.sleep(wait)
+                else:
+                    logger.error(f"HF HTTP error: {status} {e.response.text[:200]}")
+                    if attempt == self.max_retries - 1:
+                        return ""
+                    await asyncio.sleep(2)
+            except Exception as e:
+                logger.error(f"HF error: {e}")
+                if attempt == self.max_retries - 1:
+                    return ""
+                await asyncio.sleep(2)
+        return ""
+
+    async def complete_json(
+        self,
+        system: str,
+        user_message: str,
+        model: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
+    ) -> dict:
+        if self._is_quota_exhausted():
+            logger.debug("HF quota circuit breaker active — skipping complete_json()")
+            return {}
+
+        json_instruction = (
+            "\n\nRespond ONLY with valid JSON. No markdown, no explanation, no extra text. "
+            "Just the JSON object."
+        )
+        text = await self.complete(
+            system=system,
+            user_message=user_message + json_instruction,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        return _parse_json_response(text)
+
+
+# ============================================================
 # Factory — create the right client based on config
 # ============================================================
 
@@ -807,27 +956,31 @@ def create_llm_client(
     provider: Optional[str] = None,
     model: Optional[str] = None,
     ollama_url: str = "http://localhost:11434",
-) -> ClaudeClient | OllamaClient | GroqClient:
+) -> ClaudeClient | OllamaClient | GroqClient | GeminiClient | HFInferenceClient:
     """Create an LLM client based on environment or explicit config.
 
     Provider detection order:
     1. Explicit provider argument
     2. LLM_PROVIDER env var
     3. If ANTHROPIC_API_KEY is set → Claude
-    4. If GROQ_API_KEY is set → Groq (fast cloud, parallel)
-    5. Default → Ollama (free, local)
+    4. If GROQ_API_KEY is set → Groq (fast cloud)
+    5. If GEMINI_API_KEY is set → Gemini (free tier)
+    6. If HF_TOKEN is set → HF Inference (free, auto-available in HF Spaces)
+    7. Default → Ollama (local)
     """
     if provider is None:
         provider = os.environ.get("LLM_PROVIDER", "").lower()
 
     if not provider:
-        # Auto-detect: Claude → Groq → Gemini → Ollama
+        # Auto-detect: Claude → Groq → Gemini → HF → Ollama
         if os.environ.get("ANTHROPIC_API_KEY"):
             provider = PROVIDER_CLAUDE
         elif os.environ.get("GROQ_API_KEY"):
             provider = PROVIDER_GROQ
         elif os.environ.get("GEMINI_API_KEY"):
             provider = PROVIDER_GEMINI
+        elif os.environ.get("HF_TOKEN"):
+            provider = PROVIDER_HF
         else:
             provider = PROVIDER_OLLAMA
 
@@ -840,11 +993,14 @@ def create_llm_client(
     elif provider == PROVIDER_GEMINI:
         default_model = model or os.environ.get("GEMINI_MODEL", MODEL_GEMINI_FLASH)
         return GeminiClient(default_model=default_model)
+    elif provider == PROVIDER_HF:
+        default_model = model or os.environ.get("HF_MODEL", MODEL_HF_QWEN)
+        return HFInferenceClient(default_model=default_model)
     elif provider == PROVIDER_OLLAMA:
         default_model = model or os.environ.get("OLLAMA_MODEL", MODEL_LLAMA)
         return OllamaClient(base_url=ollama_url, default_model=default_model)
     else:
-        raise ValueError(f"Unknown LLM provider: {provider}. Use 'claude', 'groq', 'gemini', or 'ollama'.")
+        raise ValueError(f"Unknown LLM provider: {provider}. Use 'claude', 'groq', 'gemini', 'hf', or 'ollama'.")
 
 
 # --- Prompt Templates ---
