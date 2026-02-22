@@ -1,3 +1,12 @@
+---
+title: Soci
+emoji: 🏙️
+colorFrom: blue
+colorTo: purple
+sdk: docker
+pinned: false
+---
+
 # Soci — LLM-Powered City Population Simulator
 
 Simulates a diverse population of AI people living in a city using an LLM as the reasoning engine. Each agent has a unique persona, memory stream, needs, and relationships.
