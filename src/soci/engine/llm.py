@@ -843,6 +843,7 @@ class HFInferenceClient:
             timeout=120.0,  # HF can be slow under load
         )
         self._rate_limited_until: float = 0.0
+        self._auth_error: str = ""
 
     def _is_quota_exhausted(self) -> bool:
         return time.monotonic() < self._rate_limited_until
@@ -861,6 +862,8 @@ class HFInferenceClient:
     def llm_status(self) -> str:
         if not self.api_key:
             return "nokey"
+        if self._auth_error:
+            return "nokey"   # gated model / bad token
         return "limited" if self._is_quota_exhausted() else "active"
 
     async def complete(
@@ -898,6 +901,7 @@ class HFInferenceClient:
                 return data["choices"][0]["message"]["content"]
             except httpx.HTTPStatusError as e:
                 status = e.response.status_code
+                body = e.response.text[:300]
                 if status == 429:
                     retry_after = e.response.headers.get("retry-after", "10")
                     try:
@@ -910,13 +914,27 @@ class HFInferenceClient:
                         return ""
                     logger.warning(f"HF rate limited, waiting {wait}s")
                     await asyncio.sleep(wait)
+                elif status in (401, 403):
+                    # Auth failure or gated model — disable for a long window
+                    self._rate_limited_until = time.monotonic() + 3600
+                    self._auth_error = body
+                    logger.error(
+                        f"HF auth error ({status}): {body} — "
+                        "Check HF_TOKEN and accept model license at huggingface.co"
+                    )
+                    return ""
                 elif status in (503, 504):
-                    # Model loading / gateway timeout — back off and retry
-                    wait = 5.0 * (attempt + 1)
-                    logger.warning(f"HF model loading ({status}), waiting {wait}s")
+                    # Model loading — read estimated_time from body if available
+                    try:
+                        import json as _json
+                        estimated = _json.loads(e.response.text).get("estimated_time", 0)
+                        wait = max(float(estimated), 5.0 * (attempt + 1))
+                    except Exception:
+                        wait = 5.0 * (attempt + 1)
+                    logger.warning(f"HF model loading ({status}), waiting {wait:.0f}s")
                     await asyncio.sleep(wait)
                 else:
-                    logger.error(f"HF HTTP error: {status} {e.response.text[:200]}")
+                    logger.error(f"HF HTTP error: {status} {body}")
                     if attempt == self.max_retries - 1:
                         return ""
                     await asyncio.sleep(2)

@@ -2908,8 +2908,10 @@ function processStateData(data) {
     else if (hasCalls)   { dotColor = '#4ecca3'; statusTip = `${data.llm_calls_last_tick} calls this tick`; }
     else                 { dotColor = '#f0c040'; statusTip = 'idle — no calls needed'; }
 
+    const calls = data.llm_calls_last_tick || 0;
+    const callBadge = calls > 0 ? ` <span style="font-size:10px;color:#4ecca3;opacity:0.85">×${calls}</span>` : '';
     const el = document.getElementById('llm-model');
-    el.innerHTML = `${icon} ${label} <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${dotColor};vertical-align:middle;margin-left:2px"></span>`;
+    el.innerHTML = `${icon} ${label}${callBadge} <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${dotColor};vertical-align:middle;margin-left:2px"></span>`;
     el.title = `${data.llm_provider}: ${data.llm_model} — ${statusTip}`;
   }
 
@@ -3391,6 +3393,29 @@ document.getElementById('llm-model').addEventListener('click', async (e) => {
       });
       popup.appendChild(row);
     }
+    // Test button
+    const sep = document.createElement('div');
+    sep.style.cssText = 'border-top:1px solid #0f3460;margin:4px 0';
+    popup.appendChild(sep);
+    const testRow = document.createElement('div');
+    testRow.className = 'llm-opt';
+    testRow.innerHTML = `<span class="llm-check"></span><span style="font-size:15px">🔬</span><span>Test current LLM…</span>`;
+    testRow.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      popup.style.display = 'none'; _llmPopupOpen = false;
+      showToast('Testing LLM…', 'event');
+      try {
+        const r = await fetch(`${API_BASE}/llm/test`);
+        const d = await r.json();
+        if (d.ok) {
+          showToast(`✔ LLM OK — "${d.raw.slice(0,60)}"`, 'conv');
+        } else {
+          const msg = d.auth_error ? `Auth error: ${d.auth_error.slice(0,80)}` : (d.error || d.raw || 'empty response');
+          showToast(`✘ LLM failed: ${msg}`, 'event');
+        }
+      } catch (err) { showToast('Test request failed', 'event'); }
+    });
+    popup.appendChild(testRow);
     popup.style.display = 'block';
     _llmPopupOpen = true;
   } catch { showToast('Could not fetch providers', 'event'); }

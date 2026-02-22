@@ -283,6 +283,24 @@ async def get_llm_providers():
     return {"current": current, "providers": providers}
 
 
+@router.get("/llm/test")
+async def test_llm():
+    """Make a minimal LLM call and return the raw response — for diagnosing provider issues."""
+    from soci.api.server import get_simulation
+    sim = get_simulation()
+    try:
+        raw = await sim.llm.complete(
+            system="You are a test assistant.",
+            user_message='Reply with exactly: {"ok": true}',
+            max_tokens=32,
+        )
+        return {"ok": bool(raw), "raw": raw, "provider": getattr(sim.llm, "provider", "?"),
+                "model": getattr(sim.llm, "default_model", "?"),
+                "auth_error": getattr(sim.llm, "_auth_error", "")}
+    except Exception as e:
+        return {"ok": False, "raw": "", "error": str(e)}
+
+
 @router.post("/llm/provider")
 async def set_llm_provider(req: SwitchProviderRequest):
     """Hot-swap the active LLM provider."""
