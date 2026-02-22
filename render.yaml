@@ -24,5 +24,7 @@ services:
         sync: false
       - key: GITHUB_TOKEN
         sync: false
-      - key: GITHUB_REPO
+      - key: GITHUB_OWNER      # e.g. Bonum  (no slash)
+        sync: false
+      - key: GITHUB_REPO_NAME  # e.g. Soci   (no slash)
         sync: false

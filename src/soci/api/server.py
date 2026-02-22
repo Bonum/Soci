@@ -134,12 +134,16 @@ async def load_state_from_github(data_dir: Path) -> bool:
 
     Env vars:
         GITHUB_TOKEN       — personal access token with repo read/write
-        GITHUB_REPO        — "owner/repo" e.g. "alice/soci"
+        GITHUB_OWNER       — repo owner e.g. "alice"   (preferred, no slash)
+        GITHUB_REPO_NAME   — repo name  e.g. "soci"    (preferred, no slash)
+        GITHUB_REPO        — "owner/repo" fallback for existing setups
         GITHUB_STATE_BRANCH — branch name (default: "simulation-state")
         GITHUB_STATE_FILE  — path inside repo (default: "state/autosave.json")
     """
     token = os.environ.get("GITHUB_TOKEN", "")
-    repo = os.environ.get("GITHUB_REPO", "")
+    owner = os.environ.get("GITHUB_OWNER", "")
+    repo_name = os.environ.get("GITHUB_REPO_NAME", "")
+    repo = f"{owner}/{repo_name}" if owner and repo_name else os.environ.get("GITHUB_REPO", "")
     if not token or not repo:
         return False
     path = os.environ.get("GITHUB_STATE_FILE", "state/autosave.json")
@@ -174,7 +178,9 @@ async def load_state_from_github(data_dir: Path) -> bool:
 async def save_state_to_github(data_dir: Path) -> bool:
     """Push autosave.json to the simulation-state branch (never touches master)."""
     token = os.environ.get("GITHUB_TOKEN", "")
-    repo = os.environ.get("GITHUB_REPO", "")
+    owner = os.environ.get("GITHUB_OWNER", "")
+    repo_name = os.environ.get("GITHUB_REPO_NAME", "")
+    repo = f"{owner}/{repo_name}" if owner and repo_name else os.environ.get("GITHUB_REPO", "")
     if not token or not repo:
         return False
     path = os.environ.get("GITHUB_STATE_FILE", "state/autosave.json")
