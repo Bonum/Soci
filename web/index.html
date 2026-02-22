@@ -2895,12 +2895,15 @@ function processStateData(data) {
     const providerIcon = { gemini: '✦', groq: '⚡', claude: '◆', ollama: '🦙', hf: '🤗' };
     const icon = providerIcon[data.llm_provider] || '⚡';
 
-    // Status: limited > skipped > idle > active (calls happening)
-    const isLimited  = data.llm_status === 'limited';
+    // Status: nokey > limited > skipped > idle > active
+    const status     = data.llm_status;
+    const isNoKey    = status === 'nokey';
+    const isLimited  = status === 'limited';
     const isSkipped  = data.llm_skipped === true;
     const hasCalls   = (data.llm_calls_last_tick || 0) > 0;
     let dotColor, statusTip;
-    if (isLimited)       { dotColor = '#e94560'; statusTip = 'quota / rate limit hit'; }
+    if (isNoKey)         { dotColor = '#f0a040'; statusTip = 'no API token — set HF_TOKEN env var'; }
+    else if (isLimited)  { dotColor = '#e94560'; statusTip = 'quota / rate limit hit'; }
     else if (isSkipped)  { dotColor = '#666';    statusTip = 'LLM skipped (fast mode)'; }
     else if (hasCalls)   { dotColor = '#4ecca3'; statusTip = `${data.llm_calls_last_tick} calls this tick`; }
     else                 { dotColor = '#f0c040'; statusTip = 'idle — no calls needed'; }

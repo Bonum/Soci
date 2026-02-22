@@ -860,7 +860,7 @@ class HFInferenceClient:
     @property
     def llm_status(self) -> str:
         if not self.api_key:
-            return "limited"
+            return "nokey"
         return "limited" if self._is_quota_exhausted() else "active"
 
     async def complete(
