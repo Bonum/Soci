@@ -11,8 +11,8 @@ COPY src/   ./src/
 COPY config/ ./config/
 COPY web/    ./web/
 
-# Install the soci package (handles the src/ layout)
-RUN pip install --no-cache-dir -e .
+# Add src/ to Python path (avoids needing setuptools editable install)
+ENV PYTHONPATH=/app/src
 
 # Hugging Face Spaces requires port 7860
 ENV PORT=7860
