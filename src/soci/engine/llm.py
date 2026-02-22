@@ -900,6 +900,7 @@ class HFInferenceClient:
                 data = resp.json()
                 usage = data.get("usage", {})
                 self.usage.record(model, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
+                self._last_error = ""  # clear on success
                 return data["choices"][0]["message"]["content"]
             except httpx.HTTPStatusError as e:
                 status = e.response.status_code
@@ -926,15 +927,18 @@ class HFInferenceClient:
                     )
                     return ""
                 elif status in (503, 504):
-                    # Model loading — read estimated_time from body if available
+                    # Model cold-start — circuit-break immediately so the sim
+                    # tick is not blocked; retry once the estimated window passes.
                     try:
                         import json as _json
-                        estimated = _json.loads(e.response.text).get("estimated_time", 0)
-                        wait = max(float(estimated), 5.0 * (attempt + 1))
+                        estimated = float(_json.loads(e.response.text).get("estimated_time", 30))
                     except Exception:
-                        wait = 5.0 * (attempt + 1)
-                    logger.warning(f"HF model loading ({status}), waiting {wait:.0f}s")
-                    await asyncio.sleep(wait)
+                        estimated = 30.0
+                    wait = max(estimated, 20.0)
+                    self._rate_limited_until = time.monotonic() + wait
+                    self._last_error = f"503 model loading — retry in {wait:.0f}s"
+                    logger.warning(f"HF model cold-start, circuit-breaking for {wait:.0f}s")
+                    return ""
                 else:
                     self._last_error = f"HTTP {status}: {body}"
                     logger.error(f"HF HTTP error: {status} {body}")
@@ -947,6 +951,8 @@ class HFInferenceClient:
                 if attempt == self.max_retries - 1:
                     return ""
                 await asyncio.sleep(2)
+        if not self._last_error:
+            self._last_error = "all retries exhausted"
         return ""
 
     async def complete_json(
