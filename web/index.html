@@ -2042,9 +2042,9 @@ function drawPerson(id, agent, globalIdx, W, H) {
     return;
   }
 
-  if (walkAnim && movingUp) {
+  if (movingUp) {
     // ══════════════════════════════════════════════════════════
-    // BACK VIEW — agent walking away (toward top of screen)
+    // BACK VIEW — agent moving/facing toward top of screen
     // Same figure as front view but no face; hair covers back.
     // ══════════════════════════════════════════════════════════
     const twB = gender === 'female' ? 7 : 8;
