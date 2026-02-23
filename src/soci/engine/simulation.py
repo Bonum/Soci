@@ -64,6 +64,9 @@ class Simulation:
         self._max_convos_this_tick: int = 0  # 0 = no limit
         self._max_llm_calls_this_tick: int = 0  # 0 = no limit; global budget across all categories
         self._llm_calls_this_tick: int = 0  # counter, reset each tick
+        # LLM call probability: 0.0 = never use LLM (routine only), 1.0 = always (default).
+        # Applied per potential LLM call site. Tuned at 0.45 for ~10h Gemini free-tier runtime.
+        self.llm_call_probability: float = 1.0
         # Callback for real-time output
         self.on_event: Optional[Callable[[str], None]] = None
 
@@ -169,7 +172,7 @@ class Simulation:
                         plan_items[:8], self.clock.day,
                         self.clock.total_ticks, self.clock.time_str,
                     )
-                else:
+                elif random.random() < self.llm_call_probability:
                     plan_coros.append(self._generate_daily_plan(agent))
                     plan_agents.append(agent)
 
@@ -233,7 +236,7 @@ class Simulation:
                     continue
 
             # No routine slot — fallback to LLM (rare), skip in fast-forward
-            if not self._skip_llm_this_tick:
+            if not self._skip_llm_this_tick and random.random() < self.llm_call_probability:
                 action_coros.append(self._decide_action(agent))
                 action_agents.append(agent)
 
@@ -276,7 +279,7 @@ class Simulation:
                 if next_speaker_id:
                     responder = self.agents.get(next_speaker_id[0])
                     other = self.agents.get(last_speaker) if last_speaker else None
-                    if responder and other:
+                    if responder and other and random.random() < self.llm_call_probability:
                         conv_coros.append(
                             continue_conversation(conv, responder, other, self.llm, self.clock)
                         )
@@ -303,7 +306,8 @@ class Simulation:
         # 7. Social: maybe start new conversations (respect speed limits + budget)
         if not self._skip_llm_this_tick and self._llm_budget_remaining() > 0:
             if self._max_convos_this_tick == 0 or len(self.active_conversations) < self._max_convos_this_tick:
-                await self._handle_social_interactions(ordered_agents)
+                if random.random() < self.llm_call_probability:
+                    await self._handle_social_interactions(ordered_agents)
 
         # 8. Reflections for agents with enough accumulated importance
         if not self._skip_llm_this_tick and self._llm_budget_remaining() > 0:
@@ -311,8 +315,9 @@ class Simulation:
             reflect_agents = []
             for agent in ordered_agents:
                 if agent.memory.should_reflect() and not agent.is_player:
-                    reflect_coros.append(self._generate_reflection(agent))
-                    reflect_agents.append(agent)
+                    if random.random() < self.llm_call_probability:
+                        reflect_coros.append(self._generate_reflection(agent))
+                        reflect_agents.append(agent)
 
             # Limit by speed cap and global budget
             reflect_cap = min(

@@ -41,6 +41,7 @@ _sim_task: Optional[asyncio.Task] = None
 _sim_paused: bool = False
 _sim_speed: float = 1.0  # 1.0 = normal, 0.5 = fast, 2.0 = slow
 _llm_provider: str = ""  # Track which provider is active
+_llm_call_probability: float = 1.0  # 0.0–1.0; set per-provider on startup, adjustable via slider
 
 
 def get_simulation() -> Simulation:
@@ -55,6 +56,17 @@ def get_database() -> Database:
 
 def get_llm_provider() -> str:
     return _llm_provider
+
+
+def get_llm_call_probability() -> float:
+    return _llm_call_probability
+
+
+def set_llm_call_probability(value: float) -> None:
+    global _llm_call_probability, _simulation
+    _llm_call_probability = max(0.0, min(1.0, value))
+    if _simulation is not None:
+        _simulation.llm_call_probability = _llm_call_probability
 
 
 async def switch_llm_provider(provider: str, model: Optional[str] = None) -> None:
@@ -97,13 +109,17 @@ async def simulation_loop(sim: Simulation, db: Database, tick_delay: float = 2.0
             else:
                 sim._skip_llm_this_tick = False
                 if is_rate_limited:
-                    # Rate-limited providers (Groq 30 RPM, Gemini 15 RPM, HF) — budget 4 calls/tick
+                    # Rate-limited providers: tight budget — probability slider does the fine-tuning.
+                    # Gemini free tier: 4 RPM, ~1500 RPD → budget=1 + prob=0.45 ≈ 150 calls/h (10h).
                     sim._max_convos_this_tick = 1
-                    sim._max_llm_calls_this_tick = 4
+                    sim._max_llm_calls_this_tick = 1
                 else:
                     # Ollama / Claude: soft cap to keep ticks responsive
                     sim._max_convos_this_tick = 3
                     sim._max_llm_calls_this_tick = 10
+
+            # Apply the runtime probability slider every tick
+            sim.llm_call_probability = _llm_call_probability
 
             await sim.tick()
 
@@ -305,6 +321,21 @@ async def lifespan(app: FastAPI):
     _llm_provider = _choose_provider()
     llm = create_llm_client(provider=_llm_provider)
     logger.info(f"LLM provider: {_llm_provider} ({llm.__class__.__name__})")
+
+    # Default LLM call probability — tuned per provider to stay within free-tier daily quotas.
+    # Gemini free tier: 4 RPM, ~1500 RPD → 0.45 ≈ 150 calls/h → ~10h runtime per day.
+    # Groq free tier: 30 RPM, limited daily tokens → 0.70 to conserve budget.
+    # Ollama / Claude: no quota → 1.0 (full fidelity).
+    # Override via SOCI_LLM_PROB env var (0.0–1.0).
+    _provider_default_prob = {
+        PROVIDER_GEMINI: 0.45,
+        PROVIDER_GROQ: 0.70,
+        PROVIDER_HF: 0.45,
+    }
+    _llm_call_probability = float(
+        os.environ.get("SOCI_LLM_PROB", str(_provider_default_prob.get(_llm_provider, 1.0)))
+    )
+    logger.info(f"LLM call probability: {_llm_call_probability:.0%}")
 
     db = Database()
     await db.connect()

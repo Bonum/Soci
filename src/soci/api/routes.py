@@ -693,8 +693,18 @@ async def get_events(limit: int = 50):
 @router.get("/controls")
 async def get_controls():
     """Get current simulation control state."""
-    from soci.api.server import _sim_paused, _sim_speed
-    return {"paused": _sim_paused, "speed": _sim_speed}
+    from soci.api.server import _sim_paused, _sim_speed, _llm_call_probability
+    return {"paused": _sim_paused, "speed": _sim_speed, "llm_call_probability": _llm_call_probability}
+
+
+@router.post("/controls/llm_probability")
+async def set_llm_probability(value: float = 1.0):
+    """Set LLM call probability (0.0–1.0). Controls how often agents use LLM vs. routine behaviour.
+    At 0.45 with Gemini free tier: ~150 calls/h → ~10h daily runtime."""
+    from soci.api.server import set_llm_call_probability
+    set_llm_call_probability(value)
+    from soci.api.server import _llm_call_probability
+    return {"llm_call_probability": _llm_call_probability}
 
 
 @router.post("/controls/pause")
