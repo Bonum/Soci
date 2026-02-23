@@ -793,10 +793,10 @@ class GeminiClient:
                         self._rate_limited_until = time.monotonic() + wait
                         logger.warning(f"Gemini quota exhausted for {wait:.0f}s")
                         return {}
-                    logger.warning(f"Gemini rate limited, waiting {wait}s")
+                    logger.warning(f"Gemini 429 (json): {e.response.text[:200]} — waiting {wait}s")
                     await asyncio.sleep(wait)
                 else:
-                    logger.error(f"Gemini JSON error: {e.response.status_code}")
+                    logger.error(f"Gemini JSON error: {e.response.status_code} {e.response.text[:200]}")
                     if attempt == self.max_retries - 1:
                         return {}
                     await asyncio.sleep(1)
