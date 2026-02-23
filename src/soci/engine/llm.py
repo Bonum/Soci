@@ -836,7 +836,7 @@ class HFInferenceClient:
         self.usage = LLMUsage()
         self.provider = PROVIDER_HF
         self._http = httpx.AsyncClient(
-            base_url="https://api-inference.huggingface.co/v1/",
+            base_url="https://api-inference.huggingface.co/",
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
@@ -896,7 +896,7 @@ class HFInferenceClient:
 
         for attempt in range(self.max_retries):
             try:
-                resp = await self._http.post("chat/completions", json=payload)
+                resp = await self._http.post(f"models/{model}/v1/chat/completions", json=payload)
                 resp.raise_for_status()
                 data = resp.json()
                 usage = data.get("usage", {})
