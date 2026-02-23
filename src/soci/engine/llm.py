@@ -838,7 +838,7 @@ class HFInferenceClient:
         self.usage = LLMUsage()
         self.provider = PROVIDER_HF
         self._http = httpx.AsyncClient(
-            base_url="https://api-inference.huggingface.co/",
+            base_url="https://router.huggingface.co/hf-inference/",
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
@@ -898,7 +898,7 @@ class HFInferenceClient:
 
         for attempt in range(self.max_retries):
             try:
-                resp = await self._http.post(f"models/{model}/v1/chat/completions", json=payload)
+                resp = await self._http.post("v1/chat/completions", json=payload)
                 resp.raise_for_status()
                 data = resp.json()
                 usage = data.get("usage", {})
@@ -920,8 +920,8 @@ class HFInferenceClient:
                         return ""
                     logger.warning(f"HF rate limited, waiting {wait}s")
                     await asyncio.sleep(wait)
-                elif status in (401, 403):
-                    # Auth failure or gated model — disable for a long window
+                elif status in (401, 403, 410):
+                    # Auth failure, gated model, or gone endpoint — disable for a long window
                     self._rate_limited_until = time.monotonic() + 3600
                     self._auth_error = body
                     logger.error(
