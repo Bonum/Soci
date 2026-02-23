@@ -825,10 +825,10 @@ class HFInferenceClient:
         default_model: str = MODEL_HF_ZEPHYR,
         max_retries: int = 3,
     ) -> None:
-        self.api_key = api_key or os.environ.get("HF_TOKEN", "")
+        self.api_key = api_key or os.environ.get("HF_TOKEN", "") or os.environ.get("soci_token", "")
         if not self.api_key:
             logger.warning(
-                "HF_TOKEN not set — HF Inference will not make LLM calls. "
+                "Neither HF_TOKEN nor soci_token is set — HF Inference will not make LLM calls. "
                 "Get a free token at https://huggingface.co/settings/tokens"
             )
         self.default_model = default_model
@@ -877,6 +877,7 @@ class HFInferenceClient:
         max_tokens: int = 1024,
     ) -> str:
         if not self.api_key:
+            self._last_error = "HF_TOKEN / soci_token not set — add it to your HF Space secrets"
             return ""
         if self._is_quota_exhausted():
             logger.debug("HF quota circuit breaker active — skipping complete()")

@@ -23,7 +23,7 @@ try:
 except ImportError:
     pass
 
-from soci.engine.llm import create_llm_client, PROVIDER_GROQ
+from soci.engine.llm import create_llm_client, PROVIDER_GROQ, PROVIDER_GEMINI, PROVIDER_HF
 from soci.engine.simulation import Simulation
 from soci.persistence.database import Database
 from soci.persistence.snapshots import load_simulation, save_simulation
@@ -70,8 +70,8 @@ async def switch_llm_provider(provider: str, model: Optional[str] = None) -> Non
 async def simulation_loop(sim: Simulation, db: Database, tick_delay: float = 2.0) -> None:
     """Background task that runs the simulation continuously."""
     global _sim_paused, _sim_speed
-    is_rate_limited = (_llm_provider == PROVIDER_GROQ)
-    # Groq free tier: 30 req/min → ~4 calls/tick at 4s ticks is safe
+    # Groq: 30 req/min, Gemini free: 15 RPM, HF serverless: also slow
+    is_rate_limited = _llm_provider in (PROVIDER_GROQ, PROVIDER_GEMINI, PROVIDER_HF)
     if is_rate_limited:
         tick_delay = 4.0  # Longer ticks to stay under rate limit
 
@@ -97,7 +97,7 @@ async def simulation_loop(sim: Simulation, db: Database, tick_delay: float = 2.0
             else:
                 sim._skip_llm_this_tick = False
                 if is_rate_limited:
-                    # Groq free tier: 30 req/min — hard budget of 4 LLM calls/tick
+                    # Rate-limited providers (Groq 30 RPM, Gemini 15 RPM, HF) — budget 4 calls/tick
                     sim._max_convos_this_tick = 1
                     sim._max_llm_calls_this_tick = 4
                 else:
