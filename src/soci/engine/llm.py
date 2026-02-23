@@ -678,6 +678,22 @@ class GeminiClient:
     def _is_quota_exhausted(self) -> bool:
         return time.monotonic() < self._rate_limited_until
 
+    @staticmethod
+    def _secs_until_pacific_midnight() -> float:
+        """Seconds from now until the next midnight Pacific Time (UTC-8).
+
+        Gemini free-tier quotas reset at midnight Pacific, so this is the
+        correct circuit-breaker duration after daily quota exhaustion.
+        """
+        import datetime as _dt
+        pacific = _dt.timezone(_dt.timedelta(hours=-8))
+        now = _dt.datetime.now(pacific)
+        midnight = (now + _dt.timedelta(days=1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        secs = (midnight - now).total_seconds()
+        return max(secs, 60.0)  # at least 60s even if we're right at midnight
+
     def _track_daily_request(self) -> None:
         """Increment daily counter and log warnings at 50/70/90/99% of the daily limit."""
         import datetime as _dt
@@ -690,12 +706,14 @@ class GeminiClient:
             self._warned_thresholds = set()
         self._daily_requests += 1
         pct = self._daily_requests / self._daily_limit
+        remaining = self._daily_limit - self._daily_requests
         for threshold in (0.50, 0.70, 0.90, 0.99):
             if pct >= threshold and threshold not in self._warned_thresholds:
                 self._warned_thresholds.add(threshold)
+                hrs = self._secs_until_pacific_midnight() / 3600
                 logger.warning(
                     f"Gemini daily quota: {self._daily_requests}/{self._daily_limit} requests used "
-                    f"({pct * 100:.0f}%) — resets at midnight Pacific Time"
+                    f"({pct * 100:.0f}%) — {remaining} remaining, resets in {hrs:.1f}h (midnight Pacific)"
                 )
 
     async def _wait_for_rate_limit(self) -> None:
@@ -762,12 +780,12 @@ class GeminiClient:
                         wait = 5.0
                     body_raw = e.response.text or ""
                     # Daily quota exhausted — Gemini sends retry-after:5 even for daily limits,
-                    # so detect via message body and circuit-break for 8 hours.
+                    # so detect via message body and circuit-break until midnight Pacific.
                     if "quota" in body_raw.lower() or wait > 30:
-                        circuit_wait = max(wait, 28800)  # 8 hours
+                        circuit_wait = self._secs_until_pacific_midnight()
                         self._rate_limited_until = time.monotonic() + circuit_wait
                         body = body_raw[:200].replace("{", "(").replace("}", ")")
-                        logger.warning(f"Gemini daily quota exhausted — circuit-breaking for {circuit_wait/3600:.1f}h: {body}")
+                        logger.warning(f"Gemini daily quota exhausted — circuit-breaking for {circuit_wait/3600:.1f}h (until midnight Pacific): {body}")
                         return ""
                     body = body_raw[:200].replace("{", "(").replace("}", ")")
                     logger.warning(f"Gemini 429: {body} — waiting {wait}s")
