@@ -625,10 +625,18 @@ class GroqClient:
 class GeminiClient:
     """Google Gemini via the OpenAI-compatible AI Studio endpoint.
 
-    Free tier (no credit card):
-      - gemini-2.0-flash: 15 RPM, 1 M tokens/day — plenty for a simulation.
+    Free tier (no credit card, as of 2026):
+      - gemini-2.0-flash: 5 RPM, ~1,500 RPD, 250,000 TPM
+      - Daily quota resets at midnight Pacific Time
+      - Paid tier: $0.10/1M input tokens, $0.40/1M output tokens
       - Get a free key at https://aistudio.google.com/apikey
     Uses the OpenAI-compatible endpoint so no extra SDK is needed.
+
+    Token/cost guide (typical Soci request ~1,000 input + 90 output tokens):
+      - Cost per request (paid): ~$0.000133  ($0.10 input + $0.40 output per 1M)
+      - 1,500 RPD free tier ≈ $0.20/day on paid tier
+      -   500 RPD usage     ≈ $0.07/day
+      - Override daily limit via GEMINI_DAILY_LIMIT env var.
     """
 
     def __init__(
@@ -636,7 +644,8 @@ class GeminiClient:
         api_key: Optional[str] = None,
         default_model: str = MODEL_GEMINI_FLASH,
         max_retries: int = 3,
-        max_rpm: int = 14,  # stay under the 15 RPM free-tier limit
+        max_rpm: int = 4,   # stay under 5 RPM free-tier limit (was 14, caused constant 429s)
+        daily_limit: int = 1500,  # free-tier RPD; override with GEMINI_DAILY_LIMIT
     ) -> None:
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY", "")
         if not self.api_key:
@@ -660,9 +669,34 @@ class GeminiClient:
         self._last_request_time: float = 0.0
         self._rate_lock = asyncio.Lock()
         self._rate_limited_until: float = 0.0
+        # Daily usage tracking — resets at midnight Pacific (UTC-8/-7)
+        self._daily_limit: int = int(os.environ.get("GEMINI_DAILY_LIMIT", str(daily_limit)))
+        self._daily_requests: int = 0
+        self._daily_date: str = ""           # "YYYY-MM-DD" in Pacific time
+        self._warned_thresholds: set = set()  # tracks which % levels were already logged
 
     def _is_quota_exhausted(self) -> bool:
         return time.monotonic() < self._rate_limited_until
+
+    def _track_daily_request(self) -> None:
+        """Increment daily counter and log warnings at 50/70/90/99% of the daily limit."""
+        import datetime as _dt
+        # Pacific time offset: UTC-8 (PST) / UTC-7 (PDT). Use -8 as a safe conservative value.
+        pacific_offset = _dt.timezone(_dt.timedelta(hours=-8))
+        today = _dt.datetime.now(pacific_offset).strftime("%Y-%m-%d")
+        if today != self._daily_date:
+            self._daily_date = today
+            self._daily_requests = 0
+            self._warned_thresholds = set()
+        self._daily_requests += 1
+        pct = self._daily_requests / self._daily_limit
+        for threshold in (0.50, 0.70, 0.90, 0.99):
+            if pct >= threshold and threshold not in self._warned_thresholds:
+                self._warned_thresholds.add(threshold)
+                logger.warning(
+                    f"Gemini daily quota: {self._daily_requests}/{self._daily_limit} requests used "
+                    f"({pct * 100:.0f}%) — resets at midnight Pacific Time"
+                )
 
     async def _wait_for_rate_limit(self) -> None:
         async with self._rate_lock:
@@ -717,6 +751,7 @@ class GeminiClient:
                 data = resp.json()
                 usage = data.get("usage", {})
                 self.usage.record(model, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
+                self._track_daily_request()
                 return data["choices"][0]["message"]["content"]
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 429:
@@ -787,6 +822,7 @@ class GeminiClient:
                 data = resp.json()
                 usage = data.get("usage", {})
                 self.usage.record(model, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
+                self._track_daily_request()
                 text = data["choices"][0]["message"]["content"]
                 return _parse_json_response(text)
             except httpx.HTTPStatusError as e:
