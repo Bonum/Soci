@@ -898,7 +898,7 @@ class HFInferenceClient:
 
         for attempt in range(self.max_retries):
             try:
-                resp = await self._http.post("v1/chat/completions", json=payload)
+                resp = await self._http.post(f"models/{model}/v1/chat/completions", json=payload)
                 resp.raise_for_status()
                 data = resp.json()
                 usage = data.get("usage", {})
