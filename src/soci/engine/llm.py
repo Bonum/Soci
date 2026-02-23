@@ -101,6 +101,8 @@ class LLMUsage:
 def _parse_json_response(text: str) -> dict:
     """Extract JSON from an LLM response, handling markdown blocks and extra text."""
     text = text.strip()
+    if not text:
+        return {}
     # Handle markdown code blocks
     if text.startswith("```"):
         lines = text.split("\n")
