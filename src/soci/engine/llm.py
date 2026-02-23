@@ -41,11 +41,11 @@ MODEL_GROQ_MIXTRAL = "mixtral-8x7b-32768"
 MODEL_GEMINI_FLASH = "gemini-2.0-flash"
 MODEL_GEMINI_PRO = "gemini-1.5-pro"
 
-# Hugging Face Serverless Inference model IDs (free, no credit card)
-MODEL_HF_ZEPHYR = "HuggingFaceH4/zephyr-7b-beta"    # default — ungated, no license needed
+# Hugging Face router model IDs (router.huggingface.co/v1 — auto-routes to best provider)
+MODEL_HF_QWEN = "Qwen/Qwen2.5-7B-Instruct"          # default — auto-routed, great quality
 MODEL_HF_LLAMA = "meta-llama/Llama-3.2-3B-Instruct"
-MODEL_HF_QWEN = "Qwen/Qwen2.5-7B-Instruct"
 MODEL_HF_MISTRAL = "mistralai/Mistral-7B-Instruct-v0.3"
+MODEL_HF_SMOL = "HuggingFaceTB/SmolLM3-3B:hf-inference"  # CPU inference, no credits needed
 
 # Approximate cost per 1M tokens (USD) — Ollama is free, Groq is very cheap
 COST_PER_1M = {
@@ -824,7 +824,7 @@ class HFInferenceClient:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        default_model: str = MODEL_HF_ZEPHYR,
+        default_model: str = MODEL_HF_QWEN,
         max_retries: int = 3,
     ) -> None:
         self.api_key = api_key or os.environ.get("HF_TOKEN", "") or os.environ.get("hf_soci_token", "") or os.environ.get("soci_token", "")
@@ -838,7 +838,7 @@ class HFInferenceClient:
         self.usage = LLMUsage()
         self.provider = PROVIDER_HF
         self._http = httpx.AsyncClient(
-            base_url="https://router.huggingface.co/hf-inference/",
+            base_url="https://router.huggingface.co/v1/",
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
@@ -853,14 +853,14 @@ class HFInferenceClient:
         return time.monotonic() < self._rate_limited_until
 
     def _map_model(self, model: str) -> str:
-        """Map Claude/Groq/Gemini model names to HF equivalents."""
+        """Map Claude/Groq/Gemini model names to HF router equivalents."""
         mapping = {
             MODEL_SONNET: self.default_model,
             MODEL_HAIKU: self.default_model,
             MODEL_GROQ_LLAMA_8B: MODEL_HF_LLAMA,
             MODEL_GEMINI_FLASH: self.default_model,
         }
-        return mapping.get(model, self.default_model)
+        return mapping.get(model, model)
 
     @property
     def llm_status(self) -> str:
@@ -898,7 +898,7 @@ class HFInferenceClient:
 
         for attempt in range(self.max_retries):
             try:
-                resp = await self._http.post(f"models/{model}/v1/chat/completions", json=payload)
+                resp = await self._http.post("chat/completions", json=payload)
                 resp.raise_for_status()
                 data = resp.json()
                 usage = data.get("usage", {})
@@ -1015,7 +1015,7 @@ def create_llm_client(
             provider = PROVIDER_GROQ
         elif os.environ.get("GEMINI_API_KEY"):
             provider = PROVIDER_GEMINI
-        elif os.environ.get("HF_TOKEN"):
+        elif os.environ.get("HF_TOKEN") or os.environ.get("hf_soci_token") or os.environ.get("soci_token"):
             provider = PROVIDER_HF
         else:
             provider = PROVIDER_OLLAMA
@@ -1030,7 +1030,7 @@ def create_llm_client(
         default_model = model or os.environ.get("GEMINI_MODEL", MODEL_GEMINI_FLASH)
         return GeminiClient(default_model=default_model)
     elif provider == PROVIDER_HF:
-        default_model = model or os.environ.get("HF_MODEL", MODEL_HF_ZEPHYR)
+        default_model = model or os.environ.get("HF_MODEL", MODEL_HF_QWEN)
         return HFInferenceClient(default_model=default_model)
     elif provider == PROVIDER_OLLAMA:
         default_model = model or os.environ.get("OLLAMA_MODEL", MODEL_LLAMA)

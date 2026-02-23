@@ -256,8 +256,15 @@ def _choose_provider() -> str:
     # Check if keys are available
     has_claude = bool(os.environ.get("ANTHROPIC_API_KEY"))
     has_groq = bool(os.environ.get("GROQ_API_KEY"))
+    has_hf = bool(
+        os.environ.get("HF_TOKEN")
+        or os.environ.get("hf_soci_token")
+        or os.environ.get("soci_token")
+    )
 
     options = []
+    if has_hf:
+        options.append(("hf", "HF Inference (free, serverless, auto-available in HF Spaces)"))
     if has_groq:
         options.append(("groq", "Groq (fast cloud, free tier 30 req/min)"))
     if has_claude:
