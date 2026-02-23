@@ -263,13 +263,13 @@ def _choose_provider() -> str:
         or os.environ.get("HW_WR_TOKEN")
     )
 
+    # Only free providers are offered; paid providers (Claude, Gemini) can be
+    # forced via SOCI_PROVIDER / LLM_PROVIDER env var if needed.
     options = []
     if has_hf:
-        options.append(("hf", "HF Inference (free, serverless, auto-available in HF Spaces)"))
+        options.append(("hf", "HF Inference (free, SmolLM3 via hf-inference)"))
     if has_groq:
-        options.append(("groq", "Groq (fast cloud, free tier 30 req/min)"))
-    if has_claude:
-        options.append(("claude", "Claude (Anthropic API, paid)"))
+        options.append(("groq", "Groq (free tier, 30 req/min)"))
     options.append(("ollama", "Ollama (local, free, no rate limit)"))
 
     # If only one option, use it

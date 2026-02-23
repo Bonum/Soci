@@ -936,13 +936,15 @@ class HFInferenceClient:
                         return ""
                     logger.warning(f"HF rate limited, waiting {wait}s")
                     await asyncio.sleep(wait)
-                elif status in (401, 403, 410):
-                    # Auth failure, gated model, or gone endpoint — disable for a long window
+                elif status in (401, 402, 403, 410):
+                    # Auth/payment failure — circuit-break for 1h to stop spam retries.
+                    # 402 means no credits (token lacks Inference Providers permission).
+                    # Fix: add hf_soci_token secret in Space with a token that has inference perms.
                     self._rate_limited_until = time.monotonic() + 3600
                     self._auth_error = body
                     logger.error(
-                        f"HF auth error ({status}): {body} — "
-                        "Check HF_TOKEN and accept model license at huggingface.co"
+                        f"HF auth error ({status}): {body[:120]} — "
+                        "Add hf_soci_token Space secret with a token that has Inference Providers permission"
                     )
                     return ""
                 elif status in (503, 504):
