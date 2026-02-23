@@ -729,10 +729,12 @@ class GeminiClient:
                         self._rate_limited_until = time.monotonic() + wait
                         logger.warning(f"Gemini quota exhausted for {wait:.0f}s")
                         return ""
-                    logger.warning(f"Gemini 429: {e.response.text[:200]} — waiting {wait}s")
+                    body = e.response.text[:200].replace("{", "(").replace("}", ")")
+                    logger.warning(f"Gemini 429: {body} — waiting {wait}s")
                     await asyncio.sleep(wait)
                 else:
-                    logger.error(f"Gemini HTTP error: {e.response.status_code} {e.response.text[:200]}")
+                    body = e.response.text[:200].replace("{", "(").replace("}", ")")
+                    logger.error(f"Gemini HTTP error: {e.response.status_code} {body}")
                     if attempt == self.max_retries - 1:
                         return ""
                     await asyncio.sleep(1)
@@ -793,10 +795,12 @@ class GeminiClient:
                         self._rate_limited_until = time.monotonic() + wait
                         logger.warning(f"Gemini quota exhausted for {wait:.0f}s")
                         return {}
-                    logger.warning(f"Gemini 429 (json): {e.response.text[:200]} — waiting {wait}s")
+                    body = e.response.text[:200].replace("{", "(").replace("}", ")")
+                    logger.warning(f"Gemini 429 (json): {body} — waiting {wait}s")
                     await asyncio.sleep(wait)
                 else:
-                    logger.error(f"Gemini JSON error: {e.response.status_code} {e.response.text[:200]}")
+                    body = e.response.text[:200].replace("{", "(").replace("}", ")")
+                    logger.error(f"Gemini JSON error: {e.response.status_code} {body}")
                     if attempt == self.max_retries - 1:
                         return {}
                     await asyncio.sleep(1)
