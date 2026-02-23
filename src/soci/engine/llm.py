@@ -813,12 +813,11 @@ class GeminiClient:
 # ============================================================
 
 class HFInferenceClient:
-    """Hugging Face Serverless Inference via OpenAI-compatible endpoint.
+    """Hugging Face Serverless Inference via router.huggingface.co/v1.
 
-    Free tier (no credit card required):
-      - Llama-3.2-3B-Instruct, Qwen2.5-7B-Instruct, Mistral-7B, and many others.
-      - HF_TOKEN is auto-injected in HF Spaces — no manual setup needed.
-      - Get a token at https://huggingface.co/settings/tokens
+    Requires an HF_TOKEN with 'Inference Providers (Write)' permission.
+    HF_TOKEN is auto-injected in HF Spaces but only has repo-read access;
+    a PRO account or purchased credits is needed for LLM inference.
     """
 
     def __init__(
@@ -827,20 +826,10 @@ class HFInferenceClient:
         default_model: str = MODEL_HF_SMOL,
         max_retries: int = 3,
     ) -> None:
-        # Priority: explicit arg → named secrets (personal token) → Space auto-injected HF_TOKEN
-        # HF_TOKEN is auto-injected in HF Spaces but only has basic inference (no credits for routed models).
-        # A personal token stored as hf_soci_token / soci_token / HW_WR_TOKEN takes precedence.
-        self.api_key = (
-            api_key
-            or os.environ.get("hf_soci_token", "")
-            or os.environ.get("soci_token", "")
-            or os.environ.get("HW_WR_TOKEN", "")
-            or os.environ.get("HF_TOKEN", "")
-        )
+        self.api_key = api_key or os.environ.get("HF_TOKEN", "")
         if not self.api_key:
             logger.warning(
-                "Neither HF_TOKEN nor soci_token is set — HF Inference will not make LLM calls. "
-                "Get a free token at https://huggingface.co/settings/tokens"
+                "HF_TOKEN is not set — HF Inference will not make LLM calls."
             )
         self.default_model = default_model
         self.max_retries = max_retries
@@ -888,7 +877,7 @@ class HFInferenceClient:
         max_tokens: int = 1024,
     ) -> str:
         if not self.api_key:
-            self._last_error = "HF_TOKEN / soci_token not set — add it to your HF Space secrets"
+            self._last_error = "HF_TOKEN not set"
             return ""
         if self._is_quota_exhausted():
             logger.debug("HF quota circuit breaker active — skipping complete()")
@@ -939,12 +928,11 @@ class HFInferenceClient:
                 elif status in (401, 402, 403, 410):
                     # Auth/payment failure — circuit-break for 1h to stop spam retries.
                     # 402 means no credits (token lacks Inference Providers permission).
-                    # Fix: add hf_soci_token secret in Space with a token that has inference perms.
                     self._rate_limited_until = time.monotonic() + 3600
                     self._auth_error = body
                     logger.error(
                         f"HF auth error ({status}): {body[:120]} — "
-                        "Add hf_soci_token Space secret with a token that has Inference Providers permission"
+                        "HF_TOKEN needs 'Inference Providers (Write)' permission"
                     )
                     return ""
                 elif status in (503, 504):
@@ -1033,8 +1021,7 @@ def create_llm_client(
             provider = PROVIDER_GROQ
         elif os.environ.get("GEMINI_API_KEY"):
             provider = PROVIDER_GEMINI
-        elif (os.environ.get("HF_TOKEN") or os.environ.get("hf_soci_token")
-              or os.environ.get("soci_token") or os.environ.get("HW_WR_TOKEN")):
+        elif os.environ.get("HF_TOKEN"):
             provider = PROVIDER_HF
         else:
             provider = PROVIDER_OLLAMA

@@ -253,23 +253,19 @@ def _choose_provider() -> str:
     if provider in ("claude", "groq", "gemini", "hf", "ollama"):
         return provider
 
-    # Check if keys are available
-    has_claude = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    # Check which keys are available
     has_groq = bool(os.environ.get("GROQ_API_KEY"))
-    has_hf = bool(
-        os.environ.get("HF_TOKEN")
-        or os.environ.get("hf_soci_token")
-        or os.environ.get("soci_token")
-        or os.environ.get("HW_WR_TOKEN")
-    )
+    has_gemini = bool(os.environ.get("GEMINI_API_KEY"))
+    has_hf = bool(os.environ.get("HF_TOKEN"))
 
-    # Only free providers are offered; paid providers (Claude, Gemini) can be
-    # forced via SOCI_PROVIDER / LLM_PROVIDER env var if needed.
+    # Free providers only; Claude can be forced via SOCI_PROVIDER / LLM_PROVIDER.
     options = []
-    if has_hf:
-        options.append(("hf", "HF Inference (free, SmolLM3 via hf-inference)"))
     if has_groq:
         options.append(("groq", "Groq (free tier, 30 req/min)"))
+    if has_gemini:
+        options.append(("gemini", "Gemini (free tier, 15 req/min via AI Studio)"))
+    if has_hf:
+        options.append(("hf", "HF Inference (requires HF PRO / credits)"))
     options.append(("ollama", "Ollama (local, free, no rate limit)"))
 
     # If only one option, use it
