@@ -824,10 +824,19 @@ class HFInferenceClient:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        default_model: str = MODEL_HF_QWEN,
+        default_model: str = MODEL_HF_SMOL,
         max_retries: int = 3,
     ) -> None:
-        self.api_key = api_key or os.environ.get("HF_TOKEN", "") or os.environ.get("hf_soci_token", "") or os.environ.get("soci_token", "")
+        # Priority: explicit arg → named secrets (personal token) → Space auto-injected HF_TOKEN
+        # HF_TOKEN is auto-injected in HF Spaces but only has basic inference (no credits for routed models).
+        # A personal token stored as hf_soci_token / soci_token / HW_WR_TOKEN takes precedence.
+        self.api_key = (
+            api_key
+            or os.environ.get("hf_soci_token", "")
+            or os.environ.get("soci_token", "")
+            or os.environ.get("HW_WR_TOKEN", "")
+            or os.environ.get("HF_TOKEN", "")
+        )
         if not self.api_key:
             logger.warning(
                 "Neither HF_TOKEN nor soci_token is set — HF Inference will not make LLM calls. "
@@ -886,10 +895,13 @@ class HFInferenceClient:
             return ""
 
         model = self._map_model(model or self.default_model)
+        # /no_think disables chain-of-thought on SmolLM3 and similar thinking models;
+        # harmless for other models since it's prepended before the system prompt.
+        system_with_flag = "/no_think\n" + system
         payload = {
             "model": model,
             "messages": [
-                {"role": "system", "content": system},
+                {"role": "system", "content": system_with_flag},
                 {"role": "user", "content": user_message},
             ],
             "temperature": temperature,
@@ -904,7 +916,11 @@ class HFInferenceClient:
                 usage = data.get("usage", {})
                 self.usage.record(model, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
                 self._last_error = ""  # clear on success
-                return data["choices"][0]["message"]["content"]
+                text = data["choices"][0]["message"]["content"] or ""
+                # Strip any <think>...</think> blocks that thinking models may emit
+                import re as _re
+                text = _re.sub(r"<think>.*?</think>", "", text, flags=_re.DOTALL).strip()
+                return text
             except httpx.HTTPStatusError as e:
                 status = e.response.status_code
                 body = e.response.text[:300]
@@ -1015,7 +1031,8 @@ def create_llm_client(
             provider = PROVIDER_GROQ
         elif os.environ.get("GEMINI_API_KEY"):
             provider = PROVIDER_GEMINI
-        elif os.environ.get("HF_TOKEN") or os.environ.get("hf_soci_token") or os.environ.get("soci_token"):
+        elif (os.environ.get("HF_TOKEN") or os.environ.get("hf_soci_token")
+              or os.environ.get("soci_token") or os.environ.get("HW_WR_TOKEN")):
             provider = PROVIDER_HF
         else:
             provider = PROVIDER_OLLAMA
@@ -1030,7 +1047,7 @@ def create_llm_client(
         default_model = model or os.environ.get("GEMINI_MODEL", MODEL_GEMINI_FLASH)
         return GeminiClient(default_model=default_model)
     elif provider == PROVIDER_HF:
-        default_model = model or os.environ.get("HF_MODEL", MODEL_HF_QWEN)
+        default_model = model or os.environ.get("HF_MODEL", MODEL_HF_SMOL)
         return HFInferenceClient(default_model=default_model)
     elif provider == PROVIDER_OLLAMA:
         default_model = model or os.environ.get("OLLAMA_MODEL", MODEL_LLAMA)

@@ -260,6 +260,7 @@ def _choose_provider() -> str:
         os.environ.get("HF_TOKEN")
         or os.environ.get("hf_soci_token")
         or os.environ.get("soci_token")
+        or os.environ.get("HW_WR_TOKEN")
     )
 
     options = []
