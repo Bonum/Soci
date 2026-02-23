@@ -825,7 +825,7 @@ class HFInferenceClient:
         default_model: str = MODEL_HF_ZEPHYR,
         max_retries: int = 3,
     ) -> None:
-        self.api_key = api_key or os.environ.get("HF_TOKEN", "") or os.environ.get("soci_token", "")
+        self.api_key = api_key or os.environ.get("HF_TOKEN", "") or os.environ.get("hf_soci_token", "") or os.environ.get("soci_token", "")
         if not self.api_key:
             logger.warning(
                 "Neither HF_TOKEN nor soci_token is set — HF Inference will not make LLM calls. "
