@@ -725,11 +725,16 @@ class GeminiClient:
                         wait = float(retry_after)
                     except (ValueError, TypeError):
                         wait = 5.0
-                    if wait > 30:
-                        self._rate_limited_until = time.monotonic() + wait
-                        logger.warning(f"Gemini quota exhausted for {wait:.0f}s")
+                    body_raw = e.response.text or ""
+                    # Daily quota exhausted — Gemini sends retry-after:5 even for daily limits,
+                    # so detect via message body and circuit-break for 8 hours.
+                    if "quota" in body_raw.lower() or wait > 30:
+                        circuit_wait = max(wait, 28800)  # 8 hours
+                        self._rate_limited_until = time.monotonic() + circuit_wait
+                        body = body_raw[:200].replace("{", "(").replace("}", ")")
+                        logger.warning(f"Gemini daily quota exhausted — circuit-breaking for {circuit_wait/3600:.1f}h: {body}")
                         return ""
-                    body = e.response.text[:200].replace("{", "(").replace("}", ")")
+                    body = body_raw[:200].replace("{", "(").replace("}", ")")
                     logger.warning(f"Gemini 429: {body} — waiting {wait}s")
                     await asyncio.sleep(wait)
                 else:
@@ -791,11 +796,14 @@ class GeminiClient:
                         wait = float(retry_after)
                     except (ValueError, TypeError):
                         wait = 5.0
-                    if wait > 30:
-                        self._rate_limited_until = time.monotonic() + wait
-                        logger.warning(f"Gemini quota exhausted for {wait:.0f}s")
+                    body_raw = e.response.text or ""
+                    if "quota" in body_raw.lower() or wait > 30:
+                        circuit_wait = max(wait, 28800)  # 8 hours
+                        self._rate_limited_until = time.monotonic() + circuit_wait
+                        body = body_raw[:200].replace("{", "(").replace("}", ")")
+                        logger.warning(f"Gemini daily quota exhausted — circuit-breaking for {circuit_wait/3600:.1f}h: {body}")
                         return {}
-                    body = e.response.text[:200].replace("{", "(").replace("}", ")")
+                    body = body_raw[:200].replace("{", "(").replace("}", ")")
                     logger.warning(f"Gemini 429 (json): {body} — waiting {wait}s")
                     await asyncio.sleep(wait)
                 else:
