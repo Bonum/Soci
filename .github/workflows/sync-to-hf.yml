@@ -1,0 +1,21 @@
+name: Sync to HuggingFace Space
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so HF gets all commits
+
+      - name: Push to HuggingFace Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          git remote add hf https://RayMelius:${HF_TOKEN}@huggingface.co/spaces/RayMelius/soci
+          git push hf master:main --force
