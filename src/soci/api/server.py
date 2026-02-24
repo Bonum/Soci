@@ -332,14 +332,24 @@ async def lifespan(app: FastAPI):
         PROVIDER_GROQ: 0.70,
         PROVIDER_HF: 0.45,
     }
-    _llm_call_probability = float(
-        os.environ.get("SOCI_LLM_PROB", str(_provider_default_prob.get(_llm_provider, 1.0)))
-    )
-    logger.info(f"LLM call probability: {_llm_call_probability:.0%}")
+    env_prob = os.environ.get("SOCI_LLM_PROB")
 
     db = Database()
     await db.connect()
     _database = db
+
+    if env_prob is not None:
+        # Env var always wins; also save it so other workstations inherit it
+        _llm_call_probability = float(env_prob)
+        await db.set_setting("llm_call_probability", str(_llm_call_probability))
+    else:
+        # Prefer the last slider value saved in the DB, fall back to provider default
+        saved = await db.get_setting("llm_call_probability")
+        if saved is not None:
+            _llm_call_probability = float(saved)
+        else:
+            _llm_call_probability = _provider_default_prob.get(_llm_provider, 1.0)
+    logger.info(f"LLM call probability: {_llm_call_probability:.0%}")
 
     # Pull saved state from GitHub before trying to load locally
     data_dir = Path(os.environ.get("SOCI_DATA_DIR", "data"))

@@ -68,6 +68,11 @@ CREATE TABLE IF NOT EXISTS users (
     agent_id      TEXT,
     created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
 
 
@@ -251,4 +256,22 @@ class Database:
         """Invalidate a session token."""
         assert self._db is not None
         await self._db.execute("UPDATE users SET token = NULL WHERE token = ?", (token,))
+        await self._db.commit()
+
+    # ── Settings / persistent config ─────────────────────────────────────────
+
+    async def get_setting(self, key: str, default: Optional[str] = None) -> Optional[str]:
+        """Read a persisted setting by key."""
+        assert self._db is not None
+        cursor = await self._db.execute("SELECT value FROM settings WHERE key = ?", (key,))
+        row = await cursor.fetchone()
+        return row[0] if row else default
+
+    async def set_setting(self, key: str, value: str) -> None:
+        """Upsert a persisted setting."""
+        assert self._db is not None
+        await self._db.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
         await self._db.commit()

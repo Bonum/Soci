@@ -39,7 +39,15 @@ MODEL_GROQ_MIXTRAL = "mixtral-8x7b-32768"
 
 # Google Gemini model IDs (free tier via AI Studio)
 MODEL_GEMINI_FLASH = "gemini-2.0-flash"
+MODEL_GEMINI_FLASH_FALLBACK = "gemini-1.5-flash"  # fallback if 2.0-flash unavailable
 MODEL_GEMINI_PRO = "gemini-1.5-pro"
+
+# Models to try in order if a model is not available on the serverless endpoint
+_GEMINI_FALLBACK_CHAIN: dict[str, str] = {
+    "gemini-2.0-flash": MODEL_GEMINI_FLASH_FALLBACK,
+    "gemini-2.0-flash-exp": MODEL_GEMINI_FLASH_FALLBACK,
+    "gemini-2.0-flash-001": MODEL_GEMINI_FLASH_FALLBACK,
+}
 
 # Hugging Face router model IDs (router.huggingface.co/v1 — auto-routes to best provider)
 MODEL_HF_QWEN = "Qwen/Qwen2.5-7B-Instruct"          # default — auto-routed, great quality
@@ -669,6 +677,9 @@ class GeminiClient:
         self._last_request_time: float = 0.0
         self._rate_lock = asyncio.Lock()
         self._rate_limited_until: float = 0.0
+        # Automatic model fallback: if the configured model is unavailable on the endpoint,
+        # we silently downgrade to the next in the chain (e.g. 2.0-flash → 1.5-flash).
+        self._unavailable_models: set[str] = set()
         # Daily usage tracking — resets at midnight Pacific (UTC-8/-7)
         self._daily_limit: int = int(os.environ.get("GEMINI_DAILY_LIMIT", str(daily_limit)))
         self._daily_requests: int = 0
@@ -731,7 +742,29 @@ class GeminiClient:
             MODEL_HAIKU: self.default_model,
             MODEL_GROQ_LLAMA_8B: MODEL_GEMINI_FLASH,
         }
-        return mapping.get(model, model)
+        mapped = mapping.get(model, model)
+        # If the mapped model is known unavailable, walk the fallback chain
+        while mapped in self._unavailable_models:
+            fallback = _GEMINI_FALLBACK_CHAIN.get(mapped)
+            if fallback is None or fallback == mapped:
+                break
+            mapped = fallback
+        return mapped
+
+    def _handle_model_not_found(self, model: str) -> Optional[str]:
+        """Mark model unavailable and return the fallback model ID, or None if no fallback."""
+        self._unavailable_models.add(model)
+        # Update default_model so future calls skip straight to the fallback
+        if self.default_model == model:
+            fallback = _GEMINI_FALLBACK_CHAIN.get(model)
+            if fallback:
+                self.default_model = fallback
+                logger.warning(
+                    f"Gemini model '{model}' not available on this endpoint — "
+                    f"switching to '{fallback}' for all future calls"
+                )
+                return fallback
+        return None
 
     @property
     def llm_status(self) -> str:
@@ -772,27 +805,38 @@ class GeminiClient:
                 self._track_daily_request()
                 return data["choices"][0]["message"]["content"]
             except httpx.HTTPStatusError as e:
-                if e.response.status_code == 429:
+                status = e.response.status_code
+                body_raw = e.response.text or ""
+                body = body_raw[:200].replace("{", "(").replace("}", ")")
+                if status == 429:
                     retry_after = e.response.headers.get("retry-after", "5")
                     try:
                         wait = float(retry_after)
                     except (ValueError, TypeError):
                         wait = 5.0
-                    body_raw = e.response.text or ""
                     # Daily quota exhausted — Gemini sends retry-after:5 even for daily limits,
                     # so detect via message body and circuit-break until midnight Pacific.
                     if "quota" in body_raw.lower() or wait > 30:
                         circuit_wait = self._secs_until_pacific_midnight()
                         self._rate_limited_until = time.monotonic() + circuit_wait
-                        body = body_raw[:200].replace("{", "(").replace("}", ")")
                         logger.warning(f"Gemini daily quota exhausted — circuit-breaking for {circuit_wait/3600:.1f}h (until midnight Pacific): {body}")
                         return ""
-                    body = body_raw[:200].replace("{", "(").replace("}", ")")
                     logger.warning(f"Gemini 429: {body} — waiting {wait}s")
                     await asyncio.sleep(wait)
+                elif status in (400, 404) and any(
+                    kw in body_raw.lower()
+                    for kw in ("not found", "not supported", "invalid argument", "does not exist", "unavailable")
+                ):
+                    # Model not available on this endpoint — try fallback
+                    fallback = self._handle_model_not_found(model)
+                    if fallback:
+                        model = fallback
+                        payload["model"] = model
+                        continue  # retry immediately with fallback model
+                    logger.error(f"Gemini model '{model}' not found and no fallback: {body}")
+                    return ""
                 else:
-                    body = e.response.text[:200].replace("{", "(").replace("}", ")")
-                    logger.error(f"Gemini HTTP error: {e.response.status_code} {body}")
+                    logger.error(f"Gemini HTTP error: {status} {body}")
                     if attempt == self.max_retries - 1:
                         return ""
                     await asyncio.sleep(1)
@@ -844,25 +888,36 @@ class GeminiClient:
                 text = data["choices"][0]["message"]["content"]
                 return _parse_json_response(text)
             except httpx.HTTPStatusError as e:
-                if e.response.status_code == 429:
+                status = e.response.status_code
+                body_raw = e.response.text or ""
+                body = body_raw[:200].replace("{", "(").replace("}", ")")
+                if status == 429:
                     retry_after = e.response.headers.get("retry-after", "5")
                     try:
                         wait = float(retry_after)
                     except (ValueError, TypeError):
                         wait = 5.0
-                    body_raw = e.response.text or ""
                     if "quota" in body_raw.lower() or wait > 30:
-                        circuit_wait = max(wait, 28800)  # 8 hours
+                        circuit_wait = self._secs_until_pacific_midnight()
                         self._rate_limited_until = time.monotonic() + circuit_wait
-                        body = body_raw[:200].replace("{", "(").replace("}", ")")
                         logger.warning(f"Gemini daily quota exhausted — circuit-breaking for {circuit_wait/3600:.1f}h: {body}")
                         return {}
-                    body = body_raw[:200].replace("{", "(").replace("}", ")")
                     logger.warning(f"Gemini 429 (json): {body} — waiting {wait}s")
                     await asyncio.sleep(wait)
+                elif status in (400, 404) and any(
+                    kw in body_raw.lower()
+                    for kw in ("not found", "not supported", "invalid argument", "does not exist", "unavailable")
+                ):
+                    # Model not available on this endpoint — try fallback
+                    fallback = self._handle_model_not_found(model)
+                    if fallback:
+                        model = fallback
+                        payload["model"] = model
+                        continue  # retry immediately with fallback model
+                    logger.error(f"Gemini model '{model}' not found and no fallback: {body}")
+                    return {}
                 else:
-                    body = e.response.text[:200].replace("{", "(").replace("}", ")")
-                    logger.error(f"Gemini JSON error: {e.response.status_code} {body}")
+                    logger.error(f"Gemini JSON error: {status} {body}")
                     if attempt == self.max_retries - 1:
                         return {}
                     await asyncio.sleep(1)
