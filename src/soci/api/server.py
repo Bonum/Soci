@@ -345,15 +345,15 @@ async def lifespan(app: FastAPI):
         else:
             logger.warning("All provider fallbacks failed — simulation will run in routine-only mode")
 
-    # Default LLM call probability — tuned per provider to stay within free-tier daily quotas.
-    # Gemini free tier: 4 RPM, ~1500 RPD → 0.45 ≈ 150 calls/h → ~10h runtime per day.
-    # Groq free tier: 30 RPM, limited daily tokens → 0.70 to conserve budget.
-    # Ollama / Claude: no quota → 1.0 (full fidelity).
-    # Override via SOCI_LLM_PROB env var (0.0–1.0).
+    # Default LLM call probability — 0.10 for all providers to conserve daily quotas.
+    # At 0.10: ~15 calls/h with Gemini (5 RPM) → stays well within 1500 RPD limit.
+    # Raise via slider in the UI or SOCI_LLM_PROB env var (0.0–1.0).
     _provider_default_prob = {
-        PROVIDER_GEMINI: 0.45,
-        PROVIDER_GROQ: 0.70,
-        PROVIDER_HF: 0.45,
+        PROVIDER_GEMINI: 0.10,
+        PROVIDER_GROQ: 0.10,
+        PROVIDER_HF: 0.10,
+        PROVIDER_CLAUDE: 0.10,
+        PROVIDER_OLLAMA: 0.10,
     }
     env_prob = os.environ.get("SOCI_LLM_PROB")
 
@@ -371,7 +371,7 @@ async def lifespan(app: FastAPI):
         if saved is not None:
             _llm_call_probability = float(saved)
         else:
-            _llm_call_probability = _provider_default_prob.get(_llm_provider, 1.0)
+            _llm_call_probability = _provider_default_prob.get(_llm_provider, 0.10)
     logger.info(f"LLM call probability: {_llm_call_probability:.0%}")
 
     # Pull saved state from GitHub before trying to load locally
