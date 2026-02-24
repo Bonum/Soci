@@ -317,10 +317,33 @@ async def lifespan(app: FastAPI):
     # Start up
     logger.info("Starting Soci API server...")
 
-    # Choose provider
+    # Choose provider, then health-check it; fall back to next available if quota/error
     _llm_provider = _choose_provider()
     llm = create_llm_client(provider=_llm_provider)
     logger.info(f"LLM provider: {_llm_provider} ({llm.__class__.__name__})")
+
+    # Quick probe — if the chosen provider is already quota-exhausted or broken,
+    # fall back through Groq → Gemini → Ollama so the sim starts with a working LLM.
+    _fallback_order = [PROVIDER_GROQ, PROVIDER_GEMINI, PROVIDER_OLLAMA]
+    probe = await llm.complete("You are a test.", "Reply: ok", max_tokens=8)
+    if not probe:
+        last_err = getattr(llm, "_last_error", "") or getattr(llm, "_auth_error", "")
+        logger.warning(f"Provider '{_llm_provider}' failed probe ({last_err}) — trying fallbacks")
+        for fallback in _fallback_order:
+            if fallback == _llm_provider:
+                continue
+            try:
+                candidate = create_llm_client(provider=fallback)
+                test = await candidate.complete("You are a test.", "Reply: ok", max_tokens=8)
+                if test:
+                    llm = candidate
+                    _llm_provider = fallback
+                    logger.info(f"Fell back to provider '{_llm_provider}'")
+                    break
+            except Exception:
+                continue
+        else:
+            logger.warning("All provider fallbacks failed — simulation will run in routine-only mode")
 
     # Default LLM call probability — tuned per provider to stay within free-tier daily quotas.
     # Gemini free tier: 4 RPM, ~1500 RPD → 0.45 ≈ 150 calls/h → ~10h runtime per day.
