@@ -432,6 +432,7 @@ class GroqClient:
         self.max_retries = max_retries
         self.usage = LLMUsage()
         self.provider = PROVIDER_GROQ
+        self._last_error: str = ""
         self._http = httpx.AsyncClient(
             base_url="https://api.groq.com/openai/v1",
             headers={
@@ -510,6 +511,7 @@ class GroqClient:
 
         if self._is_quota_exhausted():
             logger.debug("Groq quota circuit breaker active — skipping complete()")
+            self._last_error = f"quota exhausted (resets in {(self._rate_limited_until - time.monotonic())/3600:.1f}h)"
             return ""
 
         for attempt in range(self.max_retries):
@@ -526,6 +528,7 @@ class GroqClient:
                     usage.get("completion_tokens", 0),
                 )
 
+                self._last_error = ""
                 return data["choices"][0]["message"]["content"]
 
             except httpx.HTTPStatusError as e:
@@ -536,19 +539,22 @@ class GroqClient:
                     )
                     logger.warning(f"Groq 429: {body[:120]}")
                     if sleep_for == 0:
+                        self._last_error = f"429 quota exhausted: {body[:120]}"
                         return ""  # quota exhausted — skip immediately
                     await asyncio.sleep(sleep_for)
                 elif e.response.status_code == 401:
                     raise ValueError("Invalid GROQ_API_KEY")
                 else:
+                    self._last_error = f"HTTP {e.response.status_code}: {e.response.text[:120]}"
                     logger.error(f"Groq API error: {e.response.status_code} {e.response.text[:200]}")
                     if attempt == self.max_retries - 1:
-                        raise
+                        return ""
                     await asyncio.sleep(1)
             except Exception as e:
+                self._last_error = str(e)[:120]
                 logger.error(f"Groq error: {e}")
                 if attempt == self.max_retries - 1:
-                    raise
+                    return ""
                 await asyncio.sleep(1)
         return ""
 
@@ -675,6 +681,7 @@ class GeminiClient:
         self.max_retries = max_retries
         self.usage = LLMUsage()
         self.provider = PROVIDER_GEMINI
+        self._last_error: str = ""
         self._http = httpx.AsyncClient(
             base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
             headers={
@@ -790,6 +797,7 @@ class GeminiClient:
     ) -> str:
         """Send a chat completion request to Gemini."""
         if self._is_quota_exhausted():
+            self._last_error = f"quota exhausted (resets in {self._secs_until_pacific_midnight()/3600:.1f}h)"
             logger.debug("Gemini quota circuit breaker active — skipping complete()")
             return ""
 
@@ -813,6 +821,7 @@ class GeminiClient:
                 usage = data.get("usage", {})
                 self.usage.record(model, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
                 self._track_daily_request()
+                self._last_error = ""
                 return data["choices"][0]["message"]["content"]
             except httpx.HTTPStatusError as e:
                 status = e.response.status_code
@@ -829,12 +838,14 @@ class GeminiClient:
                     if "quota" in body_raw.lower() or wait > 30:
                         circuit_wait = self._secs_until_pacific_midnight()
                         self._rate_limited_until = time.monotonic() + circuit_wait
+                        self._last_error = f"daily quota exhausted — resets in {circuit_wait/3600:.1f}h"
                         logger.warning(f"Gemini daily quota exhausted — circuit-breaking for {circuit_wait/3600:.1f}h (until midnight Pacific): {body}")
                         return ""
                     logger.warning(f"Gemini 429: {body} — waiting {wait}s")
                     await asyncio.sleep(wait)
                 elif any(kw in body_raw.lower() for kw in _GEMINI_MODEL_UNAVAILABLE_KWS):
                     # Model not available on this endpoint (any status code) — try fallback
+                    self._last_error = f"model unavailable ({status}): {body[:100]}"
                     fallback = self._handle_model_not_found(model)
                     if fallback:
                         model = fallback
@@ -843,11 +854,13 @@ class GeminiClient:
                     logger.error(f"Gemini model '{model}' not found and no fallback: {body}")
                     return ""
                 else:
+                    self._last_error = f"HTTP {status}: {body[:120]}"
                     logger.error(f"Gemini HTTP error: {status} {body}")
                     if attempt == self.max_retries - 1:
                         return ""
                     await asyncio.sleep(1)
             except Exception as e:
+                self._last_error = str(e)[:120]
                 logger.error(f"Gemini error: {e}")
                 if attempt == self.max_retries - 1:
                     return ""
@@ -864,6 +877,7 @@ class GeminiClient:
     ) -> dict:
         """Send a JSON-mode request to Gemini."""
         if self._is_quota_exhausted():
+            self._last_error = f"quota exhausted (resets in {self._secs_until_pacific_midnight()/3600:.1f}h)"
             logger.debug("Gemini quota circuit breaker active — skipping complete_json()")
             return {}
 
