@@ -279,11 +279,17 @@ async def get_llm_providers():
     if os.environ.get("GROQ_API_KEY"):
         providers.append({"id": "groq",    "label": "Groq Llama 8B",       "icon": "⚡", "model": ""})
     if os.environ.get("GEMINI_API_KEY"):
-        providers.append({"id": "gemini",  "label": "Gemini 2.0 Flash",    "icon": "✦", "model": ""})
-    providers.append({"id": "hf", "model": "HuggingFaceH4/zephyr-7b-beta",           "label": "HF Zephyr 7B",    "icon": "🤗"})
-    providers.append({"id": "hf", "model": "Qwen/Qwen2.5-7B-Instruct",               "label": "HF Qwen 2.5 7B",  "icon": "🤗"})
-    providers.append({"id": "hf", "model": "meta-llama/Llama-3.2-3B-Instruct",       "label": "HF Llama 3.2 3B", "icon": "🤗"})
-    providers.append({"id": "hf", "model": "mistralai/Mistral-7B-Instruct-v0.3",     "label": "HF Mistral 7B",   "icon": "🤗"})
+        providers.append({"id": "gemini",  "label": "Gemini 1.5 Flash",    "icon": "✦", "model": ""})
+    has_hf = bool(
+        os.environ.get("HF_TOKEN")
+        or os.environ.get("HUGGINGFACE_TOKEN")
+        or os.environ.get("HF_API_TOKEN")
+    )
+    if has_hf:
+        providers.append({"id": "hf", "model": "HuggingFaceH4/zephyr-7b-beta",           "label": "HF Zephyr 7B",    "icon": "🤗"})
+        providers.append({"id": "hf", "model": "Qwen/Qwen2.5-7B-Instruct",               "label": "HF Qwen 2.5 7B",  "icon": "🤗"})
+        providers.append({"id": "hf", "model": "meta-llama/Llama-3.2-3B-Instruct",       "label": "HF Llama 3.2 3B", "icon": "🤗"})
+        providers.append({"id": "hf", "model": "mistralai/Mistral-7B-Instruct-v0.3",     "label": "HF Mistral 7B",   "icon": "🤗"})
     providers.append({"id": "ollama", "label": "Ollama (local)",           "icon": "🦙", "model": ""})
     return {"current": current, "current_model": current_model, "providers": providers}
 
@@ -318,6 +324,8 @@ async def set_llm_provider(req: SwitchProviderRequest):
     try:
         await switch_llm_provider(req.provider, model=req.model or None)
         return {"ok": True, "provider": req.provider, "model": req.model}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

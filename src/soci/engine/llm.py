@@ -951,10 +951,16 @@ class HFInferenceClient:
         default_model: str = MODEL_HF_SMOL,
         max_retries: int = 3,
     ) -> None:
-        self.api_key = api_key or os.environ.get("HF_TOKEN", "")
+        self.api_key = (
+            api_key
+            or os.environ.get("HF_TOKEN", "")
+            or os.environ.get("HUGGINGFACE_TOKEN", "")
+            or os.environ.get("HF_API_TOKEN", "")
+        )
         if not self.api_key:
-            logger.warning(
-                "HF_TOKEN is not set — HF Inference will not make LLM calls."
+            raise ValueError(
+                "No HuggingFace token found. Set HF_TOKEN (or HUGGINGFACE_TOKEN) "
+                "to a token with 'Inference Providers (Write)' permission."
             )
         self.default_model = default_model
         self.max_retries = max_retries
