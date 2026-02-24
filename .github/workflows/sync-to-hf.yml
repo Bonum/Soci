@@ -19,3 +19,4 @@ jobs:
         run: |
           git remote add hf https://RayMelius:${HF_TOKEN}@huggingface.co/spaces/RayMelius/soci
           git push hf master:main --force
+
