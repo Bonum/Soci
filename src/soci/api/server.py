@@ -23,7 +23,7 @@ try:
 except ImportError:
     pass
 
-from soci.engine.llm import create_llm_client, PROVIDER_GROQ, PROVIDER_GEMINI, PROVIDER_HF
+from soci.engine.llm import create_llm_client, PROVIDER_GROQ, PROVIDER_GEMINI, PROVIDER_HF, PROVIDER_OLLAMA, PROVIDER_CLAUDE
 from soci.engine.simulation import Simulation
 from soci.persistence.database import Database
 from soci.persistence.snapshots import load_simulation, save_simulation
