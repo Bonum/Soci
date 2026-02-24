@@ -279,7 +279,7 @@ async def get_llm_providers():
     if os.environ.get("GROQ_API_KEY"):
         providers.append({"id": "groq",    "label": "Groq Llama 8B",       "icon": "⚡", "model": ""})
     if os.environ.get("GEMINI_API_KEY"):
-        providers.append({"id": "gemini",  "label": "Gemini 1.5 Flash",    "icon": "✦", "model": ""})
+        providers.append({"id": "gemini",  "label": "Gemini 2.0 Flash Lite", "icon": "✦", "model": ""})
     has_hf = bool(
         os.environ.get("HF_TOKEN")
         or os.environ.get("HUGGINGFACE_TOKEN")

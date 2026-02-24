@@ -38,19 +38,19 @@ MODEL_GROQ_LLAMA_70B = "llama-3.3-70b-versatile"
 MODEL_GROQ_MIXTRAL = "mixtral-8x7b-32768"
 
 # Google Gemini model IDs (free tier via AI Studio)
-# gemini-1.5-flash is the reliable default on the OpenAI-compatible endpoint.
-# gemini-2.0-flash can be enabled via GEMINI_MODEL env var if your key supports it.
-MODEL_GEMINI_FLASH = "gemini-1.5-flash"
-MODEL_GEMINI_FLASH_FALLBACK = "gemini-1.5-flash"  # final fallback
-MODEL_GEMINI_FLASH_V2 = "gemini-2.0-flash"        # opt-in via GEMINI_MODEL env var
+# gemini-2.0-flash-lite is the reliable free-tier default on the OpenAI-compatible endpoint.
+# gemini-1.5-flash* models return 404 on current API keys — do not use them.
+MODEL_GEMINI_FLASH = "gemini-2.0-flash-lite"       # free tier, confirmed working
+MODEL_GEMINI_FLASH_FALLBACK = "gemini-2.0-flash-001"  # versioned fallback
 MODEL_GEMINI_PRO = "gemini-1.5-pro"
 
-# Models to try in order if a model is not available on the serverless endpoint
+# Fallback chain: tried in order when a model returns a not-available error
 _GEMINI_FALLBACK_CHAIN: dict[str, str] = {
-    "gemini-2.0-flash": MODEL_GEMINI_FLASH_FALLBACK,
-    "gemini-2.0-flash-exp": MODEL_GEMINI_FLASH_FALLBACK,
-    "gemini-2.0-flash-001": MODEL_GEMINI_FLASH_FALLBACK,
+    "gemini-2.0-flash":     "gemini-2.0-flash-lite",
+    "gemini-2.0-flash-exp": "gemini-2.0-flash-lite",
+    "gemini-2.0-flash-001": "gemini-2.0-flash-lite",
     "gemini-2.0-flash-lite": MODEL_GEMINI_FLASH_FALLBACK,
+    # 1.5-flash models return 404 on current API keys — skip the entire 1.5 family
 }
 
 # Keywords in any Gemini error body that indicate the model is unavailable on this endpoint
