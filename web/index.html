@@ -274,10 +274,10 @@
       <span class="speed-label" id="speed-label">1x</span>
       <span style="color:#1a3a6e;margin:0 4px">│</span>
       <span style="font-size:10px;color:#666;white-space:nowrap" title="LLM call probability: controls how often agents use AI reasoning vs. routine behaviour. At 45% with Gemini free tier ≈ 10h daily runtime.">🧠</span>
-      <input type="range" id="llm-prob-slider" min="0" max="100" value="100" step="5"
+      <input type="range" id="llm-prob-slider" min="0" max="100" value="10" step="5"
         style="width:64px;height:6px;accent-color:#4ecca3;cursor:pointer;vertical-align:middle;"
         oninput="onLlmProbSlider(this.value)" title="LLM usage probability">
-      <span id="llm-prob-label" style="font-size:10px;color:#4ecca3;min-width:28px;text-align:right;">100%</span>
+      <span id="llm-prob-label" style="font-size:10px;color:#4ecca3;min-width:28px;text-align:right;">10%</span>
       <span style="color:#1a3a6e;margin:0 4px">│</span>
       <button class="ctrl-btn" id="btn-rect-zoom" onclick="toggleRectZoom()" title="Draw a rectangle to zoom into that area (Shift+drag)">⬚</button>
       <button class="ctrl-btn" onclick="zoomBy(1.3)" title="Zoom In (scroll up)">＋</button>
@@ -3019,7 +3019,7 @@ async function fetchState() {
 // ============================================================
 let simPaused = false;
 let simSpeed = 1.0;
-let llmCallProbability = 1.0;
+let llmCallProbability = 0.10;
 
 async function togglePause() {
   try {
