@@ -38,8 +38,11 @@ MODEL_GROQ_LLAMA_70B = "llama-3.3-70b-versatile"
 MODEL_GROQ_MIXTRAL = "mixtral-8x7b-32768"
 
 # Google Gemini model IDs (free tier via AI Studio)
-MODEL_GEMINI_FLASH = "gemini-2.0-flash"
-MODEL_GEMINI_FLASH_FALLBACK = "gemini-1.5-flash"  # fallback if 2.0-flash unavailable
+# gemini-1.5-flash is the reliable default on the OpenAI-compatible endpoint.
+# gemini-2.0-flash can be enabled via GEMINI_MODEL env var if your key supports it.
+MODEL_GEMINI_FLASH = "gemini-1.5-flash"
+MODEL_GEMINI_FLASH_FALLBACK = "gemini-1.5-flash"  # final fallback
+MODEL_GEMINI_FLASH_V2 = "gemini-2.0-flash"        # opt-in via GEMINI_MODEL env var
 MODEL_GEMINI_PRO = "gemini-1.5-pro"
 
 # Models to try in order if a model is not available on the serverless endpoint
@@ -47,7 +50,14 @@ _GEMINI_FALLBACK_CHAIN: dict[str, str] = {
     "gemini-2.0-flash": MODEL_GEMINI_FLASH_FALLBACK,
     "gemini-2.0-flash-exp": MODEL_GEMINI_FLASH_FALLBACK,
     "gemini-2.0-flash-001": MODEL_GEMINI_FLASH_FALLBACK,
+    "gemini-2.0-flash-lite": MODEL_GEMINI_FLASH_FALLBACK,
 }
+
+# Keywords in any Gemini error body that indicate the model is unavailable on this endpoint
+_GEMINI_MODEL_UNAVAILABLE_KWS = (
+    "not found", "not supported", "invalid argument",
+    "does not exist", "unavailable", "serverless",
+)
 
 # Hugging Face router model IDs (router.huggingface.co/v1 — auto-routes to best provider)
 MODEL_HF_QWEN = "Qwen/Qwen2.5-7B-Instruct"          # default — auto-routed, great quality
@@ -823,11 +833,8 @@ class GeminiClient:
                         return ""
                     logger.warning(f"Gemini 429: {body} — waiting {wait}s")
                     await asyncio.sleep(wait)
-                elif status in (400, 404) and any(
-                    kw in body_raw.lower()
-                    for kw in ("not found", "not supported", "invalid argument", "does not exist", "unavailable", "serverless")
-                ):
-                    # Model not available on this endpoint — try fallback
+                elif any(kw in body_raw.lower() for kw in _GEMINI_MODEL_UNAVAILABLE_KWS):
+                    # Model not available on this endpoint (any status code) — try fallback
                     fallback = self._handle_model_not_found(model)
                     if fallback:
                         model = fallback
@@ -904,11 +911,8 @@ class GeminiClient:
                         return {}
                     logger.warning(f"Gemini 429 (json): {body} — waiting {wait}s")
                     await asyncio.sleep(wait)
-                elif status in (400, 404) and any(
-                    kw in body_raw.lower()
-                    for kw in ("not found", "not supported", "invalid argument", "does not exist", "unavailable", "serverless")
-                ):
-                    # Model not available on this endpoint — try fallback
+                elif any(kw in body_raw.lower() for kw in _GEMINI_MODEL_UNAVAILABLE_KWS):
+                    # Model not available on this endpoint (any status code) — try fallback
                     fallback = self._handle_model_not_found(model)
                     if fallback:
                         model = fallback
