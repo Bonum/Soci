@@ -825,7 +825,7 @@ class GeminiClient:
                     await asyncio.sleep(wait)
                 elif status in (400, 404) and any(
                     kw in body_raw.lower()
-                    for kw in ("not found", "not supported", "invalid argument", "does not exist", "unavailable")
+                    for kw in ("not found", "not supported", "invalid argument", "does not exist", "unavailable", "serverless")
                 ):
                     # Model not available on this endpoint — try fallback
                     fallback = self._handle_model_not_found(model)
@@ -906,7 +906,7 @@ class GeminiClient:
                     await asyncio.sleep(wait)
                 elif status in (400, 404) and any(
                     kw in body_raw.lower()
-                    for kw in ("not found", "not supported", "invalid argument", "does not exist", "unavailable")
+                    for kw in ("not found", "not supported", "invalid argument", "does not exist", "unavailable", "serverless")
                 ):
                     # Model not available on this endpoint — try fallback
                     fallback = self._handle_model_not_found(model)
