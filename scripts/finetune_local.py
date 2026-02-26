@@ -14,11 +14,22 @@ Usage (from project root):
     # Debug / smoke test (fast, no push):
     "C:/Users/xabon/.conda/envs/ml-env/python.exe" scripts/finetune_local.py --debug
 
-    # Full round-1 training + push to HF:
+    # Full round-1 training on default 0.5b model + push to HF:
     "C:/Users/xabon/.conda/envs/ml-env/python.exe" scripts/finetune_local.py
 
-    # Resume round 2 with same command:
-    "C:/Users/xabon/.conda/envs/ml-env/python.exe" scripts/finetune_local.py --resume
+    # Fine-tune specific model sizes:
+    "C:/Users/xabon/.conda/envs/ml-env/python.exe" scripts/finetune_local.py --base-model 7b
+    "C:/Users/xabon/.conda/envs/ml-env/python.exe" scripts/finetune_local.py --base-model 8b
+
+    # Resume round 2 for a specific model:
+    "C:/Users/xabon/.conda/envs/ml-env/python.exe" scripts/finetune_local.py --base-model 7b --resume
+
+Model profiles (base model -> HF repo):
+    0.5b -> RayMelius/soci-agent-q4   (Qwen2.5-0.5B, batch=2, seq=2048)
+    1.5b -> RayMelius/soci-agent-1b5  (Qwen2.5-1.5B, batch=2, seq=2048)
+    3b   -> RayMelius/soci-agent-3b   (Qwen2.5-3B,   batch=2, seq=2048)
+    7b   -> RayMelius/soci-agent-7b   (Qwen2.5-7B,   batch=1, seq=1024)
+    8b   -> RayMelius/soci-agent-8b   (Llama-3.1-8B, batch=1, seq=1024)
 """
 
 from __future__ import annotations
@@ -57,21 +68,81 @@ from pathlib import Path
 
 # ── Parse args first (before heavy imports) ───────────────────────────────────
 parser = argparse.ArgumentParser(description="Soci local fine-tune")
-parser.add_argument("--resume",  action="store_true", help="Resume from saved LoRA adapters")
-parser.add_argument("--debug",   action="store_true", help="Debug/smoke-test: 1 epoch, 20 examples, no push")
-parser.add_argument("--no-push", action="store_true", help="Skip HF Hub push")
-parser.add_argument("--no-gguf", action="store_true", help="Skip GGUF export")
-parser.add_argument("--epochs",  type=int, default=None, help="Override epoch count")
-parser.add_argument("--hf-repo", default=None, help="HF repo ID (overrides default)")
+parser.add_argument("--resume",     action="store_true", help="Resume from saved LoRA adapters")
+parser.add_argument("--debug",      action="store_true", help="Debug/smoke-test: 1 epoch, 20 examples, no push")
+parser.add_argument("--no-push",    action="store_true", help="Skip HF Hub push")
+parser.add_argument("--no-gguf",    action="store_true", help="Skip GGUF export")
+parser.add_argument("--epochs",     type=int, default=None, help="Override epoch count")
+parser.add_argument("--hf-repo",    default=None, help="HF repo ID (overrides default)")
+parser.add_argument("--base-model", default="0.5b",
+                    choices=["0.5b", "1.5b", "3b", "7b", "8b"],
+                    help="Base model size to fine-tune (default: 0.5b)")
 args = parser.parse_args()
 
-# ── Paths ─────────────────────────────────────────────────────────────────────
+# ── Model profiles (base model → unsloth ID, HF repo, VRAM settings) ──────────
+_MODEL_PROFILES = {
+    "0.5b": dict(
+        model_id      = "unsloth/Qwen2.5-0.5B-Instruct-unsloth-bnb-4bit",
+        repo_name     = "soci-agent-q4",
+        seq_len       = 2048,
+        batch         = 2,
+        grad_accum    = 4,
+        lora_r        = 16,
+        lora_targets  = ["q_proj", "k_proj", "v_proj", "o_proj",
+                         "gate_proj", "up_proj", "down_proj"],
+    ),
+    "1.5b": dict(
+        model_id      = "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
+        repo_name     = "soci-agent-1b5",
+        seq_len       = 2048,
+        batch         = 2,
+        grad_accum    = 4,
+        lora_r        = 16,
+        lora_targets  = ["q_proj", "k_proj", "v_proj", "o_proj",
+                         "gate_proj", "up_proj", "down_proj"],
+    ),
+    "3b": dict(
+        model_id      = "unsloth/Qwen2.5-3B-Instruct-bnb-4bit",
+        repo_name     = "soci-agent-3b",
+        seq_len       = 2048,
+        batch         = 2,
+        grad_accum    = 4,
+        lora_r        = 16,
+        lora_targets  = ["q_proj", "k_proj", "v_proj", "o_proj",
+                         "gate_proj", "up_proj", "down_proj"],
+    ),
+    # 7B and 8B: minimal LoRA to stay within 6.4 GB VRAM on RTX 4050 Laptop.
+    # 7B in 4-bit uses ~3.8GB; only ~2.6GB left for activations + optimizer.
+    # r=8, q+v only → ~5M trainable params, small optimizer footprint.
+    "7b": dict(
+        model_id      = "unsloth/Qwen2.5-7B-Instruct-bnb-4bit",
+        repo_name     = "soci-agent-7b",
+        seq_len       = 512,
+        batch         = 1,
+        grad_accum    = 8,
+        lora_r        = 8,
+        lora_targets  = ["q_proj", "v_proj"],
+    ),
+    "8b": dict(
+        model_id      = "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit",
+        repo_name     = "soci-agent-8b",
+        seq_len       = 512,
+        batch         = 1,
+        grad_accum    = 8,
+        lora_r        = 8,
+        lora_targets  = ["q_proj", "v_proj"],
+    ),
+}
+_PROFILE = _MODEL_PROFILES[args.base_model]
+
+# ── Paths (per-model subdirs so runs don't clobber each other) ─────────────────
 TRAIN_DIR        = Path("data/training")
-LORA_SAVE_DIR    = TRAIN_DIR / "lora_adapters"
-DATA_ARCHIVE_DIR = TRAIN_DIR / "data_archive"
-GGUF_DIR         = TRAIN_DIR / "gguf"
-CHECKPOINTS_DIR  = TRAIN_DIR / "checkpoints"
-ROUND_FILE       = TRAIN_DIR / "training_round.json"
+MODEL_DIR        = TRAIN_DIR / args.base_model          # e.g. data/training/7b/
+LORA_SAVE_DIR    = MODEL_DIR / "lora_adapters"
+DATA_ARCHIVE_DIR = MODEL_DIR / "data_archive"
+GGUF_DIR         = MODEL_DIR / "gguf"
+CHECKPOINTS_DIR  = MODEL_DIR / "checkpoints"
+ROUND_FILE       = MODEL_DIR / "training_round.json"
 CORE_DATA_FILE   = TRAIN_DIR / "core_examples.json"
 LIVE_DATA_FILE   = TRAIN_DIR / "processed" / "soci_training.jsonl"
 
@@ -79,10 +150,9 @@ for d in [LORA_SAVE_DIR, DATA_ARCHIVE_DIR, GGUF_DIR, CHECKPOINTS_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 # ── Config ────────────────────────────────────────────────────────────────────
-MAX_SEQ_LENGTH = 2048
+MAX_SEQ_LENGTH = _PROFILE["seq_len"]
 HF_USERNAME    = "RayMelius"
-REPO_NAME      = "soci-agent-q4"
-HF_REPO_ID     = args.hf_repo or f"{HF_USERNAME}/{REPO_NAME}"
+HF_REPO_ID     = args.hf_repo or f"{HF_USERNAME}/{_PROFILE['repo_name']}"
 
 # Load HF token
 try:
@@ -107,6 +177,32 @@ if not torch.cuda.is_available():
 else:
     print(f"GPU : {torch.cuda.get_device_name(0)}")
     print(f"VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+
+# ── Patch unsloth fused CE loss for low-VRAM GPUs ─────────────────────────────
+# unsloth_zoo._get_chunk_multiplier checks free VRAM *after* model load.
+# On 6.4 GB GPUs the 7B model consumes almost all VRAM, leaving ~0 free,
+# which causes it to raise "No or negligible GPU memory available".
+# Replace with a version that falls back to 100 MB budget instead of raising.
+import functools
+import unsloth_zoo.fused_losses.cross_entropy_loss as _unsloth_ce
+
+@functools.cache
+def _safe_chunk_multiplier(vocab_size, target_gb=None):
+    if target_gb is None:
+        try:
+            free, _ = torch.cuda.mem_get_info(0)
+            free_gb = free / (1024 ** 3) * 0.5
+        except Exception:
+            free_gb = 0.0
+        target_gb = max(free_gb, 0.1)   # always at least 100 MB budget
+    if target_gb <= 1e-9:
+        target_gb = 0.1
+    multiplier = (vocab_size * 4 / (1024 ** 3)) / target_gb
+    multiplier = multiplier / 4
+    return multiplier
+
+_unsloth_ce._get_chunk_multiplier = _safe_chunk_multiplier
+print("Patched unsloth fused CE loss for low-VRAM GPU")
 
 # ── Determine training round ──────────────────────────────────────────────────
 RESUME = args.resume
@@ -138,21 +234,20 @@ else:
         print(f"[WARN] No LoRA adapters at {LORA_SAVE_DIR}, starting fresh.")
         CURRENT_ROUND = 1
     model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name     = "unsloth/Qwen2.5-0.5B-Instruct",
+        model_name     = _PROFILE["model_id"],
         max_seq_length = MAX_SEQ_LENGTH,
         dtype          = None,
         load_in_4bit   = True,
     )
-    print("Fresh base model loaded (round 1)")
+    print(f"Fresh base model loaded (round 1): {_PROFILE['model_id']}")
 
 # ── Attach LoRA ───────────────────────────────────────────────────────────────
 if CURRENT_ROUND == 1:
     model = FastLanguageModel.get_peft_model(
         model,
-        r                          = 16,
-        target_modules             = ["q_proj", "k_proj", "v_proj", "o_proj",
-                                      "gate_proj", "up_proj", "down_proj"],
-        lora_alpha                 = 16,
+        r                          = _PROFILE["lora_r"],
+        target_modules             = _PROFILE["lora_targets"],
+        lora_alpha                 = _PROFILE["lora_r"],   # lora_alpha == r is standard
         lora_dropout               = 0,
         bias                       = "none",
         use_gradient_checkpointing = "unsloth",
@@ -292,8 +387,8 @@ trainer = SFTTrainer(
     max_seq_length     = MAX_SEQ_LENGTH,
     dataset_num_proc   = 2,
     args = SFTConfig(
-        per_device_train_batch_size = 2,
-        gradient_accumulation_steps = 4,
+        per_device_train_batch_size = _PROFILE["batch"],
+        gradient_accumulation_steps = _PROFILE["grad_accum"],
         warmup_steps                = WARMUP,
         num_train_epochs            = EPOCHS,
         learning_rate               = LR,
@@ -312,6 +407,7 @@ trainer = SFTTrainer(
 )
 
 print(f"\nTraining round {CURRENT_ROUND} on {len(dataset)} examples...")
+torch.cuda.empty_cache()   # free any cached fragments before training starts
 stats = trainer.train()
 print(f"\nRound {CURRENT_ROUND} complete!")
 print(f"   Steps: {stats.global_step}  |  Final loss: {stats.training_loss:.4f}")
