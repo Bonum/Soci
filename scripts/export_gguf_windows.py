@@ -109,30 +109,37 @@ else:
     )
     print(f"  Merged model saved.")
 
-# ── Step 2: Get convert_hf_to_gguf.py ────────────────────────────────────────
+# ── Step 2: Clone/update llama.cpp repo (shallow) ────────────────────────────
+# We clone the full repo so the convert script uses its own bundled gguf-py,
+# which is always in sync with the script (PyPI gguf lags behind llama.cpp master).
 print(f"\n=== Step 2: Prepare llama.cpp convert script ===")
 
-CONVERT_SCRIPT = CONVERT_CACHE / "convert_hf_to_gguf.py"
-CONVERT_REQS   = CONVERT_CACHE / "requirements_convert.txt"
+LLAMA_REPO    = CONVERT_CACHE / "llama.cpp"
+CONVERT_SCRIPT = LLAMA_REPO / "convert_hf_to_gguf.py"
+LLAMA_GGUF_PY  = LLAMA_REPO / "gguf-py"
 
-if not CONVERT_SCRIPT.exists():
-    BASE_URL = "https://raw.githubusercontent.com/ggml-org/llama.cpp/master"
-    print(f"  Downloading convert_hf_to_gguf.py ...")
-    urllib.request.urlretrieve(f"{BASE_URL}/convert_hf_to_gguf.py", CONVERT_SCRIPT)
-
-    # Also download the requirements file (needed for sentencepiece / tiktoken)
-    try:
-        urllib.request.urlretrieve(
-            f"{BASE_URL}/requirements/requirements-convert_hf_to_gguf.txt",
-            CONVERT_REQS,
-        )
-        print(f"  Installing convert dependencies ...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "-q",
-                               "-r", str(CONVERT_REQS)])
-    except Exception as e:
-        print(f"  [WARN] Could not fetch/install convert requirements: {e}")
+if LLAMA_REPO.exists() and CONVERT_SCRIPT.exists():
+    print(f"  Repo cached at {LLAMA_REPO} — pulling latest ...")
+    subprocess.run(["git", "-C", str(LLAMA_REPO), "pull", "--ff-only", "-q"], check=False)
 else:
-    print(f"  Using cached {CONVERT_SCRIPT}")
+    print(f"  Cloning llama.cpp (shallow) into {LLAMA_REPO} ...")
+    subprocess.check_call([
+        "git", "clone", "--depth=1", "--filter=blob:none",
+        "https://github.com/ggml-org/llama.cpp.git",
+        str(LLAMA_REPO),
+    ])
+    print(f"  Installing llama.cpp gguf-py + convert dependencies ...")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q",
+                           str(LLAMA_GGUF_PY)])
+    reqs = LLAMA_REPO / "requirements" / "requirements-convert_hf_to_gguf.txt"
+    if reqs.exists():
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "-r", str(reqs)])
+
+# Build PYTHONPATH so convert script picks up llama.cpp's gguf-py over PyPI's
+_convert_env = os.environ.copy()
+_convert_env["PYTHONPATH"] = str(LLAMA_GGUF_PY / "src") + os.pathsep + _convert_env.get("PYTHONPATH", "")
+
+print(f"  Convert script: {CONVERT_SCRIPT}")
 
 # ── Step 3: Convert merged model → F16 GGUF ──────────────────────────────────
 print(f"\n=== Step 3: Convert to F16 GGUF ===")
@@ -149,7 +156,7 @@ else:
         "--outtype", "f16",
     ]
     print(f"  Running: {' '.join(cmd)}")
-    result = subprocess.run(cmd, capture_output=False)
+    result = subprocess.run(cmd, capture_output=False, env=_convert_env)
     if result.returncode != 0:
         print(f"[ERROR] Conversion failed (exit {result.returncode})")
         sys.exit(1)

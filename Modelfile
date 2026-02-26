@@ -19,7 +19,8 @@
 #   Works immediately — pulls qwen2.5:0.5b from Ollama.
 #   No fine-tuning, but correct system prompt and parameters.
 #
-FROM qwen2.5:0.5b
+#FROM qwen2.5:0.5b
+FROM ./data/training/7b/gguf/7b-q4_k_m.gguf
 
 SYSTEM """You are the reasoning engine for Soci, an LLM-powered city population simulator. \
 You control AI agents (NPCs) living in a city. Each agent has a persona, needs \
