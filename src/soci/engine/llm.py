@@ -1163,15 +1163,15 @@ def create_llm_client(
         provider = os.environ.get("LLM_PROVIDER", "").lower()
 
     if not provider:
-        # Auto-detect: Claude → Groq → Gemini → HF → Ollama
+        # Auto-detect: Claude → HF (soci-agent) → Groq → Gemini → Ollama (soci-agent)
         if os.environ.get("ANTHROPIC_API_KEY"):
             provider = PROVIDER_CLAUDE
+        elif os.environ.get("HF_TOKEN"):
+            provider = PROVIDER_HF
         elif os.environ.get("GROQ_API_KEY"):
             provider = PROVIDER_GROQ
         elif os.environ.get("GEMINI_API_KEY"):
             provider = PROVIDER_GEMINI
-        elif os.environ.get("HF_TOKEN"):
-            provider = PROVIDER_HF
         else:
             provider = PROVIDER_OLLAMA
 
@@ -1185,10 +1185,10 @@ def create_llm_client(
         default_model = model or os.environ.get("GEMINI_MODEL", MODEL_GEMINI_FLASH)
         return GeminiClient(default_model=default_model)
     elif provider == PROVIDER_HF:
-        default_model = model or os.environ.get("HF_MODEL", MODEL_HF_SMOL)
+        default_model = model or os.environ.get("HF_MODEL", MODEL_HF_SOCI)
         return HFInferenceClient(default_model=default_model)
     elif provider == PROVIDER_OLLAMA:
-        default_model = model or os.environ.get("OLLAMA_MODEL", MODEL_LLAMA)
+        default_model = model or os.environ.get("OLLAMA_MODEL", MODEL_OLLAMA_SOCI)
         return OllamaClient(base_url=ollama_url, default_model=default_model)
     else:
         raise ValueError(f"Unknown LLM provider: {provider}. Use 'claude', 'groq', 'gemini', 'hf', or 'ollama'.")

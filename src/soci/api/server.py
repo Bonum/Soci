@@ -274,15 +274,15 @@ def _choose_provider() -> str:
     has_gemini = bool(os.environ.get("GEMINI_API_KEY"))
     has_hf = bool(os.environ.get("HF_TOKEN"))
 
-    # Free providers only; Claude can be forced via SOCI_PROVIDER / LLM_PROVIDER.
+    # Priority: Soci fine-tuned model first, then free cloud providers, then Ollama.
     options = []
+    if has_hf:
+        options.append(("hf", "Soci Agent / HF Inference (RayMelius/soci-agent-q4)"))
     if has_groq:
         options.append(("groq", "Groq (free tier, 30 req/min)"))
     if has_gemini:
         options.append(("gemini", "Gemini (free tier, 15 req/min via AI Studio)"))
-    if has_hf:
-        options.append(("hf", "HF Inference (requires HF PRO / credits)"))
-    options.append(("ollama", "Ollama (local, free, no rate limit)"))
+    options.append(("ollama", "Ollama / Soci Agent local (soci-agent)"))
 
     # If only one option, use it
     if len(options) == 1:
