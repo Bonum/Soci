@@ -277,12 +277,12 @@ def _choose_provider() -> str:
     # Priority: Soci fine-tuned model first, then free cloud providers, then Ollama.
     options = []
     if has_hf:
-        options.append(("hf", "Soci Agent / HF Inference (RayMelius/soci-agent-q4)"))
+        options.append(("hf", "Soci Agent / HF Inference (RayMelius/soci-agent-7b)"))
     if has_groq:
         options.append(("groq", "Groq (free tier, 30 req/min)"))
     if has_gemini:
         options.append(("gemini", "Gemini (free tier, 15 req/min via AI Studio)"))
-    options.append(("ollama", "Ollama / Soci Agent local (soci-agent)"))
+    options.append(("ollama", "Ollama / Soci Agent local (soci-agent-7b)"))
 
     # If only one option, use it
     if len(options) == 1:
