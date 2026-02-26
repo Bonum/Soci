@@ -1,0 +1,41 @@
+# Modelfile for soci-agent — Soci city simulation LLM
+#
+# This file defines the Ollama model used by the Soci simulator.
+#
+# Usage:
+#   ollama create soci-agent -f Modelfile
+#   ollama run soci-agent    # test it
+#
+# Then set SOCI_PROVIDER=ollama (or leave unset — Ollama is the default fallback).
+#
+# ── Option A: Use fine-tuned GGUF (best quality) ─────────────────────────────
+#   After exporting GGUF from Linux/Colab:
+#     python scripts/finetune_local.py --no-push   # on Linux
+#   Then copy the .gguf file here and set FROM to point to it:
+#
+#FROM ./data/training/0.5b/gguf/unsloth.Q4_K_M.gguf
+#
+# ── Option B: Use base model from Ollama registry (default) ──────────────────
+#   Works immediately — pulls qwen2.5:0.5b from Ollama.
+#   No fine-tuning, but correct system prompt and parameters.
+#
+FROM qwen2.5:0.5b
+
+SYSTEM """You are the reasoning engine for Soci, an LLM-powered city population simulator. \
+You control AI agents (NPCs) living in a city. Each agent has a persona, needs \
+(hunger, energy, social, purpose, comfort, fun), memories, and relationships. \
+You receive structured context and must respond ONLY with valid JSON. \
+Never add explanation outside the JSON."""
+
+# Generation parameters — balanced for JSON output reliability
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
+PARAMETER top_k 40
+PARAMETER repeat_penalty 1.1
+PARAMETER num_ctx 2048
+PARAMETER num_predict 512
+
+# Stop tokens that signal end of JSON response
+PARAMETER stop "```"
+PARAMETER stop "<|im_end|>"
+PARAMETER stop "<|endoftext|>"
