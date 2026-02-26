@@ -64,6 +64,10 @@ MODEL_HF_QWEN = "Qwen/Qwen2.5-7B-Instruct"          # default — auto-routed, g
 MODEL_HF_LLAMA = "meta-llama/Llama-3.2-3B-Instruct"
 MODEL_HF_MISTRAL = "mistralai/Mistral-7B-Instruct-v0.3"
 MODEL_HF_SMOL = "HuggingFaceTB/SmolLM3-3B:hf-inference"  # CPU inference, no credits needed
+MODEL_HF_SOCI = "RayMelius/soci-agent-q4"            # Soci fine-tuned Qwen2.5-0.5B (LoRA)
+
+# Ollama model IDs for Soci fine-tuned models
+MODEL_OLLAMA_SOCI = "soci-agent"   # load via: ollama create soci-agent -f Modelfile
 
 # Approximate cost per 1M tokens (USD) — Ollama is free, Groq is very cheap
 COST_PER_1M = {

@@ -286,10 +286,12 @@ async def get_llm_providers():
         or os.environ.get("HF_API_TOKEN")
     )
     if has_hf:
+        providers.append({"id": "hf", "model": "RayMelius/soci-agent-q4",                "label": "Soci Agent (fine-tuned)", "icon": "🏙"})
         providers.append({"id": "hf", "model": "HuggingFaceH4/zephyr-7b-beta",           "label": "HF Zephyr 7B",    "icon": "🤗"})
         providers.append({"id": "hf", "model": "Qwen/Qwen2.5-7B-Instruct",               "label": "HF Qwen 2.5 7B",  "icon": "🤗"})
         providers.append({"id": "hf", "model": "meta-llama/Llama-3.2-3B-Instruct",       "label": "HF Llama 3.2 3B", "icon": "🤗"})
         providers.append({"id": "hf", "model": "mistralai/Mistral-7B-Instruct-v0.3",     "label": "HF Mistral 7B",   "icon": "🤗"})
+    providers.append({"id": "ollama", "label": "Soci Agent (Ollama)",      "icon": "🏙", "model": "soci-agent"})
     providers.append({"id": "ollama", "label": "Ollama (local)",           "icon": "🦙", "model": ""})
     return {"current": current, "current_model": current_model, "providers": providers}
 

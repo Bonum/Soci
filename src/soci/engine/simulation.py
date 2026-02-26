@@ -858,6 +858,7 @@ class Simulation:
             "events": self.events.to_dict(),
             "entropy": self.entropy.to_dict(),
             "conversation_counter": self._conversation_counter,
+            "conversation_history": self.conversation_history,
         }
 
     @classmethod
@@ -869,6 +870,7 @@ class Simulation:
         sim.events = EventSystem.from_dict(data["events"])
         sim.entropy = EntropyManager.from_dict(data["entropy"])
         sim._conversation_counter = data.get("conversation_counter", 0)
+        sim.conversation_history = data.get("conversation_history", [])
         for aid, agent_data in data["agents"].items():
             agent = Agent.from_dict(agent_data)
             sim.agents[agent.id] = agent
