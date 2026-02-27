@@ -254,7 +254,7 @@ class OllamaClient:
     def __init__(
         self,
         base_url: str = "http://localhost:11434",
-        default_model: str = MODEL_LLAMA,
+        default_model: str = MODEL_OLLAMA_SOCI,
         max_retries: int = 2,
     ) -> None:
         self.base_url = base_url.rstrip("/")
