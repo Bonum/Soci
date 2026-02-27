@@ -280,14 +280,15 @@ async def get_llm_providers():
         providers.append({"id": "groq",    "label": "Groq Llama 8B",       "icon": "⚡", "model": ""})
     if os.environ.get("GEMINI_API_KEY"):
         providers.append({"id": "gemini",  "label": "Gemini 2.0 Flash Lite", "icon": "✦", "model": ""})
+    # Soci fine-tuned models always shown (public HF repos)
+    providers.append({"id": "hf", "model": "RayMelius/soci-agent-7b",                "label": "Soci Agent 7B (Qwen)",    "icon": "🏙"})
+    providers.append({"id": "hf", "model": "RayMelius/soci-agent-q4",                "label": "Soci Agent 0.5B",         "icon": "🏙"})
     has_hf = bool(
         os.environ.get("HF_TOKEN")
         or os.environ.get("HUGGINGFACE_TOKEN")
         or os.environ.get("HF_API_TOKEN")
     )
     if has_hf:
-        providers.append({"id": "hf", "model": "RayMelius/soci-agent-7b",                "label": "Soci Agent 7B (Qwen)",    "icon": "🏙"})
-        providers.append({"id": "hf", "model": "RayMelius/soci-agent-q4",                "label": "Soci Agent 0.5B",         "icon": "🏙"})
         providers.append({"id": "hf", "model": "HuggingFaceH4/zephyr-7b-beta",           "label": "HF Zephyr 7B",    "icon": "🤗"})
         providers.append({"id": "hf", "model": "Qwen/Qwen2.5-7B-Instruct",               "label": "HF Qwen 2.5 7B",  "icon": "🤗"})
         providers.append({"id": "hf", "model": "meta-llama/Llama-3.2-3B-Instruct",       "label": "HF Llama 3.2 3B", "icon": "🤗"})
