@@ -334,6 +334,10 @@ async def lifespan(app: FastAPI):
     if not probe:
         last_err = getattr(llm, "_last_error", "") or getattr(llm, "_auth_error", "")
         logger.warning(f"Provider '{_llm_provider}' failed probe ({last_err}) — trying fallbacks")
+        # Reset circuit breaker — a failed probe shouldn't block the whole day;
+        # the simulation loop will handle rate limits gracefully per-tick.
+        if hasattr(llm, "_rate_limited_until"):
+            llm._rate_limited_until = 0.0
         for fallback in _fallback_order:
             if fallback == _llm_provider:
                 continue
@@ -349,6 +353,9 @@ async def lifespan(app: FastAPI):
                 continue
         else:
             logger.warning("All provider fallbacks failed — simulation will run in routine-only mode")
+            # Reset circuit breaker on the original provider so it can retry during simulation
+            if hasattr(llm, "_rate_limited_until"):
+                llm._rate_limited_until = 0.0
 
     # Default LLM call probability — 0.10 for all providers to conserve daily quotas.
     # At 0.10: ~15 calls/h with Gemini (5 RPM) → stays well within 1500 RPD limit.
