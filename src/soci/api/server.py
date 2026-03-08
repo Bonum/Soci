@@ -32,6 +32,11 @@ from soci.world.clock import SimClock
 from soci.api.routes import router
 from soci.api.websocket import ws_router
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    stream=sys.stdout,
+)
 logger = logging.getLogger(__name__)
 
 # Global simulation instance (shared across requests)
