@@ -1,18 +1,23 @@
 FROM python:3.10-slim
 
-WORKDIR /app
+# HF Spaces runs containers as user 1000
+RUN useradd -m -u 1000 user
+USER user
+ENV HOME=/home/user PATH=/home/user/.local/bin:$PATH
+
+WORKDIR /home/user/app
 
 # Install dependencies first (layer cache)
-COPY requirements.txt pyproject.toml ./
+COPY --chown=user requirements.txt pyproject.toml ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy source
-COPY src/   ./src/
-COPY config/ ./config/
-COPY web/    ./web/
+COPY --chown=user src/   ./src/
+COPY --chown=user config/ ./config/
+COPY --chown=user web/    ./web/
 
 # Add src/ to Python path (avoids needing setuptools editable install)
-ENV PYTHONPATH=/app/src
+ENV PYTHONPATH=/home/user/app/src
 
 # Hugging Face Spaces requires port 7860
 ENV PORT=7860
