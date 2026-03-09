@@ -358,15 +358,16 @@ async def lifespan(app: FastAPI):
             if hasattr(llm, "_rate_limited_until"):
                 llm._rate_limited_until = 0.0
 
-    # Default LLM call probability — 0.10 for all providers to conserve daily quotas.
-    # At 0.10: ~15 calls/h with Gemini (5 RPM) → stays well within 1500 RPD limit.
-    # Raise via slider in the UI or SOCI_LLM_PROB env var (0.0–1.0).
+    # Default LLM call probability per provider.
+    # Cloud providers default to 0.10 (10%) to conserve daily quotas.
+    # Ollama is local so it defaults to 1.0 (100%).
+    # Override via SOCI_LLM_PROB env var or the UI slider.
     _provider_default_prob = {
         PROVIDER_GEMINI: 0.10,
         PROVIDER_GROQ: 0.10,
         PROVIDER_HF: 0.10,
         PROVIDER_CLAUDE: 0.10,
-        PROVIDER_OLLAMA: 0.10,
+        PROVIDER_OLLAMA: 1.0,
     }
     env_prob = os.environ.get("SOCI_LLM_PROB")
 
@@ -375,16 +376,13 @@ async def lifespan(app: FastAPI):
     _database = db
 
     if env_prob is not None:
-        # Env var always wins; also save it so other workstations inherit it
+        # Env var always wins
         _llm_call_probability = float(env_prob)
-        await db.set_setting("llm_call_probability", str(_llm_call_probability))
     else:
-        # Prefer the last slider value saved in the DB, fall back to provider default
-        saved = await db.get_setting("llm_call_probability")
-        if saved is not None:
-            _llm_call_probability = float(saved)
-        else:
-            _llm_call_probability = _provider_default_prob.get(_llm_provider, 0.10)
+        # Always start with provider default — the DB-saved slider value from a
+        # previous session may have been tuned for a different provider or context.
+        # Users can adjust via the UI slider during the session.
+        _llm_call_probability = _provider_default_prob.get(_llm_provider, 0.10)
     logger.info(f"LLM call probability: {_llm_call_probability:.0%}")
 
     # Pull saved state from GitHub before trying to load locally
