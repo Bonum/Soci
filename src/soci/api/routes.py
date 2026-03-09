@@ -310,7 +310,7 @@ async def test_llm():
 async def set_llm_provider(req: SwitchProviderRequest):
     """Hot-swap the active LLM provider."""
     from soci.api.server import switch_llm_provider
-    valid = {"claude", "groq", "gemini", "hf", "ollama"}
+    valid = {"claude", "groq", "gemini", "nn", "ollama"}
     if req.provider not in valid:
         raise HTTPException(status_code=400, detail=f"Unknown provider '{req.provider}'")
     try:

@@ -309,19 +309,30 @@ def train(epochs: int = 20, batch_size: int = 512, lr: float = 3e-4):
 
     # ── Load collected data ──────────────────────────────────────────
     collected = []
+    source_counts: dict[str, int] = {}
     if SAMPLES_FILE.exists():
         with open(SAMPLES_FILE) as f:
             for line in f:
                 line = line.strip()
                 if line:
-                    collected.append(json.loads(line))
-        logger.info(f"Loaded {len(collected):,} collected samples")
+                    sample = json.loads(line)
+                    collected.append(sample)
+                    src = sample.get("source", "unknown")
+                    source_counts[src] = source_counts.get(src, 0) + 1
+        logger.info(f"Loaded {len(collected):,} collected samples — sources: {source_counts}")
     else:
         logger.warning(f"No collected samples at {SAMPLES_FILE}")
 
+    # Oversample LLM-sourced data (Gemini/Claude/Groq) — these are higher quality
+    # than NN or routine-generated samples, so we duplicate them 3x
+    llm_sources = {"gemini", "claude", "groq"}
+    llm_samples = [s for s in collected if s.get("source", "") in llm_sources]
+    if llm_samples:
+        logger.info(f"Oversampling {len(llm_samples):,} LLM-sourced samples (3x weight)")
+        collected.extend(llm_samples * 2)  # 2 extra copies = 3x total weight
+
     if len(collected) < 100:
         logger.warning("Too few collected samples — generating synthetic data to supplement")
-        # Import synthetic generator from the notebook's logic (inline here)
         collected.extend(_generate_synthetic(50_000 - len(collected)))
 
     # ── Dataset ──────────────────────────────────────────────────────
@@ -719,17 +730,150 @@ def _generate_synthetic(n: int) -> list[dict]:
 
 
 # ════════════════════════════════════════════════════════════════════════
+# STEP 4: SCHEDULED — Nightly Gemini collection + retrain cycle
+# ════════════════════════════════════════════════════════════════════════
+
+async def scheduled(
+    base_url: str = "https://raymelius-soci2.hf.space",
+    collect_minutes: int = 120,
+    epochs: int = 25,
+    repo_id: str = "RayMelius/soci-agent-nn",
+    gemini_prob: float = 0.50,
+):
+    """Nightly training cycle: switch to Gemini at midnight, collect, retrain, push.
+
+    Flow:
+      1. Wait until Gemini quota resets (midnight PT / configurable)
+      2. Switch live sim to Gemini provider, raise probability
+      3. Collect high-quality (state, action) samples from Gemini decisions
+      4. Switch back to NN when done (or when quota exhausted)
+      5. Train on collected Gemini samples (weighted 3x vs NN/routine samples)
+      6. Push improved model to HF Hub
+      7. Repeat next night
+
+    Usage:
+        python nn_selfimprove.py scheduled --collect-minutes 120 --gemini-prob 0.50
+    """
+    import datetime
+
+    async def _api_call(client: httpx.AsyncClient, method: str, path: str, **kwargs):
+        """Make API call with retries."""
+        for attempt in range(3):
+            try:
+                resp = await getattr(client, method)(path, timeout=30.0, **kwargs)
+                return resp
+            except httpx.HTTPError as e:
+                logger.warning(f"API {method.upper()} {path} attempt {attempt+1} failed: {e}")
+                if attempt < 2:
+                    await asyncio.sleep(5)
+        return None
+
+    async def switch_provider(client: httpx.AsyncClient, provider: str, prob: float):
+        """Switch the live sim's LLM provider and probability."""
+        resp = await _api_call(client, "post", "/api/llm/provider",
+                               json={"provider": provider})
+        if resp and resp.status_code == 200:
+            logger.info(f"Switched provider to: {provider}")
+        else:
+            logger.error(f"Failed to switch to {provider}: {resp.status_code if resp else 'no response'}")
+            return False
+
+        resp = await _api_call(client, "post", "/api/llm/probability",
+                               json={"value": prob})
+        if resp and resp.status_code == 200:
+            logger.info(f"Set probability to: {prob:.0%}")
+        else:
+            logger.warning(f"Failed to set probability: {resp.status_code if resp else 'no response'}")
+
+        return True
+
+    async def wait_until_midnight():
+        """Wait until next midnight (local time) when Gemini quota resets."""
+        now = datetime.datetime.now()
+        tomorrow = now.replace(hour=0, minute=0, second=5, microsecond=0) + datetime.timedelta(days=1)
+        wait_secs = (tomorrow - now).total_seconds()
+        logger.info(f"Waiting {wait_secs/3600:.1f}h until midnight ({tomorrow.strftime('%Y-%m-%d %H:%M')})")
+        await asyncio.sleep(wait_secs)
+
+    # ── Main loop ─────────────────────────────────────────────────────
+    cycle = 0
+    while True:
+        cycle += 1
+        logger.info(f"{'='*60}")
+        logger.info(f"TRAINING CYCLE {cycle}")
+        logger.info(f"{'='*60}")
+
+        # 1. Wait for midnight (Gemini quota reset)
+        await wait_until_midnight()
+
+        async with httpx.AsyncClient(base_url=base_url) as client:
+            # 2. Switch to Gemini + raise probability
+            logger.info("Switching live sim to Gemini...")
+            ok = await switch_provider(client, "gemini", gemini_prob)
+            if not ok:
+                logger.error("Could not switch to Gemini — skipping this cycle")
+                continue
+
+            # 3. Collect samples from Gemini-powered sim
+            logger.info(f"Collecting for {collect_minutes} min with Gemini at {gemini_prob:.0%} probability...")
+
+        # collect() creates its own client
+        n_samples = await collect(
+            base_url=base_url,
+            duration_minutes=collect_minutes,
+            poll_interval=3.0,
+        )
+        logger.info(f"Collected {n_samples:,} samples this cycle")
+
+        # 4. Switch back to NN + restore default probability
+        async with httpx.AsyncClient(base_url=base_url) as client:
+            await switch_provider(client, "nn", 1.0)
+
+        # 5. Count Gemini-sourced samples
+        gemini_samples = 0
+        if SAMPLES_FILE.exists():
+            with open(SAMPLES_FILE) as f:
+                for line in f:
+                    if '"source": "gemini"' in line or '"source":"gemini"' in line:
+                        gemini_samples += 1
+        logger.info(f"Total Gemini-sourced samples in file: {gemini_samples:,}")
+
+        if gemini_samples < 50:
+            logger.warning("Too few Gemini samples — skipping training this cycle")
+            continue
+
+        # 6. Train (Gemini samples get 3x weight in the training loop)
+        logger.info("Starting retraining...")
+        best_acc = train(epochs=epochs)
+        logger.info(f"Training done — best accuracy: {best_acc:.1%}")
+
+        # 7. Push improved model
+        if os.environ.get("HF_TOKEN"):
+            logger.info("Pushing improved model to HF Hub...")
+            push(repo_id=repo_id)
+        else:
+            logger.warning("HF_TOKEN not set — skipping push")
+
+        logger.info(f"Cycle {cycle} complete! Next cycle at midnight.")
+
+
+# ════════════════════════════════════════════════════════════════════════
 # CLI
 # ════════════════════════════════════════════════════════════════════════
 
 def main():
     parser = argparse.ArgumentParser(description="Soci Agent NN — Self-Improvement Pipeline")
-    parser.add_argument("mode", choices=["collect", "train", "push", "all"],
-                        help="collect=watch live sim, train=retrain NN, push=upload to HF, all=full pipeline")
+    parser.add_argument("mode", choices=["collect", "train", "push", "all", "scheduled"],
+                        help="collect=watch live sim, train=retrain NN, push=upload to HF, "
+                             "all=full pipeline, scheduled=nightly Gemini cycle")
     parser.add_argument("--url", default="https://raymelius-soci2.hf.space",
                         help="Live simulation URL (default: HF Space)")
     parser.add_argument("--minutes", type=int, default=60,
                         help="Collection duration in minutes (default: 60)")
+    parser.add_argument("--collect-minutes", type=int, default=120,
+                        help="Scheduled mode: collection duration in minutes (default: 120)")
+    parser.add_argument("--gemini-prob", type=float, default=0.50,
+                        help="Scheduled mode: LLM probability during Gemini collection (default: 0.50)")
     parser.add_argument("--epochs", type=int, default=20,
                         help="Training epochs (default: 20)")
     parser.add_argument("--repo", default="RayMelius/soci-agent-nn",
@@ -744,6 +888,15 @@ def main():
 
     if args.mode in ("push", "all"):
         push(repo_id=args.repo)
+
+    if args.mode == "scheduled":
+        asyncio.run(scheduled(
+            base_url=args.url,
+            collect_minutes=args.collect_minutes,
+            epochs=args.epochs,
+            repo_id=args.repo,
+            gemini_prob=args.gemini_prob,
+        ))
 
 
 if __name__ == "__main__":

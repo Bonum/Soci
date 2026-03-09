@@ -134,6 +134,25 @@ class DailyRoutine:
         t = self._add(h, m, "relax", home, 2, "Morning routine — getting ready",
                        {"comfort": 0.1, "energy": 0.05})
 
+        # Morning exercise for active personas (30% chance if conscientious or extravert)
+        if (persona.conscientiousness >= 7 or persona.extraversion >= 7) and self._rng.random() < 0.3:
+            morning_spot = self._rng.choice(["park", "park", "gym", "sports_field"])
+            morning_exercise = {
+                "park": self._rng.choice(["Morning jog in the park", "Early walk in the park"]),
+                "gym": "Morning gym session",
+                "sports_field": self._rng.choice(["Morning run at the sports field",
+                                                   "Early workout at the sports field"]),
+            }.get(morning_spot, f"Morning exercise at {morning_spot}")
+            h, m = t // 60, t % 60
+            t = self._add(h, m, "move", morning_spot, 1, f"Heading to {morning_spot}",
+                           {})
+            h, m = t // 60, t % 60
+            t = self._add(h, m, "exercise", morning_spot, 2, morning_exercise,
+                           {"fun": 0.1, "energy": -0.05})
+            h, m = t // 60, t % 60
+            t = self._add(h, m, "move", home, 1, "Back home to freshen up",
+                           {})
+
         # Breakfast
         h, m = t // 60, t % 60
         t = self._add(h, m, "eat", home, 2, "Having breakfast at home",
@@ -152,8 +171,8 @@ class DailyRoutine:
                        f"{work_label} — morning block",
                        {"purpose": 0.3})
 
-        # Lunch — pick a food place or stay at work
-        food_places = ["cafe", "restaurant", "grocery", "bakery"]
+        # Lunch — pick a food place, park, or stay at work
+        food_places = ["cafe", "restaurant", "grocery", "bakery", "park", "park"]
         lunch_spot = self._rng.choice(food_places)
         h, m = t // 60, t % 60
         t = self._add(h, m, "move", lunch_spot, 1, f"Walking to lunch at {lunch_spot}",
@@ -173,6 +192,25 @@ class DailyRoutine:
         t = self._add(h, m, "work", work, afternoon_ticks,
                        f"{work_label} — afternoon block",
                        {"purpose": 0.3})
+
+        # Post-work exercise for active personas (conscientiousness >= 6 or extraversion >= 7)
+        if (persona.conscientiousness >= 6 or persona.extraversion >= 7) and self._rng.random() < 0.4:
+            exercise_spot = self._rng.choice(["gym", "park", "sports_field", "park"])
+            exercise_details = {
+                "gym": "Post-work gym session",
+                "park": self._rng.choice(["Jogging in the park", "Evening walk in the park",
+                                          "Stretching and walking in the park"]),
+                "sports_field": self._rng.choice(["Playing pickup soccer after work",
+                                                   "Evening run at the sports field",
+                                                   "Shooting hoops at the sports field"]),
+            }
+            h, m = t // 60, t % 60
+            t = self._add(h, m, "move", exercise_spot, 1, f"Heading to {exercise_spot}",
+                           {})
+            h, m = t // 60, t % 60
+            t = self._add(h, m, "exercise", exercise_spot, self._rng.randint(2, 4),
+                           exercise_details.get(exercise_spot, f"Exercising at {exercise_spot}"),
+                           {"fun": 0.2, "energy": -0.1})
 
         # Commute home
         h, m = t // 60, t % 60
@@ -310,10 +348,19 @@ class DailyRoutine:
                 t = self._add(h, m, "move", place, 1, f"Going to {place}",
                                {})
                 act_ticks = self._rng.randint(3, 6)
-                act_type = "exercise" if place == "gym" else "relax"
+                act_type = "exercise" if place in ("gym", "sports_field") else "relax"
+                if place == "park" and self._rng.random() < 0.4:
+                    act_type = "exercise"
+                act_detail = {
+                    "park": self._rng.choice(["Walking around the park", "Jogging in the park",
+                                               "Relaxing in the park"]),
+                    "sports_field": self._rng.choice(["Playing soccer", "Shooting hoops",
+                                                       "Running laps", "Playing frisbee"]),
+                    "gym": "Working out",
+                }.get(place, f"Hanging out at {place}")
                 h, m = t // 60, t % 60
                 t = self._add(h, m, act_type, place, act_ticks,
-                               f"Hanging out at {place}",
+                               act_detail,
                                {"social": 0.2, "fun": 0.25})
         else:
             # Quiet afternoon
@@ -368,7 +415,8 @@ class DailyRoutine:
 
         if e >= 6:
             # Extroverts: go out, stay until ~30-45 min before sleep, then come home
-            venue = self._rng.choice(["bar", "restaurant", "park", "cinema", "town_square"])
+            venue = self._rng.choice(["bar", "restaurant", "park", "cinema",
+                                      "town_square", "sports_field", "park"])
             h, m = t // 60, t % 60
             t = self._add(h, m, "move", venue, 1, f"Heading to {venue}", {})
             wind_down_start = sleep_t - self._rng.randint(2, 3) * 15
@@ -399,15 +447,21 @@ class DailyRoutine:
     def _add_leisure_block(self, persona: Persona, home: str,
                            t: int, end_t: int) -> int:
         """Fill a leisure period with activities based on personality."""
-        activities = []
+        # Base activities available to everyone
+        activities = ["park", "park"]  # Park is always a strong option
+
         if persona.extraversion >= 6:
-            activities.extend(["park", "cafe", "gym", "town_square", "sports_field"])
+            activities.extend(["cafe", "gym", "town_square", "sports_field",
+                               "sports_field", "park", "bar"])
+        elif persona.extraversion >= 4:
+            activities.extend(["cafe", "park", "sports_field", "town_square"])
         else:
-            activities.extend(["library", "park", "church"])
+            activities.extend(["library", "church", "park"])
+
         if persona.conscientiousness >= 6:
-            activities.append("gym")
+            activities.extend(["gym", "sports_field"])
         if persona.openness >= 6:
-            activities.extend(["library", "park", "cinema"])
+            activities.extend(["library", "park", "cinema", "town_square"])
 
         dest = self._rng.choice(activities)
         available_ticks = max(0, (end_t - t) // 15)
@@ -424,26 +478,56 @@ class DailyRoutine:
         # Activity there
         act_ticks = min(available_ticks - 1, self._rng.randint(2, max(3, available_ticks - 1)))
         if act_ticks > 0:
-            act_type = "exercise" if dest == "gym" else "relax"
+            act_type = "exercise" if dest in ("gym", "sports_field") else "relax"
+            # Park can be exercise too (jogging, walking)
+            if dest == "park" and self._rng.random() < 0.5:
+                act_type = "exercise"
+
             act_detail = {
-                "park": "Taking a walk in the park",
-                "cafe": "Hanging out at the cafe",
-                "gym": "Working out at the gym",
-                "library": "Reading at the library",
+                "park": self._rng.choice([
+                    "Taking a walk in the park", "Jogging through the park",
+                    "Strolling along the park paths", "Sitting on a bench in the park",
+                    "Walking the trails at Willow Park", "Enjoying nature in the park",
+                    "Doing yoga in the park", "Reading on a park bench",
+                ]),
+                "cafe": self._rng.choice([
+                    "Hanging out at the cafe", "Having coffee at the cafe",
+                    "Working on a laptop at the cafe", "Chatting at the cafe",
+                ]),
+                "gym": self._rng.choice([
+                    "Working out at the gym", "Lifting weights at the gym",
+                    "Doing cardio at the gym", "Fitness class at the gym",
+                ]),
+                "library": self._rng.choice([
+                    "Reading at the library", "Browsing books at the library",
+                    "Studying at the library", "Quiet time at the library",
+                ]),
                 "cinema": "Watching a movie",
-                "town_square": "People-watching at the square",
-                "sports_field": "Playing sports at the field",
+                "town_square": self._rng.choice([
+                    "People-watching at the square", "Hanging out at the square",
+                    "Sitting by the fountain in town square",
+                ]),
+                "sports_field": self._rng.choice([
+                    "Playing soccer at the sports field",
+                    "Shooting hoops at the sports field",
+                    "Playing catch at the sports field",
+                    "Running laps at the sports field",
+                    "Playing frisbee at the sports field",
+                    "Doing drills at the sports field",
+                ]),
                 "church": "Quiet time at the church",
+                "bar": "Having a drink at the bar",
             }.get(dest, f"Spending time at {dest}")
             needs = {
-                "park": {"fun": 0.2, "comfort": 0.1},
+                "park": {"fun": 0.2, "comfort": 0.15},
                 "cafe": {"social": 0.2, "fun": 0.1},
                 "gym": {"energy": -0.1, "fun": 0.2},
                 "library": {"fun": 0.15, "comfort": 0.1},
                 "cinema": {"fun": 0.3, "social": 0.1},
                 "town_square": {"social": 0.2, "fun": 0.15},
-                "sports_field": {"fun": 0.25, "energy": -0.1},
+                "sports_field": {"fun": 0.3, "social": 0.15, "energy": -0.1},
                 "church": {"comfort": 0.2, "purpose": 0.1},
+                "bar": {"social": 0.2, "fun": 0.15},
             }.get(dest, {"fun": 0.1})
             h, m = t // 60, t % 60
             t = self._add(h, m, act_type, dest, act_ticks, act_detail, needs)

@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SociAgentTransformer Architecture</title>
+<style>
+  body {
+    margin: 0;
+    background: #0d1117;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    padding: 40px 20px;
+  }
+  svg {
+    filter: drop-shadow(0 4px 24px rgba(0,0,0,0.4));
+  }
+  .title {
+    font-size: 22px;
+    font-weight: 700;
+    fill: #e6edf3;
+    letter-spacing: 0.5px;
+  }
+  .subtitle {
+    font-size: 12px;
+    fill: #8b949e;
+    font-weight: 400;
+  }
+  .box-label {
+    font-size: 11px;
+    font-weight: 600;
+    fill: #e6edf3;
+  }
+  .box-detail {
+    font-size: 9.5px;
+    fill: #8b949e;
+  }
+  .box-dim {
+    font-size: 9px;
+    fill: #58a6ff;
+    font-weight: 600;
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+  }
+  .group-label {
+    font-size: 9px;
+    font-weight: 600;
+    fill: #e6edf3;
+  }
+  .group-dim {
+    font-size: 8px;
+    fill: #8b949e;
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+  }
+  .section-label {
+    font-size: 10px;
+    font-weight: 700;
+    fill: #8b949e;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+  }
+  .arrow {
+    stroke: #30363d;
+    stroke-width: 2;
+    fill: none;
+    marker-end: url(#arrowhead);
+  }
+  .arrow-action {
+    stroke: #f0883e;
+    stroke-width: 1.5;
+    fill: none;
+    stroke-dasharray: 4 3;
+    marker-end: url(#arrowhead-orange);
+  }
+  .brace-text {
+    font-size: 9px;
+    fill: #8b949e;
+    font-style: italic;
+  }
+  .repeat-badge {
+    font-size: 9px;
+    font-weight: 700;
+    fill: #f0883e;
+  }
+  .param-text {
+    font-size: 8.5px;
+    fill: #7ee787;
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+  }
+</style>
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="1280" viewBox="0 0 720 1280">
+  <defs>
+    <!-- Rounded rect filter for glow -->
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <!-- Arrow markers -->
+    <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#30363d"/>
+    </marker>
+    <marker id="arrowhead-orange" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#f0883e"/>
+    </marker>
+
+    <!-- Gradient backgrounds -->
+    <linearGradient id="grad-input" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1a2332"/>
+      <stop offset="100%" stop-color="#161b22"/>
+    </linearGradient>
+    <linearGradient id="grad-tokenizer" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1c2d1e"/>
+      <stop offset="100%" stop-color="#161b22"/>
+    </linearGradient>
+    <linearGradient id="grad-transformer" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2d1f32"/>
+      <stop offset="100%" stop-color="#161b22"/>
+    </linearGradient>
+    <linearGradient id="grad-cls" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2d2a1f"/>
+      <stop offset="100%" stop-color="#161b22"/>
+    </linearGradient>
+    <linearGradient id="grad-head-action" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2d1f1f"/>
+      <stop offset="100%" stop-color="#1a1515"/>
+    </linearGradient>
+    <linearGradient id="grad-head-loc" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1f2a2d"/>
+      <stop offset="100%" stop-color="#151a1a"/>
+    </linearGradient>
+    <linearGradient id="grad-head-dur" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2d2d1f"/>
+      <stop offset="100%" stop-color="#1a1a15"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="720" height="1280" rx="16" fill="#0d1117" stroke="#21262d" stroke-width="1"/>
+
+  <!-- Title -->
+  <text x="360" y="38" text-anchor="middle" class="title">SociAgentTransformer</text>
+  <text x="360" y="56" text-anchor="middle" class="subtitle">Transformer + Mixture-of-Experts for Agent Decision Making</text>
+  <text x="360" y="72" text-anchor="middle" class="param-text">1.45M params | ~5.5 MB (fp32) | ~1ms inference (50 agents, ONNX)</text>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- INPUT LAYER -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <text x="36" y="108" class="section-label">Input</text>
+
+  <rect x="110" y="92" width="500" height="44" rx="8" fill="url(#grad-input)" stroke="#1f6feb" stroke-width="1.5"/>
+  <text x="360" y="112" text-anchor="middle" class="box-label">Agent State Feature Vector</text>
+  <text x="360" y="126" text-anchor="middle" class="box-dim">(B, 47)</text>
+
+  <!-- Arrow down -->
+  <line x1="360" y1="136" x2="360" y2="158" class="arrow"/>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- FEATURE TOKENIZER -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <text x="36" y="178" class="section-label">Tokenizer</text>
+
+  <rect x="60" y="162" width="600" height="155" rx="10" fill="none" stroke="#238636" stroke-width="1.5" stroke-dasharray="5 3"/>
+  <text x="360" y="182" text-anchor="middle" class="box-label">Feature Tokenizer</text>
+  <text x="360" y="194" text-anchor="middle" class="box-detail">Split features into 6 semantic groups, project each to d_model</text>
+
+  <!-- 6 Feature group boxes -->
+  <!-- Row 1 -->
+  <rect x="80" y="206" width="165" height="44" rx="6" fill="url(#grad-tokenizer)" stroke="#238636" stroke-width="1"/>
+  <text x="162" y="222" text-anchor="middle" class="group-label">Personality</text>
+  <text x="162" y="236" text-anchor="middle" class="group-dim">[0:6] Big5 + Age</text>
+  <text x="162" y="246" text-anchor="middle" class="box-dim">6 -> 128</text>
+
+  <rect x="277" y="206" width="165" height="44" rx="6" fill="url(#grad-tokenizer)" stroke="#238636" stroke-width="1"/>
+  <text x="360" y="222" text-anchor="middle" class="group-label">Time</text>
+  <text x="360" y="236" text-anchor="middle" class="group-dim">[6:12] sin/cos + day</text>
+  <text x="360" y="246" text-anchor="middle" class="box-dim">6 -> 128</text>
+
+  <rect x="474" y="206" width="165" height="44" rx="6" fill="url(#grad-tokenizer)" stroke="#238636" stroke-width="1"/>
+  <text x="557" y="222" text-anchor="middle" class="group-label">Needs + Mood</text>
+  <text x="557" y="236" text-anchor="middle" class="group-dim">[12:21] 6 needs + urgency</text>
+  <text x="557" y="246" text-anchor="middle" class="box-dim">9 -> 128</text>
+
+  <!-- Row 2 -->
+  <rect x="80" y="258" width="165" height="44" rx="6" fill="url(#grad-tokenizer)" stroke="#238636" stroke-width="1"/>
+  <text x="162" y="274" text-anchor="middle" class="group-label">Location</text>
+  <text x="162" y="288" text-anchor="middle" class="group-dim">[21:31] zone + flags + people</text>
+  <text x="162" y="298" text-anchor="middle" class="box-dim">10 -> 128</text>
+
+  <rect x="277" y="258" width="165" height="44" rx="6" fill="url(#grad-tokenizer)" stroke="#238636" stroke-width="1"/>
+  <text x="360" y="274" text-anchor="middle" class="group-label">Time Period</text>
+  <text x="360" y="288" text-anchor="middle" class="group-dim">[31:38] 7-class one-hot</text>
+  <text x="360" y="298" text-anchor="middle" class="box-dim">7 -> 128</text>
+
+  <rect x="474" y="258" width="165" height="44" rx="6" fill="url(#grad-tokenizer)" stroke="#238636" stroke-width="1"/>
+  <text x="557" y="274" text-anchor="middle" class="group-label">Last Action</text>
+  <text x="557" y="288" text-anchor="middle" class="group-dim">[38:47] 9-class one-hot</text>
+  <text x="557" y="298" text-anchor="middle" class="box-dim">9 -> 128</text>
+
+  <!-- Plus positional embeddings note -->
+  <text x="360" y="316" text-anchor="middle" class="brace-text">+ learnable positional embeddings per token</text>
+
+  <!-- Output shape from tokenizer -->
+  <text x="360" y="330" text-anchor="middle" class="box-dim">(B, 6, 128)</text>
+
+  <!-- Arrow down -->
+  <line x1="360" y1="335" x2="360" y2="362" class="arrow"/>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- TRANSFORMER ENCODER (x4) -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <text x="36" y="382" class="section-label">Encoder</text>
+
+  <!-- Repeat bracket -->
+  <rect x="60" y="366" width="600" height="310" rx="10" fill="none" stroke="#8b5cf6" stroke-width="1.5" stroke-dasharray="5 3"/>
+  <rect x="600" y="366" width="56" height="22" rx="6" fill="#8b5cf6" fill-opacity="0.2" stroke="#8b5cf6" stroke-width="1"/>
+  <text x="628" y="381" text-anchor="middle" class="repeat-badge">x 4</text>
+
+  <text x="360" y="386" text-anchor="middle" class="box-label">Transformer Encoder Block</text>
+
+  <!-- Multi-Head Self Attention -->
+  <rect x="130" y="396" width="460" height="52" rx="8" fill="url(#grad-transformer)" stroke="#8b5cf6" stroke-width="1.2"/>
+  <text x="360" y="416" text-anchor="middle" class="box-label">Multi-Head Self-Attention</text>
+  <text x="360" y="430" text-anchor="middle" class="box-detail">8 heads, d_k=16, batch_first=True</text>
+  <text x="360" y="442" text-anchor="middle" class="param-text">Q, K, V: (B, 6, 128) -> (B, 6, 128)</text>
+
+  <!-- Residual + LayerNorm -->
+  <rect x="220" y="454" width="280" height="24" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <text x="360" y="470" text-anchor="middle" class="box-detail">Add & LayerNorm</text>
+
+  <!-- Arrow -->
+  <line x1="360" y1="478" x2="360" y2="496" class="arrow"/>
+
+  <!-- MoE Feed-Forward -->
+  <rect x="130" y="498" width="460" height="130" rx="8" fill="url(#grad-transformer)" stroke="#8b5cf6" stroke-width="1.2"/>
+  <text x="360" y="518" text-anchor="middle" class="box-label">Mixture-of-Experts Feed-Forward</text>
+  <text x="360" y="532" text-anchor="middle" class="box-detail">4 experts, top-2 routing, gated softmax</text>
+
+  <!-- 4 Expert boxes inside -->
+  <rect x="155" y="544" width="95" height="36" rx="5" fill="#1c1c2e" stroke="#6e40c9" stroke-width="1"/>
+  <text x="202" y="558" text-anchor="middle" class="group-label">Expert 0</text>
+  <text x="202" y="572" text-anchor="middle" class="group-dim">128->256->128</text>
+
+  <rect x="263" y="544" width="95" height="36" rx="5" fill="#1c1c2e" stroke="#6e40c9" stroke-width="1"/>
+  <text x="310" y="558" text-anchor="middle" class="group-label">Expert 1</text>
+  <text x="310" y="572" text-anchor="middle" class="group-dim">128->256->128</text>
+
+  <rect x="371" y="544" width="95" height="36" rx="5" fill="#1c1c2e" stroke="#6e40c9" stroke-width="1"/>
+  <text x="418" y="558" text-anchor="middle" class="group-label">Expert 2</text>
+  <text x="418" y="572" text-anchor="middle" class="group-dim">128->256->128</text>
+
+  <rect x="479" y="544" width="95" height="36" rx="5" fill="#1c1c2e" stroke="#6e40c9" stroke-width="1"/>
+  <text x="526" y="558" text-anchor="middle" class="group-label">Expert 3</text>
+  <text x="526" y="572" text-anchor="middle" class="group-dim">128->256->128</text>
+
+  <!-- Gate -->
+  <rect x="260" y="590" width="200" height="26" rx="5" fill="#1c1c2e" stroke="#f0883e" stroke-width="1"/>
+  <text x="360" y="607" text-anchor="middle" class="group-label" style="fill:#f0883e">Gate: Linear(128, 4) -> top-2</text>
+
+  <!-- Residual + LayerNorm -->
+  <rect x="220" y="634" width="280" height="24" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <text x="360" y="650" text-anchor="middle" class="box-detail">Add & LayerNorm</text>
+
+  <!-- Output shape -->
+  <text x="360" y="680" text-anchor="middle" class="box-dim">(B, 6, 128)</text>
+
+  <!-- Arrow down -->
+  <line x1="360" y1="685" x2="360" y2="710" class="arrow"/>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- CLS AGGREGATION -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <text x="36" y="735" class="section-label">Pooling</text>
+
+  <rect x="110" y="716" width="500" height="90" rx="8" fill="url(#grad-cls)" stroke="#d29922" stroke-width="1.5"/>
+  <text x="360" y="738" text-anchor="middle" class="box-label">[CLS] Query Aggregation</text>
+  <text x="360" y="754" text-anchor="middle" class="box-detail">Learned query (1, 1, 128) attends to all 6 tokens via cross-attention</text>
+  <text x="360" y="770" text-anchor="middle" class="param-text">cls_query -> cross_attn(Q=cls, K=tokens, V=tokens) -> LayerNorm</text>
+  <text x="360" y="788" text-anchor="middle" class="box-dim">h: (B, 128)</text>
+
+  <!-- Arrow splits into 3 -->
+  <line x1="360" y1="806" x2="360" y2="830" class="arrow"/>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- TASK HEADS -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <text x="36" y="860" class="section-label">Task Heads</text>
+
+  <!-- Horizontal split line -->
+  <line x1="160" y1="840" x2="560" y2="840" stroke="#30363d" stroke-width="1"/>
+
+  <!-- Three vertical arrows from split -->
+  <line x1="180" y1="840" x2="180" y2="868" class="arrow"/>
+  <line x1="360" y1="840" x2="360" y2="868" class="arrow"/>
+  <line x1="540" y1="840" x2="540" y2="868" class="arrow"/>
+
+  <!-- ACTION HEAD -->
+  <rect x="80" y="870" width="200" height="110" rx="8" fill="url(#grad-head-action)" stroke="#f85149" stroke-width="1.5"/>
+  <text x="180" y="892" text-anchor="middle" class="box-label" style="fill:#f85149">Action Head</text>
+  <text x="180" y="908" text-anchor="middle" class="box-detail">2-layer MLP</text>
+  <text x="180" y="926" text-anchor="middle" class="param-text">Linear(128, 128)</text>
+  <text x="180" y="938" text-anchor="middle" class="param-text">GELU + Dropout(0.1)</text>
+  <text x="180" y="950" text-anchor="middle" class="param-text">Linear(128, 9)</text>
+  <text x="180" y="972" text-anchor="middle" class="box-dim">(B, 9) logits</text>
+
+  <!-- LOCATION HEAD -->
+  <rect x="300" y="870" width="200" height="110" rx="8" fill="url(#grad-head-loc)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="400" y="892" text-anchor="middle" class="box-label" style="fill:#58a6ff">Location Head</text>
+  <text x="400" y="908" text-anchor="middle" class="box-detail">Action-conditioned MLP</text>
+  <text x="400" y="926" text-anchor="middle" class="param-text">Linear(128+9, 128)</text>
+  <text x="400" y="938" text-anchor="middle" class="param-text">GELU + Dropout(0.1)</text>
+  <text x="400" y="950" text-anchor="middle" class="param-text">Linear(128, 38)</text>
+  <text x="400" y="972" text-anchor="middle" class="box-dim">(B, 38) logits</text>
+
+  <!-- DURATION HEAD -->
+  <rect x="520" y="870" width="140" height="110" rx="8" fill="url(#grad-head-dur)" stroke="#d29922" stroke-width="1.5"/>
+  <text x="590" y="892" text-anchor="middle" class="box-label" style="fill:#d29922">Duration Head</text>
+  <text x="590" y="908" text-anchor="middle" class="box-detail">Regression MLP</text>
+  <text x="590" y="926" text-anchor="middle" class="param-text">Linear(137, 64)</text>
+  <text x="590" y="938" text-anchor="middle" class="param-text">GELU</text>
+  <text x="590" y="950" text-anchor="middle" class="param-text">Linear(64, 1)</text>
+  <text x="590" y="972" text-anchor="middle" class="box-dim">sigmoid*7+1</text>
+
+  <!-- Action probs feedback arrows -->
+  <path d="M 180 980 L 180 1000 L 320 1000 L 320 920 L 300 920" class="arrow-action"/>
+  <path d="M 180 980 L 180 1010 L 540 1010 L 540 920 L 520 920" class="arrow-action"/>
+  <text x="250" y="996" class="brace-text" style="fill:#f0883e">softmax(action).detach()</text>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- OUTPUT -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <text x="36" y="1060" class="section-label">Output</text>
+
+  <!-- Three output arrows -->
+  <line x1="180" y1="980" x2="180" y2="1068" class="arrow"/>
+  <line x1="400" y1="980" x2="400" y2="1068" class="arrow"/>
+  <line x1="590" y1="980" x2="590" y2="1068" class="arrow"/>
+
+  <!-- Output boxes -->
+  <rect x="95" y="1070" width="170" height="52" rx="8" fill="#1a1515" stroke="#f85149" stroke-width="1.2"/>
+  <text x="180" y="1090" text-anchor="middle" class="group-label" style="fill:#f85149">Action Type</text>
+  <text x="180" y="1104" text-anchor="middle" class="group-dim">9 classes: move, work,</text>
+  <text x="180" y="1114" text-anchor="middle" class="group-dim">eat, sleep, talk, ...</text>
+
+  <rect x="315" y="1070" width="170" height="52" rx="8" fill="#151a1a" stroke="#58a6ff" stroke-width="1.2"/>
+  <text x="400" y="1090" text-anchor="middle" class="group-label" style="fill:#58a6ff">Target Location</text>
+  <text x="400" y="1104" text-anchor="middle" class="group-dim">38 locations: cafe,</text>
+  <text x="400" y="1114" text-anchor="middle" class="group-dim">park, office, home, ...</text>
+
+  <rect x="520" y="1070" width="140" height="52" rx="8" fill="#1a1a15" stroke="#d29922" stroke-width="1.2"/>
+  <text x="590" y="1090" text-anchor="middle" class="group-label" style="fill:#d29922">Duration</text>
+  <text x="590" y="1104" text-anchor="middle" class="group-dim">1-8 ticks</text>
+  <text x="590" y="1114" text-anchor="middle" class="group-dim">(15 min each)</text>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- LOSS SECTION -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <text x="36" y="1160" class="section-label">Training</text>
+
+  <rect x="80" y="1146" width="560" height="52" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <text x="360" y="1168" text-anchor="middle" class="box-label">Multi-Task Loss</text>
+  <text x="360" y="1184" text-anchor="middle" class="param-text">L = 1.0*CE_action(weighted) + 0.5*CE_location + 0.2*MSE_duration</text>
+
+  <rect x="80" y="1206" width="560" height="34" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <text x="360" y="1224" text-anchor="middle" class="box-detail">
+    AdamW (lr=3e-4, wd=1e-4) | CosineAnnealing | Grad clip=1.0 | 30 epochs | Batch=512
+  </text>
+
+  <!-- Footer -->
+  <text x="360" y="1268" text-anchor="middle" class="subtitle">ONNX export with opset 17 | CPU inference ~1ms for 50 agents</text>
+
+</svg>
+</body>
+</html>
