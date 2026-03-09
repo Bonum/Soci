@@ -4,6 +4,9 @@
 # LLM providers
 anthropic>=0.79.0          # Claude API
 httpx>=0.28.0              # HTTP client (also used by Ollama)
+onnxruntime>=1.17.0        # Neural network inference (Soci Agent NN)
+numpy>=1.24.0              # Required by onnxruntime
+huggingface_hub>=0.20.0    # Download NN model from HF Hub
 # groq>=0.11.0             # Groq API (optional — install if using Groq)
 
 # Web API

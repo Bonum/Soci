@@ -23,7 +23,7 @@ try:
 except ImportError:
     pass
 
-from soci.engine.llm import create_llm_client, PROVIDER_GROQ, PROVIDER_GEMINI, PROVIDER_HF, PROVIDER_OLLAMA, PROVIDER_CLAUDE
+from soci.engine.llm import create_llm_client, PROVIDER_GROQ, PROVIDER_GEMINI, PROVIDER_OLLAMA, PROVIDER_CLAUDE, PROVIDER_NN
 from soci.engine.simulation import Simulation
 from soci.persistence.database import Database
 from soci.persistence.snapshots import load_simulation, save_simulation
@@ -87,8 +87,9 @@ async def switch_llm_provider(provider: str, model: Optional[str] = None) -> Non
 async def simulation_loop(sim: Simulation, db: Database, tick_delay: float = 2.0) -> None:
     """Background task that runs the simulation continuously."""
     global _sim_paused, _sim_speed
-    # Groq: 30 req/min, Gemini free: 15 RPM, HF serverless: also slow
-    is_rate_limited = _llm_provider in (PROVIDER_GROQ, PROVIDER_GEMINI, PROVIDER_HF)
+    # Groq: 30 req/min, Gemini free: 15 RPM — these need rate limiting.
+    # NN and Ollama are local and don't need it.
+    is_rate_limited = _llm_provider in (PROVIDER_GROQ, PROVIDER_GEMINI)
     if is_rate_limited:
         tick_delay = 4.0  # Longer ticks to stay under rate limit
 
@@ -268,30 +269,27 @@ async def save_state_to_github(data_dir: Path) -> bool:
 def _choose_provider() -> str:
     """Let the user choose an LLM provider on startup.
 
-    Priority: SOCI_PROVIDER env var > LLM_PROVIDER env var > interactive prompt.
+    Priority: SOCI_PROVIDER env var > LLM_PROVIDER env var > NN (default) > interactive.
     """
     # Check explicit env vars first
     provider = os.environ.get("SOCI_PROVIDER", "").lower() or os.environ.get("LLM_PROVIDER", "").lower()
-    if provider in ("claude", "groq", "gemini", "hf", "ollama"):
+    if provider in ("nn", "claude", "groq", "gemini", "ollama"):
         return provider
 
     # Check which keys are available
     has_groq = bool(os.environ.get("GROQ_API_KEY"))
     has_gemini = bool(os.environ.get("GEMINI_API_KEY"))
-    has_hf = bool(os.environ.get("HF_TOKEN"))
 
-    # Priority: Soci fine-tuned model first, then free cloud providers, then Ollama.
-    options = []
-    if has_hf:
-        options.append(("hf", "Soci Agent / HF Inference (RayMelius/soci-agent-7b)"))
+    # NN is always available (local ONNX model, no API key).
+    options = [("nn", "Soci Agent NN (local ONNX, free, fast)")]
     if has_groq:
         options.append(("groq", "Groq (free tier, 30 req/min)"))
     if has_gemini:
         options.append(("gemini", "Gemini (free tier, 15 req/min via AI Studio)"))
-    options.append(("ollama", "Ollama / Soci Agent local (soci-agent-7b)"))
+    options.append(("ollama", "Ollama (local LLM)"))
 
-    # If only one option, use it
-    if len(options) == 1:
+    # If only NN + ollama, just use NN
+    if len(options) <= 2:
         chosen = options[0][0]
         print(f"  LLM Provider: {options[0][1]}")
         return chosen
@@ -330,7 +328,7 @@ async def lifespan(app: FastAPI):
 
     # Quick probe — if the chosen provider is already quota-exhausted or broken,
     # fall back through Groq → Gemini → Ollama so the sim starts with a working LLM.
-    _fallback_order = [PROVIDER_GROQ, PROVIDER_GEMINI, PROVIDER_OLLAMA]
+    _fallback_order = [PROVIDER_NN, PROVIDER_GROQ, PROVIDER_GEMINI, PROVIDER_OLLAMA]
     probe = await llm.complete("You are a test.", "Reply: ok", max_tokens=8)
     if not probe:
         last_err = getattr(llm, "_last_error", "") or getattr(llm, "_auth_error", "")
@@ -363,9 +361,9 @@ async def lifespan(app: FastAPI):
     # Ollama is local so it defaults to 1.0 (100%).
     # Override via SOCI_LLM_PROB env var or the UI slider.
     _provider_default_prob = {
+        PROVIDER_NN: 1.0,       # NN is free/local — no rate limiting needed
         PROVIDER_GEMINI: 0.10,
         PROVIDER_GROQ: 0.10,
-        PROVIDER_HF: 0.10,
         PROVIDER_CLAUDE: 0.10,
         PROVIDER_OLLAMA: 1.0,
     }

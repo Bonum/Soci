@@ -20,6 +20,7 @@ PROVIDER_OLLAMA = "ollama"
 PROVIDER_GROQ = "groq"
 PROVIDER_GEMINI = "gemini"
 PROVIDER_HF = "hf"
+PROVIDER_NN = "nn"
 
 # Claude model IDs
 MODEL_SONNET = "claude-sonnet-4-5-20250929"
@@ -59,12 +60,8 @@ _GEMINI_MODEL_UNAVAILABLE_KWS = (
     "does not exist", "unavailable", "serverless",
 )
 
-# Hugging Face router model IDs (router.huggingface.co/v1 — auto-routes to best provider)
-MODEL_HF_QWEN = "Qwen/Qwen2.5-7B-Instruct"          # default — auto-routed, great quality
-MODEL_HF_LLAMA = "meta-llama/Llama-3.2-3B-Instruct"
-MODEL_HF_MISTRAL = "mistralai/Mistral-7B-Instruct-v0.3"
-MODEL_HF_SMOL = "HuggingFaceTB/SmolLM3-3B:hf-inference"  # CPU inference, no credits needed
-MODEL_HF_SOCI = "RayMelius/soci-agent-7b"            # Soci fine-tuned Qwen2.5-7B (LoRA, GGUF)
+# Soci NN model (ONNX, runs locally — no API key needed)
+MODEL_NN_SOCI = "RayMelius/soci-agent-nn"
 
 # Ollama model IDs for Soci fine-tuned models
 MODEL_OLLAMA_SOCI = "soci-agent-7b"   # load via: ollama create soci-agent-7b -f Modelfile
@@ -951,189 +948,6 @@ class GeminiClient:
         return {}
 
 
-# ============================================================
-# Hugging Face Serverless Inference Client (free tier)
-# ============================================================
-
-class HFInferenceClient:
-    """Hugging Face Serverless Inference via router.huggingface.co/v1.
-
-    Requires an HF_TOKEN with 'Inference Providers (Write)' permission.
-    HF_TOKEN is auto-injected in HF Spaces but only has repo-read access;
-    a PRO account or purchased credits is needed for LLM inference.
-    """
-
-    def __init__(
-        self,
-        api_key: Optional[str] = None,
-        default_model: str = MODEL_HF_SMOL,
-        max_retries: int = 3,
-    ) -> None:
-        self.api_key = (
-            api_key
-            or os.environ.get("HF_TOKEN", "")
-            or os.environ.get("HUGGINGFACE_TOKEN", "")
-            or os.environ.get("HF_API_TOKEN", "")
-        )
-        if not self.api_key:
-            logger.warning("HF_TOKEN not set — HF inference will be unavailable until token is configured")
-        self.default_model = default_model
-        self.max_retries = max_retries
-        self.usage = LLMUsage()
-        self.provider = PROVIDER_HF
-        self._http = httpx.AsyncClient(
-            base_url="https://router.huggingface.co/v1/",
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
-            timeout=120.0,  # HF can be slow under load
-        )
-        self._rate_limited_until: float = 0.0
-        self._auth_error: str = ""
-        self._last_error: str = ""   # last non-auth error for diagnostics
-
-    def _is_quota_exhausted(self) -> bool:
-        return time.monotonic() < self._rate_limited_until
-
-    def _map_model(self, model: str) -> str:
-        """Map Claude/Groq/Gemini model names to HF router equivalents."""
-        mapping = {
-            MODEL_SONNET: self.default_model,
-            MODEL_HAIKU: self.default_model,
-            MODEL_GROQ_LLAMA_8B: MODEL_HF_LLAMA,
-            MODEL_GEMINI_FLASH: self.default_model,
-        }
-        return mapping.get(model, model)
-
-    @property
-    def llm_status(self) -> str:
-        if not self.api_key:
-            return "nokey"
-        if self._auth_error:
-            return "nokey"   # gated model / bad token
-        return "limited" if self._is_quota_exhausted() else "active"
-
-    async def complete(
-        self,
-        system: str,
-        user_message: str,
-        model: Optional[str] = None,
-        temperature: float = 0.7,
-        max_tokens: int = 1024,
-    ) -> str:
-        if not self.api_key:
-            self._last_error = "HF_TOKEN not set"
-            return ""
-        if self._is_quota_exhausted():
-            logger.debug("HF quota circuit breaker active — skipping complete()")
-            return ""
-
-        model = self._map_model(model or self.default_model)
-        # /no_think disables chain-of-thought on SmolLM3 and similar thinking models;
-        # harmless for other models since it's prepended before the system prompt.
-        system_with_flag = "/no_think\n" + system
-        payload = {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": system_with_flag},
-                {"role": "user", "content": user_message},
-            ],
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
-
-        for attempt in range(self.max_retries):
-            try:
-                resp = await self._http.post("chat/completions", json=payload)
-                resp.raise_for_status()
-                data = resp.json()
-                usage = data.get("usage", {})
-                self.usage.record(model, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
-                self._last_error = ""  # clear on success
-                text = data["choices"][0]["message"]["content"] or ""
-                # Strip any <think>...</think> blocks that thinking models may emit
-                import re as _re
-                text = _re.sub(r"<think>.*?</think>", "", text, flags=_re.DOTALL).strip()
-                return text
-            except httpx.HTTPStatusError as e:
-                status = e.response.status_code
-                body = e.response.text[:300]
-                if status == 429:
-                    retry_after = e.response.headers.get("retry-after", "10")
-                    try:
-                        wait = float(retry_after)
-                    except (ValueError, TypeError):
-                        wait = 10.0
-                    if wait > 60:
-                        self._rate_limited_until = time.monotonic() + wait
-                        logger.warning(f"HF quota exhausted for {wait:.0f}s")
-                        return ""
-                    logger.warning(f"HF rate limited, waiting {wait}s")
-                    await asyncio.sleep(wait)
-                elif status in (401, 402, 403, 410):
-                    # Auth/payment failure — circuit-break for 1h to stop spam retries.
-                    # 402 means no credits (token lacks Inference Providers permission).
-                    self._rate_limited_until = time.monotonic() + 3600
-                    self._auth_error = body
-                    logger.error(
-                        f"HF auth error ({status}): {body[:120]} — "
-                        "HF_TOKEN needs 'Inference Providers (Write)' permission"
-                    )
-                    return ""
-                elif status in (503, 504):
-                    # Model cold-start — circuit-break immediately so the sim
-                    # tick is not blocked; retry once the estimated window passes.
-                    try:
-                        import json as _json
-                        estimated = float(_json.loads(e.response.text).get("estimated_time", 30))
-                    except Exception:
-                        estimated = 30.0
-                    wait = max(estimated, 20.0)
-                    self._rate_limited_until = time.monotonic() + wait
-                    self._last_error = f"503 model loading — retry in {wait:.0f}s"
-                    logger.warning(f"HF model cold-start, circuit-breaking for {wait:.0f}s")
-                    return ""
-                else:
-                    self._last_error = f"HTTP {status}: {body}"
-                    logger.error(f"HF HTTP error: {status} {body}")
-                    if attempt == self.max_retries - 1:
-                        return ""
-                    await asyncio.sleep(2)
-            except Exception as e:
-                self._last_error = str(e)
-                logger.error(f"HF error: {e}")
-                if attempt == self.max_retries - 1:
-                    return ""
-                await asyncio.sleep(2)
-        if not self._last_error:
-            self._last_error = "all retries exhausted"
-        return ""
-
-    async def complete_json(
-        self,
-        system: str,
-        user_message: str,
-        model: Optional[str] = None,
-        temperature: float = 0.7,
-        max_tokens: int = 1024,
-    ) -> dict:
-        if self._is_quota_exhausted():
-            logger.debug("HF quota circuit breaker active — skipping complete_json()")
-            return {}
-
-        json_instruction = (
-            "\n\nRespond ONLY with valid JSON. No markdown, no explanation, no extra text. "
-            "Just the JSON object."
-        )
-        text = await self.complete(
-            system=system,
-            user_message=user_message + json_instruction,
-            model=model,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-        return _parse_json_response(text)
 
 
 # ============================================================
@@ -1144,35 +958,30 @@ def create_llm_client(
     provider: Optional[str] = None,
     model: Optional[str] = None,
     ollama_url: str = "http://localhost:11434",
-) -> ClaudeClient | OllamaClient | GroqClient | GeminiClient | HFInferenceClient:
+):
     """Create an LLM client based on environment or explicit config.
 
     Provider detection order:
     1. Explicit provider argument
     2. LLM_PROVIDER env var
-    3. If ANTHROPIC_API_KEY is set → Claude
-    4. If GROQ_API_KEY is set → Groq (fast cloud)
-    5. If GEMINI_API_KEY is set → Gemini (free tier)
-    6. If HF_TOKEN is set → HF Inference (free, auto-available in HF Spaces)
-    7. Default → Ollama (local)
+    3. Default → NN (local ONNX model, zero cost)
+    4. If ANTHROPIC_API_KEY is set → Claude
+    5. If GROQ_API_KEY is set → Groq
+    6. If GEMINI_API_KEY is set → Gemini
+    7. Fallback → Ollama (local)
     """
     if provider is None:
         provider = os.environ.get("LLM_PROVIDER", "").lower()
 
     if not provider:
-        # Auto-detect: Claude → HF (soci-agent) → Groq → Gemini → Ollama (soci-agent)
-        if os.environ.get("ANTHROPIC_API_KEY"):
-            provider = PROVIDER_CLAUDE
-        elif os.environ.get("HF_TOKEN"):
-            provider = PROVIDER_HF
-        elif os.environ.get("GROQ_API_KEY"):
-            provider = PROVIDER_GROQ
-        elif os.environ.get("GEMINI_API_KEY"):
-            provider = PROVIDER_GEMINI
-        else:
-            provider = PROVIDER_OLLAMA
+        # Auto-detect: NN first (always available), then cloud providers
+        # NN is the default — free, fast, no API key needed.
+        provider = PROVIDER_NN
 
-    if provider == PROVIDER_CLAUDE:
+    if provider == PROVIDER_NN:
+        from soci.engine.nn_client import NNClient
+        return NNClient()
+    elif provider == PROVIDER_CLAUDE:
         default_model = model or MODEL_HAIKU
         return ClaudeClient(default_model=default_model)
     elif provider == PROVIDER_GROQ:
@@ -1181,14 +990,11 @@ def create_llm_client(
     elif provider == PROVIDER_GEMINI:
         default_model = model or os.environ.get("GEMINI_MODEL", MODEL_GEMINI_FLASH)
         return GeminiClient(default_model=default_model)
-    elif provider == PROVIDER_HF:
-        default_model = model or os.environ.get("HF_MODEL", MODEL_HF_SOCI)
-        return HFInferenceClient(default_model=default_model)
     elif provider == PROVIDER_OLLAMA:
         default_model = model or os.environ.get("OLLAMA_MODEL", MODEL_OLLAMA_SOCI)
         return OllamaClient(base_url=ollama_url, default_model=default_model)
     else:
-        raise ValueError(f"Unknown LLM provider: {provider}. Use 'claude', 'groq', 'gemini', 'hf', or 'ollama'.")
+        raise ValueError(f"Unknown LLM provider: {provider}. Use 'nn', 'claude', 'groq', 'gemini', or 'ollama'.")
 
 
 # --- Prompt Templates ---

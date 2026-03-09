@@ -274,26 +274,15 @@ async def get_llm_providers():
     current = get_llm_provider()
     current_model = getattr(get_simulation().llm, "default_model", "")
     providers = []
+    # NN is always available — local ONNX model, no API key needed
+    providers.append({"id": "nn",     "label": "Soci Agent NN (local)",  "icon": "🧠", "model": ""})
     if os.environ.get("ANTHROPIC_API_KEY"):
         providers.append({"id": "claude",  "label": "Claude Haiku",        "icon": "◆", "model": ""})
     if os.environ.get("GROQ_API_KEY"):
         providers.append({"id": "groq",    "label": "Groq Llama 8B",       "icon": "⚡", "model": ""})
     if os.environ.get("GEMINI_API_KEY"):
         providers.append({"id": "gemini",  "label": "Gemini 2.0 Flash Lite", "icon": "✦", "model": ""})
-    # Soci fine-tuned models always shown (public HF repos)
-    providers.append({"id": "hf", "model": "RayMelius/soci-agent-7b",                "label": "Soci Agent 7B (Qwen)",    "icon": "🏙"})
-    providers.append({"id": "hf", "model": "RayMelius/soci-agent-q4",                "label": "Soci Agent 0.5B",         "icon": "🏙"})
-    has_hf = bool(
-        os.environ.get("HF_TOKEN")
-        or os.environ.get("HUGGINGFACE_TOKEN")
-        or os.environ.get("HF_API_TOKEN")
-    )
-    if has_hf:
-        providers.append({"id": "hf", "model": "HuggingFaceH4/zephyr-7b-beta",           "label": "HF Zephyr 7B",    "icon": "🤗"})
-        providers.append({"id": "hf", "model": "Qwen/Qwen2.5-7B-Instruct",               "label": "HF Qwen 2.5 7B",  "icon": "🤗"})
-        providers.append({"id": "hf", "model": "meta-llama/Llama-3.2-3B-Instruct",       "label": "HF Llama 3.2 3B", "icon": "🤗"})
-        providers.append({"id": "hf", "model": "mistralai/Mistral-7B-Instruct-v0.3",     "label": "HF Mistral 7B",   "icon": "🤗"})
-    providers.append({"id": "ollama", "label": "Ollama (local)",           "icon": "🦙", "model": ""})
+    providers.append({"id": "ollama", "label": "Ollama (local LLM)",     "icon": "🦙", "model": ""})
     return {"current": current, "current_model": current_model, "providers": providers}
 
 
