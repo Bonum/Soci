@@ -709,15 +709,11 @@ async def get_controls():
 
 
 @router.post("/controls/llm_probability")
-async def set_llm_probability(value: float = 1.0):
-    """Set LLM call probability (0.0–1.0). Controls how often agents use LLM vs. routine behaviour.
-    At 0.45 with Gemini free tier: ~150 calls/h → ~10h daily runtime."""
-    from soci.api.server import set_llm_call_probability, get_database
+async def set_llm_probability(value: float = 0.10):
+    """Set LLM call probability (0.0–1.0). Controls how often agents use LLM vs. routine behaviour."""
+    from soci.api.server import set_llm_call_probability
     set_llm_call_probability(value)
     from soci.api.server import _llm_call_probability
-    # Persist so the value survives restarts and is shared across workstations via the DB
-    db = get_database()
-    await db.set_setting("llm_call_probability", str(_llm_call_probability))
     return {"llm_call_probability": _llm_call_probability}
 
 
