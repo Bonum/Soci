@@ -279,7 +279,9 @@ class Simulation:
                 if next_speaker_id:
                     responder = self.agents.get(next_speaker_id[0])
                     other = self.agents.get(last_speaker) if last_speaker else None
-                    if responder and other and random.random() < self.llm_call_probability:
+                    if responder and other:
+                        # Always continue active conversations — they already passed
+                        # the probability gate when initiated; don't double-gate them.
                         conv_coros.append(
                             continue_conversation(conv, responder, other, self.llm, self.clock)
                         )

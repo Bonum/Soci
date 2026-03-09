@@ -115,9 +115,10 @@ async def simulation_loop(sim: Simulation, db: Database, tick_delay: float = 2.0
                 sim._skip_llm_this_tick = False
                 if is_rate_limited:
                     # Rate-limited providers: tight budget — probability slider does the fine-tuning.
-                    # Gemini free tier: 4 RPM, ~1500 RPD → budget=1 + prob=0.45 ≈ 150 calls/h (10h).
+                    # Gemini free tier: 4 RPM, ~1500 RPD → budget=2 + prob=0.10 ≈ 15 calls/h.
+                    # Budget=2 so 1 action + 1 conversation can co-exist per tick.
                     sim._max_convos_this_tick = 1
-                    sim._max_llm_calls_this_tick = 1
+                    sim._max_llm_calls_this_tick = 2
                 else:
                     # Ollama / Claude: soft cap to keep ticks responsive
                     sim._max_convos_this_tick = 3
