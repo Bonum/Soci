@@ -325,6 +325,7 @@
         <div class="pp-actions">
           <button class="pp-btn" onclick="openProfileEditor()">Edit Profile</button>
           <button class="pp-btn" onclick="openPlansModal()">My Plans</button>
+          <button class="pp-btn" onclick="openStockExModal()" style="background:#1a3a2e;border-color:#2a6a4e">StockEx</button>
         </div>
       </div>
       <div id="agent-detail"></div>
@@ -404,6 +405,53 @@
     <div class="modal-actions">
       <button class="btn-secondary" onclick="document.getElementById('plans-modal').style.display='none'">Close</button>
       <button class="btn-primary" onclick="addPlan()">Add</button>
+    </div>
+  </div>
+</div>
+
+<!-- StockEx Trading modal -->
+<div id="stockex-modal" class="modal-overlay" style="display:none">
+  <div class="modal-box" style="max-width:480px">
+    <h2 style="color:#4ecca3">StockEx Trading</h2>
+    <div id="stockex-status" style="font-size:11px;color:#888;margin-bottom:8px"></div>
+
+    <div id="stockex-portfolio" style="font-size:11px;color:#a0a0c0;margin-bottom:10px;max-height:120px;overflow-y:auto"></div>
+
+    <div class="modal-row">
+      <div style="flex:1">
+        <label>Member ID</label>
+        <input type="text" id="sx-member" placeholder="USR02" value="USR02" style="text-transform:uppercase">
+      </div>
+      <div style="flex:1">
+        <label>Symbol</label>
+        <select id="sx-symbol" style="width:100%;padding:6px 8px;background:#1e1e30;border:1px solid #3a3a5c;border-radius:6px;color:#e0e0f0;font-size:13px">
+          <option>Loading...</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-row">
+      <div style="flex:1">
+        <label>Side</label>
+        <select id="sx-side" style="width:100%;padding:6px 8px;background:#1e1e30;border:1px solid #3a3a5c;border-radius:6px;color:#e0e0f0;font-size:13px">
+          <option value="BUY">BUY</option>
+          <option value="SELL">SELL</option>
+        </select>
+      </div>
+      <div style="flex:1">
+        <label>Quantity</label>
+        <input type="number" id="sx-qty" min="1" value="100">
+      </div>
+      <div style="flex:1">
+        <label>Price</label>
+        <input type="number" id="sx-price" step="0.01" min="0.01" value="0">
+      </div>
+    </div>
+    <div id="sx-market-info" style="font-size:10px;color:#555;margin:4px 0"></div>
+    <div id="sx-result" style="font-size:11px;margin:6px 0;min-height:18px"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="document.getElementById('stockex-modal').style.display='none'">Close</button>
+      <button class="btn-secondary" onclick="loadStockExPortfolio()">Refresh</button>
+      <button class="btn-primary" onclick="submitStockExOrder()" style="background:#1a6a3e">Place Order</button>
     </div>
   </div>
 </div>
@@ -3363,6 +3411,110 @@ async function addPlan() {
     if (res.ok) { input.value = ''; openPlansModal(); }
   } catch(e){}
 }
+
+// ── StockEx Integration ──────────────────────────────────────────
+let stockexMarketData = {};
+
+async function openStockExModal() {
+  if (!playerToken) return;
+  document.getElementById('stockex-modal').style.display = 'flex';
+  document.getElementById('sx-result').innerHTML = '';
+  // Load market data and symbols
+  try {
+    const res = await fetch(`${API_BASE}/stockex/market`);
+    if (res.ok) {
+      stockexMarketData = await res.json();
+      const sel = document.getElementById('sx-symbol');
+      const symbols = Object.keys(stockexMarketData).sort();
+      sel.innerHTML = symbols.map(s => `<option value="${s}">${s}</option>`).join('');
+      sel.value = 'EXAE'; // Default
+      updateStockExPrice();
+    }
+  } catch(e) {
+    document.getElementById('sx-market-info').textContent = 'Could not load market data';
+  }
+  loadStockExPortfolio();
+}
+
+function updateStockExPrice() {
+  const sym = document.getElementById('sx-symbol').value;
+  const mkt = stockexMarketData[sym];
+  if (mkt) {
+    const bid = mkt.bid_price || 0;
+    const ask = mkt.ask_price || 0;
+    const mid = mkt.mid || ((bid + ask) / 2);
+    document.getElementById('sx-price').value = mid.toFixed(2);
+    document.getElementById('sx-market-info').textContent =
+      `Bid: ${bid.toFixed(2)} | Ask: ${ask.toFixed(2)} | Mid: ${mid.toFixed(2)}`;
+  }
+}
+
+async function loadStockExPortfolio() {
+  const mid = document.getElementById('sx-member').value.trim().toUpperCase();
+  if (!mid) return;
+  try {
+    const res = await fetch(`${API_BASE}/stockex/portfolio/${mid}`);
+    if (res.ok) {
+      const data = await res.json();
+      const cap = data.capital || 0;
+      const pnl = data.pnl || 0;
+      const pnlColor = pnl >= 0 ? '#4ecca3' : '#e74c3c';
+      let html = `<div style="margin-bottom:4px"><b>${data.member_id}</b> Capital: <b>${cap.toFixed(2)}</b> | P&L: <span style="color:${pnlColor}">${pnl.toFixed(2)}</span></div>`;
+      const holdings = data.holdings || [];
+      if (holdings.length > 0) {
+        html += '<div style="display:flex;flex-wrap:wrap;gap:4px">';
+        for (const h of holdings) {
+          const pnlH = h.unrealized_pnl || 0;
+          const c = pnlH >= 0 ? '#4ecca3' : '#e74c3c';
+          html += `<span style="padding:1px 4px;background:#1a1a3e;border-radius:3px;font-size:10px">${h.symbol}: ${h.quantity} <span style="color:${c}">(${pnlH > 0 ? '+' : ''}${pnlH.toFixed(0)})</span></span>`;
+        }
+        html += '</div>';
+      }
+      document.getElementById('stockex-portfolio').innerHTML = html;
+      document.getElementById('stockex-status').textContent = `${holdings.length} positions | Obligation: ${data.obligation || 20}/day`;
+    } else {
+      document.getElementById('stockex-portfolio').innerHTML = '<span style="color:#e74c3c">Member not found</span>';
+    }
+  } catch(e) {
+    document.getElementById('stockex-portfolio').innerHTML = '<span style="color:#e74c3c">Could not load portfolio</span>';
+  }
+}
+
+async function submitStockExOrder() {
+  if (!playerToken) return;
+  const resultEl = document.getElementById('sx-result');
+  const body = {
+    token: playerToken,
+    member_id: document.getElementById('sx-member').value.trim().toUpperCase(),
+    symbol: document.getElementById('sx-symbol').value,
+    side: document.getElementById('sx-side').value,
+    quantity: parseInt(document.getElementById('sx-qty').value) || 0,
+    price: parseFloat(document.getElementById('sx-price').value) || 0,
+  };
+  if (body.quantity <= 0 || body.price <= 0) {
+    resultEl.innerHTML = '<span style="color:#e74c3c">Invalid quantity or price</span>';
+    return;
+  }
+  resultEl.innerHTML = '<span style="color:#888">Placing order...</span>';
+  try {
+    const res = await fetch(`${API_BASE}/stockex/order`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (res.ok) {
+      resultEl.innerHTML = `<span style="color:#4ecca3">${esc(data.detail)} — ${data.cl_ord_id}</span>`;
+      loadStockExPortfolio(); // Refresh
+    } else {
+      resultEl.innerHTML = `<span style="color:#e74c3c">${esc(data.detail || data.error || 'Order failed')}</span>`;
+    }
+  } catch(e) {
+    resultEl.innerHTML = '<span style="color:#e74c3c">Connection error</span>';
+  }
+}
+
+// Update price when symbol changes
+document.getElementById('sx-symbol')?.addEventListener('change', updateStockExPrice);
+document.getElementById('sx-member')?.addEventListener('change', loadStockExPortfolio);
 
 // Chat with an NPC
 function openChat(targetId) {

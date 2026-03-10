@@ -834,3 +834,106 @@ async def save_state(name: str = "manual_save"):
     from soci.persistence.snapshots import save_simulation
     await save_simulation(sim, db, name)
     return {"status": "saved", "name": name, "tick": sim.clock.total_ticks}
+
+
+# ── StockEx integration ──────────────────────────────────────────────────────
+
+import os
+import httpx
+
+STOCKEX_URL = os.getenv("STOCKEX_URL", "https://raymelius-stockex.hf.space")
+STOCKEX_API_KEY = os.getenv("STOCKEX_API_KEY", "soci-stockex-2024")
+
+
+class StockExOrderRequest(BaseModel):
+    token: str          # Soci player token
+    member_id: str      # StockEx member ID (e.g. USR02)
+    symbol: str
+    side: str           # BUY or SELL
+    quantity: int
+    price: float
+
+
+@router.get("/stockex/market")
+async def stockex_market():
+    """Get current market data (best bid/offer) from StockEx."""
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(f"{STOCKEX_URL}/ch/api/market")
+        if resp.status_code != 200:
+            raise HTTPException(status_code=502, detail="StockEx market unavailable")
+        return resp.json()
+
+
+@router.get("/stockex/leaderboard")
+async def stockex_leaderboard():
+    """Get StockEx clearing house leaderboard."""
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(f"{STOCKEX_URL}/ch/api/leaderboard")
+        if resp.status_code != 200:
+            raise HTTPException(status_code=502, detail="StockEx unavailable")
+        return resp.json()
+
+
+@router.get("/stockex/portfolio/{member_id}")
+async def stockex_portfolio(member_id: str):
+    """Get a StockEx member's portfolio."""
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(f"{STOCKEX_URL}/ch/api/member/{member_id}")
+        if resp.status_code != 200:
+            raise HTTPException(status_code=502, detail="StockEx member not found")
+        return resp.json()
+
+
+@router.post("/stockex/order")
+async def stockex_order(req: StockExOrderRequest):
+    """Place a trade on StockEx on behalf of a Soci player agent."""
+    from soci.api.server import get_simulation
+    sim = get_simulation()
+
+    # Verify Soci player token
+    from soci.persistence.database import Database
+    db = Database()
+    user = await db.get_user_by_token(req.token)
+    if not user or not user.get("agent_id"):
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    agent = sim.agents.get(user["agent_id"])
+    if not agent:
+        raise HTTPException(status_code=404, detail="Player agent not found")
+
+    # Place order on StockEx via API key
+    order_data = {
+        "api_key": STOCKEX_API_KEY,
+        "member_id": req.member_id,
+        "symbol": req.symbol.upper(),
+        "side": req.side.upper(),
+        "quantity": req.quantity,
+        "price": req.price,
+    }
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.post(f"{STOCKEX_URL}/ch/api/order", json=order_data)
+        result = resp.json()
+
+    if resp.status_code != 200:
+        raise HTTPException(status_code=resp.status_code, detail=result.get("error", "Order failed"))
+
+    # Record as life event for the agent
+    side_str = req.side.upper()
+    agent.add_life_event(
+        day=sim.clock.day, tick=sim.clock.total_ticks,
+        event_type="achievement",
+        description=f"Traded on StockEx: {side_str} {req.quantity} {req.symbol.upper()} @ €{req.price:.2f}",
+    )
+    agent.add_observation(
+        tick=sim.clock.total_ticks, day=sim.clock.day,
+        time_str=sim.clock.time_str,
+        content=f"I placed a {side_str} order for {req.quantity} shares of {req.symbol.upper()} at €{req.price:.2f} on StockEx.",
+        importance=7,
+    )
+
+    return {
+        "status": "ok",
+        "cl_ord_id": result.get("cl_ord_id"),
+        "detail": f"{side_str} {req.quantity} {req.symbol.upper()} @ €{req.price:.2f}",
+    }
