@@ -3469,21 +3469,42 @@ document.getElementById('llm-model').addEventListener('click', async (e) => {
           }
 
           const runtime = estimateRuntime(pqForCalc);
+          const numAgents = quota.num_agents || 50;
           // Default probability for rate-limited providers (not inherited from NN's 100%)
           const defaultProb = 10;
 
+          // Calculate usage stats for a given probability
+          function usageStats(probPct) {
+            const prob = probPct / 100;
+            // ~40% of agents are idle (not busy/sleeping) and eligible for LLM each tick
+            const idleFraction = 0.4;
+            const eligibleAgents = Math.round(numAgents * idleFraction);
+            // Expected LLM attempts per tick: eligible agents × prob (action) + prob (social)
+            const attemptsPerTick = eligibleAgents * prob + prob;
+            // Budget caps at 2 calls/tick for rate-limited providers
+            const callsPerTick = Math.min(attemptsPerTick, 2);
+            // Ticks per hour (4s tick delay at 1x speed)
+            const ticksH = 900;
+            const callsPerHour = Math.min(callsPerTick * ticksH, rpm * 60);
+            // What % of agent decisions go through LLM vs routine
+            const llmPct = Math.min(prob * 100, 100);
+            return { callsPerHour: Math.round(callsPerHour), llmPct: Math.round(llmPct) };
+          }
+
+          const initStats = usageStats(defaultProb);
+
           panel.innerHTML =
             `<div style="color:#4ecca3;font-weight:600;margin-bottom:4px">${p.icon} ${p.label}</div>` +
-            `<div style="margin-bottom:4px">Daily limit: <b>${lim}</b> requests</div>` +
-            `<div style="margin-bottom:6px;font-size:10px;color:#8899aa">` +
-              `${rpm} req/min · Max runtime: <b style="color:#4ecca3">${runtime}</b></div>` +
+            `<div style="margin-bottom:4px">Daily limit: <b>${lim}</b> requests · ${rpm} req/min</div>` +
             `<div style="display:flex;align-items:center;gap:8px;margin-top:6px">` +
               `<label style="font-size:11px;color:#8899aa">Probability:</label>` +
               `<input type="range" min="1" max="100" value="${defaultProb}" style="flex:1;accent-color:#4ecca3" class="popup-prob-slider">` +
               `<span class="popup-prob-val" style="font-size:12px;color:#4ecca3;min-width:32px">${defaultProb}%</span>` +
             `</div>` +
-            `<div style="font-size:10px;color:#8899aa;margin:2px 0 8px 0">` +
-              `Higher = more LLM decisions, lower = more routine behavior</div>` +
+            `<div class="popup-usage-info" style="font-size:10px;color:#8899aa;margin:4px 0 8px 0;line-height:1.5">` +
+              `<span style="color:#c8c8d8">${initStats.llmPct}%</span> of decisions via LLM · ` +
+              `<span style="color:#c8c8d8">~${initStats.callsPerHour}</span> calls/hour` +
+            `</div>` +
             `<button class="popup-switch-btn" style="width:100%;padding:6px;border:none;border-radius:4px;` +
               `background:#4ecca3;color:#0a0a23;font-weight:600;cursor:pointer;font-size:12px">` +
               `Switch to ${p.label} at ${defaultProb}%</button>`;
@@ -3493,12 +3514,17 @@ document.getElementById('llm-model').addEventListener('click', async (e) => {
           // Wire up slider
           const slider = panel.querySelector('.popup-prob-slider');
           const valLabel = panel.querySelector('.popup-prob-val');
+          const usageInfo = panel.querySelector('.popup-usage-info');
           const btn = panel.querySelector('.popup-switch-btn');
 
           slider.addEventListener('input', (e) => {
             e.stopPropagation();
             const pv = parseInt(slider.value);
             valLabel.textContent = pv + '%';
+            const stats = usageStats(pv);
+            usageInfo.innerHTML =
+              `<span style="color:#c8c8d8">${stats.llmPct}%</span> of decisions via LLM · ` +
+              `<span style="color:#c8c8d8">~${stats.callsPerHour}</span> calls/hour`;
             btn.textContent = `Switch to ${p.label} at ${pv}%`;
           });
 
