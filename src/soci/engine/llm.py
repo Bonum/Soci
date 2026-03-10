@@ -456,11 +456,11 @@ class GroqClient:
         import time
         return time.monotonic() < self._rate_limited_until
 
-    def _handle_429(self, retry_after_str: str, attempt: int) -> float:
+    def _handle_429(self, retry_after_str: str, attempt: int, body: str = "") -> float:
         """Parse retry-after and update circuit breaker. Returns seconds to sleep.
 
-        Short waits (≤15s, per-minute limit) → return the wait so caller retries.
-        Long waits (>15s, daily quota) → arm the circuit breaker and return 0
+        Short waits (≤120s, per-minute limit) → return the wait so caller retries.
+        Long waits (>120s, daily quota) → arm the circuit breaker and return 0
         so the caller gives up immediately instead of blocking for minutes.
         """
         import time
@@ -469,14 +469,20 @@ class GroqClient:
         except (ValueError, TypeError):
             retry_after = max(3.0, 2 ** attempt + 1)
 
-        if retry_after > 15:
+        # Only circuit-break on genuinely long waits (daily quota) or explicit quota messages.
+        # Groq can send retry-after: 30-60 for per-minute limits — those should just wait & retry.
+        is_daily_quota = retry_after > 120 or "daily" in body.lower() or "limit" in body.lower()
+        if is_daily_quota:
             self._rate_limited_until = time.monotonic() + retry_after
             logger.warning(
-                f"Groq quota exhausted — skipping LLM calls for {retry_after:.0f}s "
+                f"Groq daily quota exhausted — skipping LLM calls for {retry_after:.0f}s "
                 f"(until quota resets). Simulation continues without LLM."
             )
             return 0.0  # caller should give up immediately
-        return retry_after  # short per-minute limit — wait and retry
+        # Per-minute throttle — wait and retry (cap at 60s to avoid blocking too long)
+        wait = min(retry_after, 60.0)
+        logger.info(f"Groq per-minute rate limit — waiting {wait:.0f}s before retry")
+        return wait
 
     async def _wait_for_rate_limit(self) -> None:
         """Wait if needed to stay under the RPM limit."""
@@ -536,12 +542,11 @@ class GroqClient:
                 if e.response.status_code == 429:
                     body = e.response.text[:200] if e.response.text else ""
                     sleep_for = self._handle_429(
-                        e.response.headers.get("retry-after", ""), attempt
+                        e.response.headers.get("retry-after", ""), attempt, body
                     )
-                    logger.warning(f"Groq 429: {body[:120]}")
                     if sleep_for == 0:
-                        self._last_error = f"429 quota exhausted: {body[:120]}"
-                        return ""  # quota exhausted — skip immediately
+                        self._last_error = f"429 daily quota exhausted: {body[:120]}"
+                        return ""  # daily quota exhausted — skip immediately
                     await asyncio.sleep(sleep_for)
                 elif e.response.status_code == 401:
                     raise ValueError("Invalid GROQ_API_KEY")
@@ -611,11 +616,10 @@ class GroqClient:
                 if e.response.status_code == 429:
                     body = e.response.text[:200] if e.response.text else ""
                     sleep_for = self._handle_429(
-                        e.response.headers.get("retry-after", ""), attempt
+                        e.response.headers.get("retry-after", ""), attempt, body
                     )
-                    logger.warning(f"Groq 429 (json): {body[:120]}")
                     if sleep_for == 0:
-                        return {}  # quota exhausted — skip immediately
+                        return {}  # daily quota exhausted — skip immediately
                     await asyncio.sleep(sleep_for)
                 else:
                     logger.error(f"Groq JSON error: {e.response.status_code}")
