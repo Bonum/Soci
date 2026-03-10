@@ -3452,10 +3452,10 @@ document.getElementById('llm-model').addEventListener('click', async (e) => {
           const rem = pq ? (pq.remaining || 0) : 0;
           const lim = pq ? (pq.daily_limit || 0) : 0;
           const pct = lim > 0 ? Math.round((rem / lim) * 100) : 0;
-          // Build a quota-like object for estimateRuntime using this provider's data
+          // Build a quota-like object for estimateRuntime using this provider's own tick rate
           const pqForCalc = {remaining: rem, daily_limit: lim,
-            max_calls_per_tick: quota ? (quota.max_calls_per_tick || 2) : 2,
-            ticks_per_hour: quota ? (quota.ticks_per_hour || 900) : 900};
+            max_calls_per_tick: pq.max_calls_per_tick || 2,
+            ticks_per_hour: pq.ticks_per_hour || 900};
 
           if (rem <= 0) {
             panel.innerHTML = `<div style="color:#e94560;margin-bottom:6px">Quota exhausted (0/${lim}). Resets daily.</div>`;

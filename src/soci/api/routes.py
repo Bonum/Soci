@@ -376,11 +376,17 @@ async def get_llm_quota():
     # Current provider's quota (for backward compat with nn_selfimprove)
     cur = providers_quota.get(provider, {"daily_limit": 0, "daily_requests": 0, "remaining": 0})
 
-    # Estimate ticks per hour
-    tick_delay = 4.0 if provider in ("gemini", "groq") else 2.0
-    ticks_per_hour = 3600.0 / (tick_delay * max(_sim_speed, 0.01))
+    # Estimate ticks per hour — rate-limited providers use 4s tick delay
+    tick_delay_current = 4.0 if provider in ("gemini", "groq") else 2.0
+    ticks_per_hour = 3600.0 / (tick_delay_current * max(_sim_speed, 0.01))
     max_calls_per_tick = 2 if provider in ("gemini", "groq") else 5
     num_agents = len(sim.agents)
+
+    # Per-provider tick estimates (for frontend runtime calc when switching TO a provider)
+    for pid in providers_quota:
+        rl_delay = 4.0 if pid in ("gemini", "groq") else 2.0
+        providers_quota[pid]["ticks_per_hour"] = round(3600.0 / (rl_delay * max(_sim_speed, 0.01)), 1)
+        providers_quota[pid]["max_calls_per_tick"] = 2 if pid in ("gemini", "groq") else 5
 
     return {
         "provider": provider,
