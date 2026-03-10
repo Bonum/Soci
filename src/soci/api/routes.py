@@ -337,6 +337,38 @@ async def set_llm_provider(req: SwitchProviderRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/nn/reload")
+async def reload_nn_model():
+    """Hot-reload the NN model from HuggingFace Hub without restarting."""
+    from soci.api.server import get_simulation, get_llm_provider
+    sim = get_simulation()
+
+    # If current provider is NN, reload directly
+    if get_llm_provider() == "nn":
+        from soci.engine.nn_client import NNClient
+        if isinstance(sim.llm, NNClient):
+            msg = sim.llm.reload()
+            return {"ok": True, "message": msg}
+
+    # NN not active — try to reload anyway if there's an NN client we can find
+    # or just re-download the model file for next time NN is activated
+    try:
+        from soci.engine.nn_client import _download_model, _MODEL_FILENAME
+        from pathlib import Path
+        local = Path("models") / _MODEL_FILENAME
+        if local.exists():
+            local.unlink()
+        path = _download_model()
+        size = Path(path).stat().st_size
+        return {
+            "ok": True,
+            "message": f"NN model re-downloaded ({size / 1024:.0f} KB). "
+                       f"Switch to NN provider to use it.",
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reload NN model: {e}")
+
+
 @router.get("/llm/quota")
 async def get_llm_quota():
     """Return remaining daily quota and usage stats for budget planning.

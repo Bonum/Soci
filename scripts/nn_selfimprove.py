@@ -395,6 +395,7 @@ def train(epochs: int = 20, batch_size: int = 512, lr: float = 3e-4):
 
     best_acc = 0.0
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    history = {"train_loss": [], "val_loss": [], "val_action_acc": []}
 
     for epoch in range(epochs):
         model.train()
@@ -415,19 +416,32 @@ def train(epochs: int = 20, batch_size: int = 512, lr: float = 3e-4):
             total_loss += loss.item()
             n += 1
         scheduler.step()
+        avg_train_loss = total_loss / n
 
         # Validate
         model.eval()
         correct = 0
         total = 0
+        val_loss = 0.0
         with torch.no_grad():
             for batch in val_loader:
                 feat = batch["features"].to(DEVICE)
                 out = model(feat)
+                loss = (
+                    1.0 * action_loss_fn(out["action_logits"], batch["action"].to(DEVICE))
+                    + 0.5 * location_loss_fn(out["location_logits"], batch["location"].to(DEVICE))
+                    + 0.2 * duration_loss_fn(out["duration"], batch["duration"].to(DEVICE))
+                )
+                val_loss += loss.item()
                 pred = out["action_logits"].argmax(dim=-1)
                 correct += (pred == batch["action"].to(DEVICE)).sum().item()
                 total += feat.shape[0]
         acc = correct / total if total > 0 else 0
+        avg_val_loss = val_loss / len(val_loader)
+
+        history["train_loss"].append(avg_train_loss)
+        history["val_loss"].append(avg_val_loss)
+        history["val_action_acc"].append(acc)
 
         if acc > best_acc:
             best_acc = acc
@@ -436,8 +450,9 @@ def train(epochs: int = 20, batch_size: int = 512, lr: float = 3e-4):
         if (epoch + 1) % 5 == 0 or epoch == 0:
             logger.info(
                 f"Epoch {epoch+1}/{epochs} | "
-                f"Loss: {total_loss/n:.4f} | "
-                f"Val Acc: {acc:.1%} | "
+                f"Train: {avg_train_loss:.4f} | "
+                f"Val: {avg_val_loss:.4f} | "
+                f"Acc: {acc:.1%} | "
                 f"Best: {best_acc:.1%}"
             )
 
@@ -456,7 +471,27 @@ def train(epochs: int = 20, batch_size: int = 512, lr: float = 3e-4):
         opset_version=17,
         dynamo=False,
     )
-    logger.info(f"ONNX exported: {ONNX_PATH} ({ONNX_PATH.stat().st_size / 1024:.0f} KB)")
+    onnx_size = ONNX_PATH.stat().st_size / 1024
+    logger.info(f"ONNX exported: {ONNX_PATH} ({onnx_size:.0f} KB)")
+
+    # ── Save training stats ───────────────────────────────────────────
+    stats = {
+        "best_val_action_acc": best_acc,
+        "epochs": epochs,
+        "train_samples": len(train_ds),
+        "val_samples": len(val_ds),
+        "collected_samples": sum(source_counts.values()),
+        "source_counts": source_counts,
+        "model_size_kb": onnx_size,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "history": history,
+    }
+    stats_path = MODEL_DIR / "training_stats.json"
+    stats_path.write_text(json.dumps(stats, indent=2))
+    logger.info(f"Stats saved to {stats_path}")
+
+    # ── Plot training graphs ──────────────────────────────────────────
+    plot_training_graphs(stats_path)
 
     return best_acc
 
@@ -465,8 +500,9 @@ def train(epochs: int = 20, batch_size: int = 512, lr: float = 3e-4):
 # STEP 3: PUSH — Upload improved model to HuggingFace Hub
 # ════════════════════════════════════════════════════════════════════════
 
-def push(repo_id: str = "RayMelius/soci-agent-nn", accuracy: float = None):
-    """Push the retrained ONNX model to HuggingFace Hub."""
+def push(repo_id: str = "RayMelius/soci-agent-nn", accuracy: float = None,
+         base_url: str = "https://raymelius-soci2.hf.space"):
+    """Push the retrained ONNX model to HuggingFace Hub, then trigger live reload."""
     from huggingface_hub import HfApi, login
 
     token = os.environ.get("HF_TOKEN", "")
@@ -534,6 +570,114 @@ def push(repo_id: str = "RayMelius/soci-agent-nn", accuracy: float = None):
     )
 
     logger.info("Push complete!")
+
+    # Trigger hot-reload on the live simulation if reachable
+    try:
+        resp = httpx.post(f"{base_url}/api/nn/reload", timeout=30.0)
+        if resp.status_code == 200:
+            logger.info(f"Live sim NN reloaded: {resp.json().get('message', 'ok')}")
+        else:
+            logger.warning(f"Could not reload live sim NN: HTTP {resp.status_code}")
+    except Exception as e:
+        logger.warning(f"Could not reach live sim for reload: {e}")
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Training Graphs
+# ════════════════════════════════════════════════════════════════════════
+
+def plot_training_graphs(stats_path: Path | str | None = None):
+    """Plot training loss and accuracy curves from saved training stats.
+
+    Saves the plot to models/training_graphs.png and displays it.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    stats_path = Path(stats_path) if stats_path else MODEL_DIR / "training_stats.json"
+    if not stats_path.exists():
+        logger.error(f"No training stats found at {stats_path}")
+        return
+
+    stats = json.loads(stats_path.read_text())
+    history = stats.get("history", {})
+
+    train_loss = history.get("train_loss", [])
+    val_loss = history.get("val_loss", [])
+    val_action_acc = history.get("val_action_acc", [])
+
+    if not train_loss:
+        logger.error("No training history found in stats file")
+        return
+
+    epochs_range = list(range(1, len(train_loss) + 1))
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    fig.suptitle(
+        f"Soci Self-Improve Training — {stats.get('timestamp', '?')}  |  "
+        f"Best Acc: {stats.get('best_val_action_acc', stats.get('best_accuracy', 0)):.1%}",
+        fontsize=13, fontweight="bold",
+    )
+
+    # Loss curves
+    ax = axes[0]
+    ax.plot(epochs_range, train_loss, label="Train Loss", color="#2196F3", linewidth=2)
+    if val_loss:
+        ax.plot(epochs_range, val_loss, label="Val Loss", color="#F44336", linewidth=2)
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Loss")
+    ax.set_title("Training & Validation Loss")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    ax.set_xlim(1, len(train_loss))
+
+    # Action accuracy
+    ax = axes[1]
+    if val_action_acc:
+        ax.plot(epochs_range, [a * 100 for a in val_action_acc], label="Action Accuracy",
+                color="#4CAF50", linewidth=2)
+        best_epoch = int(np.argmax(val_action_acc)) + 1
+        best_acc = max(val_action_acc) * 100
+        ax.axhline(y=best_acc, color="#4CAF50", linestyle="--", alpha=0.4)
+        ax.annotate(f"Best: {best_acc:.1f}% (epoch {best_epoch})",
+                    xy=(best_epoch, best_acc), fontsize=9,
+                    xytext=(best_epoch + 1, best_acc - 3),
+                    arrowprops=dict(arrowstyle="->", color="#4CAF50"),
+                    color="#4CAF50")
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Accuracy (%)")
+    ax.set_title("Action Prediction Accuracy")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    ax.set_xlim(1, len(train_loss))
+
+    # Footer
+    footer = (
+        f"Train: {stats.get('train_samples', '?'):,} samples  |  "
+        f"Val: {stats.get('val_samples', '?'):,} samples  |  "
+        f"Collected: {stats.get('collected_samples', 0):,}  |  "
+        f"Model: {stats.get('model_size_kb', 0):.0f} KB"
+    )
+    fig.text(0.5, 0.01, footer, ha="center", fontsize=9, color="gray")
+
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+
+    graph_path = MODEL_DIR / "training_graphs.png"
+    fig.savefig(str(graph_path), dpi=150, bbox_inches="tight")
+    logger.info(f"Training graphs saved to {graph_path}")
+
+    try:
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            matplotlib.use("TkAgg")
+            plt.show(block=False)
+            plt.pause(0.5)
+    except Exception:
+        pass
+
+    plt.close(fig)
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -659,23 +803,71 @@ def _build_model():
 # Synthetic data fallback (when not enough collected samples)
 # ════════════════════════════════════════════════════════════════════════
 
-# Inline personas for synthetic generation
+# Inline personas for synthetic generation — must match personas.yaml
 _PERSONAS = [
-    {"O": 8, "C": 7, "E": 4, "A": 6, "N": 5, "age": 34, "home": "house_elena", "work": "office"},
-    {"O": 10, "C": 3, "E": 6, "A": 7, "N": 7, "age": 33, "home": "house_elena", "work": "library"},
-    {"O": 6, "C": 7, "E": 9, "A": 5, "N": 3, "age": 32, "home": "house_marcus", "work": "gym"},
-    {"O": 7, "C": 6, "E": 3, "A": 8, "N": 4, "age": 68, "home": "house_helen", "work": "library"},
-    {"O": 5, "C": 8, "E": 5, "A": 8, "N": 3, "age": 58, "home": "house_helen", "work": "bakery"},
-    {"O": 9, "C": 3, "E": 8, "A": 5, "N": 5, "age": 22, "home": "house_kai", "work": "cafe"},
-    {"O": 7, "C": 8, "E": 5, "A": 7, "N": 6, "age": 38, "home": "house_priya", "work": "hospital"},
-    {"O": 5, "C": 7, "E": 7, "A": 9, "N": 4, "age": 62, "home": "house_rosa", "work": "restaurant"},
-    {"O": 3, "C": 6, "E": 4, "A": 4, "N": 5, "age": 72, "home": "house_frank", "work": "bar"},
-    {"O": 6, "C": 8, "E": 3, "A": 7, "N": 5, "age": 35, "home": "house_frank", "work": "school"},
+    # House 1 — Elena & Lila (roommates)
+    {"id": "elena",  "O": 8, "C": 7, "E": 4, "A": 6, "N": 5, "age": 34, "home": "house_elena", "work": "office",
+     "tags": ["freelance", "introvert", "tech"], "hangouts": ["cafe", "library"]},
+    {"id": "lila",   "O":10, "C": 3, "E": 6, "A": 7, "N": 7, "age": 33, "home": "house_elena", "work": "library",
+     "tags": ["creative", "emotional", "crush_elena"], "hangouts": ["park", "cafe", "library"]},
+    # House 2 — Marcus & Zoe (siblings)
+    {"id": "marcus", "O": 5, "C": 8, "E": 9, "A": 7, "N": 3, "age": 28, "home": "house_marcus", "work": "gym",
+     "tags": ["athletic", "extrovert", "community"], "hangouts": ["park", "sports_field", "cafe"]},
+    {"id": "zoe",    "O": 8, "C": 4, "E": 8, "A": 6, "N": 7, "age": 19, "home": "house_marcus", "work": "library",
+     "tags": ["student", "social_media", "young"], "hangouts": ["cafe", "cinema", "park", "town_square"]},
+    # House 3 — Helen & Alice (close friends)
+    {"id": "helen",  "O": 6, "C": 8, "E": 6, "A": 8, "N": 4, "age": 67, "home": "house_helen", "work": "library",
+     "tags": ["retired", "bookworm", "widow"], "hangouts": ["library", "park", "bakery", "church"]},
+    {"id": "alice",  "O": 5, "C": 8, "E": 6, "A": 8, "N": 3, "age": 58, "home": "house_helen", "work": "bakery",
+     "tags": ["retired", "baker", "nurturing"], "hangouts": ["bakery", "grocery", "church"]},
+    # House 4 — Diana & Marco (mother & son)
+    {"id": "diana",  "O": 4, "C": 9, "E": 5, "A": 6, "N": 7, "age": 41, "home": "house_diana", "work": "grocery",
+     "tags": ["business_owner", "single_mother", "protective"], "hangouts": ["grocery"]},
+    {"id": "marco",  "O": 7, "C": 4, "E": 6, "A": 5, "N": 6, "age": 16, "home": "house_diana", "work": "school",
+     "tags": ["student", "teen", "gamer"], "hangouts": ["park", "cinema", "cafe", "sports_field"]},
+    # House 5 — Kai (lives alone)
+    {"id": "kai",    "O": 9, "C": 3, "E": 7, "A": 5, "N": 6, "age": 22, "home": "house_kai", "work": "cafe",
+     "tags": ["musician", "creative", "dropout"], "hangouts": ["bar", "park", "town_square"]},
+    # House 6 — Priya & Nina (flatmates)
+    {"id": "priya",  "O": 7, "C": 9, "E": 5, "A": 8, "N": 6, "age": 38, "home": "house_priya", "work": "hospital",
+     "tags": ["overworked", "caring", "guilt"], "hangouts": ["hospital", "pharmacy"]},
+    {"id": "nina",   "O": 5, "C": 8, "E": 9, "A": 4, "N": 5, "age": 29, "home": "house_priya", "work": "office",
+     "tags": ["ambitious", "networker", "suspicious"], "hangouts": ["cafe", "restaurant", "office_tower"]},
+    # House 7 — James & Theo (housemates)
+    {"id": "james",  "O": 5, "C": 6, "E": 8, "A": 7, "N": 4, "age": 55, "home": "house_james", "work": "bar",
+     "tags": ["social_hub", "divorced", "storyteller"], "hangouts": ["bar"]},
+    {"id": "theo",   "O": 3, "C": 7, "E": 4, "A": 5, "N": 5, "age": 45, "home": "house_james", "work": "factory",
+     "tags": ["blue_collar", "stoic", "handy"], "hangouts": ["bar", "diner"]},
+    # House 8 — Rosa & Omar
+    {"id": "rosa",   "O": 6, "C": 9, "E": 7, "A": 8, "N": 5, "age": 62, "home": "house_rosa", "work": "restaurant",
+     "tags": ["nurturing", "italian", "community_mother"], "hangouts": ["restaurant", "grocery"]},
+    {"id": "omar",   "O": 6, "C": 6, "E": 7, "A": 7, "N": 4, "age": 50, "home": "house_rosa", "work": "restaurant",
+     "tags": ["immigrant", "philosophical", "hardworking"], "hangouts": ["restaurant", "cafe", "park"]},
+    # House 9 — Yuki & Devon (flatmates)
+    {"id": "yuki",   "O": 8, "C": 6, "E": 5, "A": 9, "N": 3, "age": 26, "home": "house_yuki", "work": "gym",
+     "tags": ["mindful", "calm", "empathetic"], "hangouts": ["park", "gym", "library"]},
+    {"id": "devon",  "O": 9, "C": 5, "E": 6, "A": 4, "N": 6, "age": 30, "home": "house_yuki", "work": "office",
+     "tags": ["investigative", "paranoid", "curious"], "hangouts": ["cafe", "bar", "library", "town_square"]},
+    # House 10 — Frank, George & Sam
+    {"id": "frank",  "O": 3, "C": 7, "E": 5, "A": 4, "N": 5, "age": 72, "home": "house_frank", "work": "bar",
+     "tags": ["retired", "cantankerous", "creature_of_habit"], "hangouts": ["bar", "diner"]},
+    {"id": "george", "O": 4, "C": 7, "E": 3, "A": 6, "N": 4, "age": 47, "home": "house_frank", "work": "factory",
+     "tags": ["night_shift", "widower", "observant"], "hangouts": ["park"]},
+    {"id": "sam",    "O": 7, "C": 8, "E": 3, "A": 7, "N": 4, "age": 40, "home": "house_frank", "work": "library",
+     "tags": ["quiet", "bookish", "inclusive"], "hangouts": ["library", "park", "cafe"]},
 ]
 
 
+def _persona_hangout(p: dict, fallbacks: list[str]) -> str:
+    """Pick a location the persona naturally gravitates toward."""
+    hangouts = p.get("hangouts", [])
+    if hangouts and random.random() < 0.6:
+        return random.choice(hangouts)
+    return random.choice(fallbacks)
+
+
 def _generate_synthetic(n: int) -> list[dict]:
-    """Generate synthetic training samples (same logic as notebook)."""
+    """Generate persona-aware synthetic training samples."""
     data = []
     for _ in range(n):
         p = random.choice(_PERSONAS)
@@ -683,52 +875,230 @@ def _generate_synthetic(n: int) -> list[dict]:
             "openness": p["O"], "conscientiousness": p["C"], "extraversion": p["E"],
             "agreeableness": p["A"], "neuroticism": p["N"],
         }
+        tags = p.get("tags", [])
+        is_night_shift = "night_shift" in tags
+        is_retired = "retired" in tags
+        is_student = "student" in tags
+
         hour = random.randint(0, 23)
         minute = random.choice([0, 15, 30, 45])
         day = random.randint(1, 30)
+        is_weekend = ((day - 1) % 7) >= 5
+        period = _time_period(hour)
+
+        # Persona-aware needs generation
         needs = {}
         for nm in NEED_NAMES:
-            needs[nm] = round(random.uniform(0.0, 1.0), 2)
-        mood = round(random.uniform(-1.0, 1.0), 2)
-        loc = random.choice(LOCATIONS)
+            if random.random() < 0.15:
+                needs[nm] = round(random.uniform(0.0, 0.2), 2)
+            else:
+                needs[nm] = round(random.uniform(0.2, 1.0), 2)
 
-        # Simple rule-based label
+        if "overworked" in tags:
+            needs["energy"] = round(min(needs["energy"], random.uniform(0.1, 0.5)), 2)
+            needs["social"] = round(min(needs["social"], random.uniform(0.1, 0.5)), 2)
+        if "athletic" in tags:
+            needs["energy"] = round(max(needs["energy"], random.uniform(0.5, 0.9)), 2)
+        if "emotional" in tags:
+            swing = random.choice(NEED_NAMES)
+            needs[swing] = round(random.uniform(0.0, 0.3), 2)
+        if "creature_of_habit" in tags:
+            for nm in NEED_NAMES:
+                needs[nm] = round(needs[nm] * 0.7 + 0.2, 2)
+        if is_night_shift and 6 <= hour <= 18:
+            needs["energy"] = round(min(needs["energy"], random.uniform(0.05, 0.35)), 2)
+        if "mindful" in tags:
+            for nm in NEED_NAMES:
+                needs[nm] = round(max(needs[nm], 0.2), 2)
+        if is_student:
+            needs["social"] = round(max(needs["social"], random.uniform(0.3, 0.7)), 2)
+
+        # Persona-aware mood
+        avg_need = sum(needs.values()) / len(needs)
+        mood = round(max(-1.0, min(1.0,
+            (avg_need - 0.5) * 2 + random.uniform(-0.5, 0.5) * (p["N"] / 10.0)
+        )), 2)
+
+        # Persona-aware starting location
+        if is_night_shift:
+            if period in (0, 6):
+                loc = p["work"]
+            elif period in (2, 3):
+                loc = p["home"]
+            else:
+                loc = random.choice([p["home"], "park"] if random.random() < 0.7 else [p["home"]])
+        elif period == 0:
+            loc = p["home"]
+        elif period in (2, 4) and not is_weekend:
+            if is_retired:
+                loc = random.choice([p["home"]] + p.get("hangouts", ["park"]))
+            else:
+                loc = random.choice([p["work"], p["work"], _persona_hangout(p, ["cafe"])])
+        elif period == 5:
+            loc = random.choice([p["home"], _persona_hangout(p, ["bar", "cafe"])])
+        else:
+            loc = random.choice([p["home"], p["work"]])
+
+        # --- Determine action ---
         urgent = [(nm, needs[nm]) for nm in NEED_NAMES if needs[nm] < 0.15]
         urgent.sort(key=lambda x: x[1])
         action = None
         target = loc
 
+        # Priority 1: Critical needs
         if urgent:
             need_name = urgent[0][0]
             if need_name == "hunger":
-                action, target = "eat", random.choice(["cafe", "restaurant", "bakery"])
+                eat_locs = ["cafe", "restaurant", "bakery", "diner", p["home"]]
+                if "community_mother" in tags:
+                    eat_locs = ["restaurant", p["home"]]
+                elif "baker" in tags:
+                    eat_locs = ["bakery", p["home"]]
+                action, target = "eat", random.choice(eat_locs)
             elif need_name == "energy":
                 action, target = "sleep", p["home"]
             elif need_name == "social":
-                action, target = "talk", random.choice(["cafe", "bar", "park"])
+                social_locs = ["cafe", "bar", "park", "town_square"]
+                if "social_hub" in tags:
+                    social_locs = ["bar", "bar", "restaurant"]
+                elif "networker" in tags:
+                    social_locs = ["cafe", "restaurant", "office"]
+                action, target = "talk", random.choice(social_locs)
             elif need_name == "purpose":
                 action, target = "work", p["work"]
             elif need_name == "comfort":
-                action, target = "relax", p["home"]
+                action, target = "relax", random.choice([p["home"], "park", "library"])
             elif need_name == "fun":
-                action, target = "relax", random.choice(["park", "cinema"])
+                fun_locs = ["park", "cinema", "bar", "sports_field"]
+                if is_student:
+                    fun_locs = ["cinema", "park", "cafe", "town_square"]
+                action, target = random.choice(["relax", "exercise", "wander"]), random.choice(fun_locs)
 
+        # Priority 2: Night shift inverted schedule (George)
+        if action is None and is_night_shift:
+            if period in (0, 6):
+                action, target = "work", p["work"]
+            elif period == 1:
+                action, target = "move", p["home"]
+            elif period in (2, 3):
+                if needs["energy"] < 0.6:
+                    action, target = "sleep", p["home"]
+                else:
+                    action, target = "relax", random.choice([p["home"], "park"])
+            elif period in (4, 5):
+                if needs["hunger"] < 0.5:
+                    action, target = "eat", random.choice(["diner", "restaurant", p["home"]])
+                else:
+                    action, target = "move", p["work"]
+
+        # Priority 3: Persona-specific patterns
         if action is None:
-            period = _time_period(hour)
+            pid = p.get("id", "")
+            if pid == "frank" and period in (5, 6) and random.random() < 0.7:
+                action, target = "relax", "bar"
+            elif pid == "lila" and random.random() < 0.15:
+                action = random.choice(["wander", "talk", "relax"])
+                target = random.choice(["house_elena", "cafe", "library"])
+            elif pid == "rosa" and period in (1, 2) and random.random() < 0.4:
+                action, target = "shop", "grocery"
+            elif pid == "omar" and period in (2, 3, 4) and not is_weekend and random.random() < 0.5:
+                action, target = "wander", random.choice(["street_north", "street_south", "street_east", "street_west"])
+            elif pid == "diana" and not is_weekend and period in (2, 3, 4) and random.random() < 0.7:
+                action, target = "work", "grocery"
+            elif pid == "marcus" and period == 1 and random.random() < 0.6:
+                action, target = "exercise", random.choice(["gym", "park", "sports_field"])
+            elif pid == "yuki" and period == 1 and random.random() < 0.5:
+                action, target = "exercise", random.choice(["park", "gym"])
+            elif pid == "devon" and period in (2, 4) and random.random() < 0.3:
+                action = random.choice(["wander", "talk"])
+                target = random.choice(["cafe", "bar", "town_square", "library"])
+
+        # Priority 4: General time-of-day patterns
+        if action is None:
             if period == 0:
                 action, target = "sleep", p["home"]
+            elif period == 1:
+                if needs["hunger"] < 0.5:
+                    action, target = "eat", random.choice(["cafe", "bakery", p["home"]])
+                elif p["E"] >= 6 and random.random() < 0.3:
+                    action, target = "exercise", random.choice(["gym", "park", "sports_field"])
+                else:
+                    action, target = "move", p["work"]
             elif period in (2, 4):
-                action, target = "work", p["work"]
+                if is_weekend:
+                    r = random.random()
+                    if is_retired:
+                        if r < 0.35:
+                            action, target = "relax", _persona_hangout(p, ["park", "library", p["home"]])
+                        elif r < 0.55:
+                            action, target = "talk", _persona_hangout(p, ["cafe", "park", "church"])
+                        elif r < 0.7:
+                            action, target = "shop", random.choice(["grocery", "pharmacy", "bakery"])
+                        else:
+                            action, target = "wander", random.choice(["park", "town_square"])
+                    elif is_student:
+                        if r < 0.3:
+                            action, target = "talk", random.choice(["cafe", "park", "cinema", "town_square"])
+                        elif r < 0.5:
+                            action, target = "relax", random.choice(["cinema", "park", p["home"]])
+                        elif r < 0.7:
+                            action, target = "exercise", random.choice(["gym", "park", "sports_field"])
+                        else:
+                            action, target = "wander", random.choice(["town_square", "street_north"])
+                    else:
+                        if r < 0.25:
+                            action, target = "relax", _persona_hangout(p, ["park", "cafe", p["home"]])
+                        elif r < 0.45 and p["E"] >= 6:
+                            action, target = "talk", _persona_hangout(p, ["cafe", "park", "town_square"])
+                        elif r < 0.6:
+                            action, target = "shop", random.choice(["grocery", "pharmacy"])
+                        elif r < 0.8:
+                            action, target = "exercise", random.choice(["gym", "park"])
+                        else:
+                            action, target = "wander", random.choice(["park", "town_square"])
+                else:
+                    work_prob = 0.5 + p["C"] * 0.05
+                    if "business_owner" in tags or "overworked" in tags:
+                        work_prob += 0.15
+                    if is_retired:
+                        work_prob = 0.15
+                    if random.random() < work_prob:
+                        action, target = "work", p["work"]
+                    else:
+                        action = random.choice(["wander", "relax", "talk"])
+                        target = _persona_hangout(p, ["cafe", "park", "town_square"])
             elif period == 3:
-                action, target = "eat", random.choice(["cafe", "restaurant"])
+                if needs["hunger"] < 0.6:
+                    action, target = "eat", random.choice(["cafe", "restaurant", "bakery", "diner"])
+                else:
+                    action, target = "relax", random.choice(["park", "cafe"])
             elif period == 5:
-                action = random.choice(["talk", "eat", "relax"])
-                target = random.choice(["bar", "restaurant", "park", p["home"]])
+                social_bias = p["E"] / 10.0
+                r = random.random()
+                if r < social_bias * 0.5:
+                    action, target = "talk", random.choice(["bar", "restaurant", "park", "cafe"])
+                elif r < 0.4:
+                    action, target = "eat", random.choice(["restaurant", "bar", "diner", p["home"]])
+                elif r < 0.55:
+                    action, target = "exercise", random.choice(["gym", "park"])
+                elif r < 0.7:
+                    action, target = "relax", _persona_hangout(p, ["cinema", "bar", p["home"]])
+                else:
+                    action, target = "relax", p["home"]
             elif period == 6:
-                action, target = "sleep", p["home"]
-            else:
-                action = random.choice(["eat", "exercise", "move"])
-                target = random.choice(["cafe", "gym", p["work"]])
+                if needs["energy"] < 0.4:
+                    action, target = "sleep", p["home"]
+                else:
+                    action, target = "relax", p["home"]
+
+        # Move override
+        if target != loc and action != "move" and random.random() < 0.3:
+            action = "move"
+
+        # Duration adjustments
+        dur = ACTION_DURATIONS.get(action, 2)
+        if is_retired and dur > 3 and action not in ("sleep", "work"):
+            dur = min(dur, 3)
 
         features = encode_features(
             personality=persona, age=p["age"],
@@ -741,7 +1111,7 @@ def _generate_synthetic(n: int) -> list[dict]:
             "features": features,
             "action_idx": ACTION_TO_IDX.get(action, 0),
             "target_loc_idx": LOC_TO_IDX.get(target, 0),
-            "duration": ACTION_DURATIONS.get(action, 2),
+            "duration": min(max(dur, 1), 8),
         })
 
     return data
@@ -928,7 +1298,7 @@ async def scheduled(
         # 7. Push improved model
         if os.environ.get("HF_TOKEN"):
             logger.info("Pushing improved model to HF Hub...")
-            push(repo_id=repo_id, accuracy=best_acc)
+            push(repo_id=repo_id, accuracy=best_acc, base_url=base_url)
         else:
             logger.warning("HF_TOKEN not set — skipping push")
 
@@ -1017,10 +1387,11 @@ async def budget(
 
 def main():
     parser = argparse.ArgumentParser(description="Soci Agent NN — Self-Improvement Pipeline")
-    parser.add_argument("mode", choices=["collect", "train", "push", "all", "scheduled", "budget"],
+    parser.add_argument("mode", choices=["collect", "train", "push", "all", "scheduled", "budget", "graph"],
                         help="collect=watch live sim, train=retrain NN, push=upload to HF, "
                              "all=full pipeline, scheduled=daily Gemini cycle, "
-                             "budget=check quota & set probability for target duration")
+                             "budget=check quota & set probability, "
+                             "graph=display training graphs from last run")
     parser.add_argument("--url", default="https://raymelius-soci2.hf.space",
                         help="Live simulation URL (default: HF Space)")
     parser.add_argument("--minutes", type=int, default=60,
@@ -1035,6 +1406,10 @@ def main():
                         help="HF Hub repo ID")
     args = parser.parse_args()
 
+    if args.mode == "graph":
+        plot_training_graphs()
+        return
+
     if args.mode in ("collect", "all"):
         asyncio.run(collect(base_url=args.url, duration_minutes=args.minutes))
 
@@ -1043,7 +1418,7 @@ def main():
 
     if args.mode in ("push", "all"):
         acc = best_acc if args.mode == "all" else None
-        push(repo_id=args.repo, accuracy=acc)
+        push(repo_id=args.repo, accuracy=acc, base_url=args.url)
 
     if args.mode == "scheduled":
         asyncio.run(scheduled(

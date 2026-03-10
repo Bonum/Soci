@@ -292,8 +292,10 @@ class NNClient:
                 "onnxruntime is required for the NN provider. "
                 "Install it with: pip install onnxruntime"
             )
+        self._repo_id = repo_id
         if model_path is None:
             model_path = _download_model(repo_id)
+        self._model_path = model_path
         self.session = ort.InferenceSession(
             model_path,
             providers=["CPUExecutionProvider"],
@@ -301,6 +303,34 @@ class NNClient:
         self.usage = NNUsage()
         self._last_error = ""
         logger.info(f"NN client loaded: {model_path}")
+
+    def reload(self) -> str:
+        """Re-download the ONNX model from HF Hub and reload the session.
+
+        Returns a status message describing what happened.
+        """
+        local_path = Path(self._model_path)
+
+        # Delete cached model to force re-download
+        if local_path.exists():
+            old_size = local_path.stat().st_size
+            local_path.unlink()
+            logger.info(f"Deleted cached model ({old_size:,} bytes)")
+
+        # Re-download
+        new_path = _download_model(self._repo_id)
+        new_size = Path(new_path).stat().st_size
+
+        # Reload ONNX session
+        self.session = ort.InferenceSession(
+            new_path,
+            providers=["CPUExecutionProvider"],
+        )
+        self._model_path = new_path
+
+        msg = f"NN model reloaded from {self._repo_id} ({new_size / 1024:.0f} KB)"
+        logger.info(msg)
+        return msg
 
     async def complete(
         self,
