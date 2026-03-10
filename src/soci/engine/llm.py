@@ -838,15 +838,19 @@ class GeminiClient:
                         wait = float(retry_after)
                     except (ValueError, TypeError):
                         wait = 5.0
-                    # Daily quota exhausted — Gemini sends retry-after:5 even for daily limits,
-                    # so detect via message body and circuit-break until midnight Pacific.
-                    if "quota" in body_raw.lower() or wait > 30:
+                    # Distinguish daily quota from per-minute rate limit.
+                    # Gemini uses "quota" in ALL 429 bodies, so check for daily-specific keywords.
+                    body_lower = body_raw.lower()
+                    is_daily = "per-day" in body_lower or "per day" in body_lower or "daily" in body_lower or wait > 120
+                    if is_daily:
                         circuit_wait = self._secs_until_pacific_midnight()
                         self._rate_limited_until = time.monotonic() + circuit_wait
                         self._last_error = f"daily quota exhausted — resets in {circuit_wait/3600:.1f}h"
                         logger.warning(f"Gemini daily quota exhausted — circuit-breaking for {circuit_wait/3600:.1f}h (until midnight Pacific): {body}")
                         return ""
-                    logger.warning(f"Gemini 429: {body} — waiting {wait}s")
+                    # Per-minute rate limit — wait and retry
+                    wait = min(wait, 30.0)
+                    logger.info(f"Gemini per-minute rate limit — waiting {wait:.0f}s before retry")
                     await asyncio.sleep(wait)
                 elif any(kw in body_raw.lower() for kw in _GEMINI_MODEL_UNAVAILABLE_KWS):
                     # Model not available on this endpoint (any status code) — try fallback
@@ -923,12 +927,15 @@ class GeminiClient:
                         wait = float(retry_after)
                     except (ValueError, TypeError):
                         wait = 5.0
-                    if "quota" in body_raw.lower() or wait > 30:
+                    body_lower = body_raw.lower()
+                    is_daily = "per-day" in body_lower or "per day" in body_lower or "daily" in body_lower or wait > 120
+                    if is_daily:
                         circuit_wait = self._secs_until_pacific_midnight()
                         self._rate_limited_until = time.monotonic() + circuit_wait
                         logger.warning(f"Gemini daily quota exhausted — circuit-breaking for {circuit_wait/3600:.1f}h: {body}")
                         return {}
-                    logger.warning(f"Gemini 429 (json): {body} — waiting {wait}s")
+                    wait = min(wait, 30.0)
+                    logger.info(f"Gemini per-minute rate limit — waiting {wait:.0f}s before retry")
                     await asyncio.sleep(wait)
                 elif any(kw in body_raw.lower() for kw in _GEMINI_MODEL_UNAVAILABLE_KWS):
                     # Model not available on this endpoint (any status code) — try fallback
