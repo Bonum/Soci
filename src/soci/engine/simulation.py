@@ -80,6 +80,9 @@ class Simulation:
         """Add an agent to the simulation and place them in the city."""
         self.agents[agent.id] = agent
         self.city.place_agent(agent.id, agent.location)
+        # Seed biography from persona on first creation
+        if not agent.life_events:
+            agent.seed_biography(self.clock.day, self.clock.total_ticks)
 
     def load_agents_from_yaml(self, path: str) -> None:
         """Load all personas from YAML and create agents."""
@@ -337,6 +340,9 @@ class Simulation:
 
         # 9. Romance — develop attractions and relationships
         self._tick_romance()
+
+        # 9b. Pregnancy — check for new pregnancies and births
+        self._tick_pregnancy()
 
         # 10. Advance clock
         self.clock.tick()
@@ -711,6 +717,42 @@ class Simulation:
         if reflections:
             self._emit(f"  [REFLECT] {agent.name}: {reflections[0]}")
 
+        # Life event from reflection (optional — LLM may return null)
+        life_event = result.get("life_event")
+        if life_event and isinstance(life_event, dict):
+            evt_type = life_event.get("type", "milestone")
+            evt_desc = life_event.get("description", "")
+            if evt_desc:
+                agent.add_life_event(self.clock.day, self.clock.total_ticks, evt_type, evt_desc)
+                agent.add_observation(
+                    tick=self.clock.total_ticks, day=self.clock.day,
+                    time_str=self.clock.time_str,
+                    content=f"Life milestone: {evt_desc}", importance=9,
+                )
+                self._emit(f"  [LIFE] {agent.name}: {evt_desc}")
+
+        # Goal updates from reflection (optional)
+        goal_update = result.get("goal_update")
+        if goal_update and isinstance(goal_update, dict):
+            action = goal_update.get("action", "")
+            if action == "add" and goal_update.get("description"):
+                agent.add_goal(goal_update["description"])
+                self._emit(f"  [GOAL] {agent.name} new goal: {goal_update['description']}")
+            elif action == "complete" and goal_update.get("goal_id") is not None:
+                try:
+                    gid = int(goal_update["goal_id"])
+                    agent.update_goal(gid, status="completed", progress=1.0)
+                    self._emit(f"  [GOAL] {agent.name} completed a goal!")
+                except (TypeError, ValueError):
+                    pass
+            elif action == "progress" and goal_update.get("goal_id") is not None:
+                try:
+                    gid = int(goal_update["goal_id"])
+                    prog = float(goal_update.get("progress", 0.5))
+                    agent.update_goal(gid, progress=prog)
+                except (TypeError, ValueError):
+                    pass
+
     def _tick_romance(self) -> None:
         """Develop romantic attractions between compatible agents at the same location."""
         agents_list = list(self.agents.values())
@@ -790,6 +832,8 @@ class Simulation:
                                 content=f"I'm now dating {o.name}! I feel excited and nervous.",
                                 importance=9, involved_agents=[o.id],
                             )
+                            a.add_life_event(self.clock.day, self.clock.total_ticks,
+                                             "dating", f"Started dating {o.name}")
                         agent.mood = min(1.0, agent.mood + 0.3)
                         other.mood = min(1.0, other.mood + 0.3)
 
@@ -806,6 +850,8 @@ class Simulation:
                                 content=f"{o.name} and I are engaged! This is the happiest day of my life.",
                                 importance=10, involved_agents=[o.id],
                             )
+                            a.add_life_event(self.clock.day, self.clock.total_ticks,
+                                             "engaged", f"Got engaged to {o.name}")
                         agent.mood = min(1.0, agent.mood + 0.4)
                         other.mood = min(1.0, other.mood + 0.4)
 
@@ -822,6 +868,83 @@ class Simulation:
                                 content=f"I married {o.name} today. I couldn't be happier.",
                                 importance=10, involved_agents=[o.id],
                             )
+                            a.add_life_event(self.clock.day, self.clock.total_ticks,
+                                             "married", f"Married {o.name}")
+
+    def _tick_pregnancy(self) -> None:
+        """Handle pregnancy for married couples. Children are born after ~7 sim-days."""
+        import random as _rand
+        PREGNANCY_DURATION_TICKS = 672  # ~7 days (96 ticks/day at 15-min intervals)
+
+        for agent in list(self.agents.values()):
+            # New pregnancy chance: married female, at home with partner
+            if (agent.persona.gender == "female"
+                    and not agent.pregnant
+                    and agent.partner_id
+                    and agent.partner_id in self.agents
+                    and len(agent.children) < 3):  # max 3 children
+                partner = self.agents[agent.partner_id]
+                rel = agent.relationships.get(partner.id)
+                if (rel and rel.relationship_status == "married"
+                        and agent.location == partner.location
+                        and agent.location == agent.persona.home_location
+                        and _rand.random() < 0.002):
+                    agent.pregnant = True
+                    agent.pregnancy_start_tick = self.clock.total_ticks
+                    agent.pregnancy_partner_id = partner.id
+                    agent.add_life_event(self.clock.day, self.clock.total_ticks,
+                                         "pregnant", f"Expecting a baby with {partner.name}!")
+                    partner.add_life_event(self.clock.day, self.clock.total_ticks,
+                                           "pregnant", f"{agent.name} and I are expecting a baby!")
+                    for a in (agent, partner):
+                        a.add_observation(
+                            tick=self.clock.total_ticks, day=self.clock.day,
+                            time_str=self.clock.time_str,
+                            content=f"We're going to have a baby!",
+                            importance=10, involved_agents=[partner.id if a == agent else agent.id],
+                        )
+                        a.mood = min(1.0, a.mood + 0.4)
+                    self._emit(f"  [LIFE] {agent.name} and {partner.name} are expecting!")
+
+            # Birth check
+            if agent.pregnant:
+                elapsed = self.clock.total_ticks - agent.pregnancy_start_tick
+                if elapsed >= PREGNANCY_DURATION_TICKS:
+                    partner = self.agents.get(agent.pregnancy_partner_id)
+                    # Pick a baby name
+                    import random as _r
+                    baby_names_m = ["Oliver", "Liam", "Noah", "Elias", "Lucas", "Theo", "Leo", "Max"]
+                    baby_names_f = ["Emma", "Olivia", "Sophia", "Mia", "Isabella", "Zoe", "Luna", "Aria"]
+                    is_girl = _r.random() < 0.5
+                    pool = baby_names_f if is_girl else baby_names_m
+                    # Avoid duplicate names
+                    used = set(agent.children)
+                    available = [n for n in pool if n not in used]
+                    baby_name = _r.choice(available) if available else _r.choice(pool)
+
+                    agent.pregnant = False
+                    agent.children.append(baby_name)
+                    agent.add_life_event(self.clock.day, self.clock.total_ticks,
+                                         "child_born", f"Gave birth to {baby_name}!")
+                    agent.add_observation(
+                        tick=self.clock.total_ticks, day=self.clock.day,
+                        time_str=self.clock.time_str,
+                        content=f"Our baby {baby_name} was born today! I'm overwhelmed with joy.",
+                        importance=10,
+                    )
+                    if partner:
+                        partner.children.append(baby_name)
+                        partner.add_life_event(self.clock.day, self.clock.total_ticks,
+                                               "child_born", f"{agent.name} and I welcomed {baby_name}!")
+                        partner.add_observation(
+                            tick=self.clock.total_ticks, day=self.clock.day,
+                            time_str=self.clock.time_str,
+                            content=f"Our baby {baby_name} was born! I'm a parent now!",
+                            importance=10,
+                        )
+                        partner.mood = min(1.0, partner.mood + 0.5)
+                    agent.mood = min(1.0, agent.mood + 0.5)
+                    self._emit(f"  [LIFE] {agent.name} gave birth to {baby_name}!")
 
     def get_state_summary(self) -> dict:
         """Get a summary of the current simulation state."""
@@ -832,13 +955,19 @@ class Simulation:
             "agents": {
                 aid: {
                     "name": a.name,
+                    "age": a.persona.age,
                     "gender": a.persona.gender,
+                    "occupation": a.persona.occupation,
                     "location": a.location,
                     "state": a.state.value,
                     "mood": round(a.mood, 2),
                     "needs": a.needs.to_dict(),
                     "action": a.current_action.detail if a.current_action else "idle",
+                    "daily_plan": a.daily_plan,
                     "partner_id": a.partner_id,
+                    "is_player": a.is_player,
+                    "pregnant": a.pregnant,
+                    "children_count": len(a.children),
                 }
                 for aid, a in self.agents.items()
             },

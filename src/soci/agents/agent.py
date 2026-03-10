@@ -77,6 +77,18 @@ class Agent:
         # Romance: current partner ID (dating/engaged/married)
         self.partner_id: Optional[str] = None
 
+        # Life history — append-only timeline of significant events
+        self.life_events: list[dict] = []
+        # Personal goals — evolving aspirations
+        self.goals: list[dict] = []
+        self._next_goal_id: int = 0
+        # Pregnancy (female agents)
+        self.pregnant: bool = False
+        self.pregnancy_start_tick: int = 0
+        self.pregnancy_partner_id: Optional[str] = None
+        # Children (name strings)
+        self.children: list[str] = []
+
     @property
     def is_busy(self) -> bool:
         return self._action_ticks_remaining > 0
@@ -195,6 +207,55 @@ class Agent:
         """Reset plan flag for a new day."""
         self._has_plan_today = False
 
+    def add_life_event(self, day: int, tick: int, event_type: str, description: str) -> dict:
+        """Record a significant life event (promotion, marriage, birth, etc.)."""
+        event = {"day": day, "tick": tick, "type": event_type, "description": description}
+        self.life_events.append(event)
+        return event
+
+    def add_goal(self, description: str, status: str = "active") -> dict:
+        """Add a personal goal."""
+        goal = {"id": self._next_goal_id, "description": description, "status": status, "progress": 0.0}
+        self._next_goal_id += 1
+        self.goals.append(goal)
+        return goal
+
+    def update_goal(self, goal_id: int, status: str = None, progress: float = None) -> None:
+        """Update goal status or progress."""
+        for g in self.goals:
+            if g["id"] == goal_id:
+                if status:
+                    g["status"] = status
+                if progress is not None:
+                    g["progress"] = min(1.0, max(0.0, progress))
+                break
+
+    def seed_biography(self, day: int, tick: int) -> None:
+        """Generate initial life events from persona background. Called on sim reset."""
+        p = self.persona
+        # Origin event
+        self.add_life_event(0, 0, "origin", f"Born and raised. {p.background}")
+        # Career event
+        if p.occupation and p.occupation.lower() not in ("newcomer", "unknown", "unemployed"):
+            self.add_life_event(0, 0, "career", f"Works as {p.occupation}")
+        # Seed initial goals based on persona
+        occ_lower = (p.occupation or "").lower()
+        if "student" in occ_lower:
+            self.add_goal("Graduate and find a career")
+        elif p.age < 30:
+            self.add_goal("Advance in my career")
+        if p.age >= 20 and p.age < 40:
+            self.add_goal("Find meaningful relationships")
+        if p.age >= 30:
+            self.add_goal("Build a stable and happy life")
+
+    def biography_summary(self) -> str:
+        """Short biography string for LLM context."""
+        parts = []
+        for e in self.life_events[-10:]:
+            parts.append(f"Day {e['day']}: {e['description']}")
+        return "\n".join(parts) if parts else "No significant life events yet."
+
     def build_context(self, tick: int, world_description: str, location_description: str) -> str:
         """Build the full context string for LLM prompts."""
         parts = [
@@ -207,12 +268,30 @@ class Agent:
             f"",
             f"WORLD: {world_description}",
             f"",
+            f"MY LIFE STORY:",
+            self.biography_summary(),
+            f"",
+        ]
+        if self.children:
+            parts.append(f"MY CHILDREN: {', '.join(self.children)}")
+            parts.append("")
+        if self.pregnant:
+            parts.append("I am currently pregnant.")
+            parts.append("")
+        active_goals = [g for g in self.goals if g["status"] == "active"]
+        if active_goals:
+            parts.append("MY GOALS:")
+            for g in active_goals:
+                pct = int(g.get("progress", 0) * 100)
+                parts.append(f"- {g['description']} ({pct}% progress)")
+            parts.append("")
+        parts.extend([
             f"PEOPLE I KNOW:",
             self.relationships.describe_known_people(),
             f"",
             f"RECENT MEMORIES:",
             self.memory.context_summary(tick),
-        ]
+        ])
         if self.daily_plan:
             parts.insert(5, f"- Today's plan: {'; '.join(self.daily_plan)}")
         return "\n".join(parts)
@@ -245,6 +324,13 @@ class Agent:
             "last_llm_tick": self._last_llm_tick,
             "is_player": self.is_player,
             "partner_id": self.partner_id,
+            "life_events": self.life_events,
+            "goals": self.goals,
+            "_next_goal_id": self._next_goal_id,
+            "pregnant": self.pregnant,
+            "pregnancy_start_tick": self.pregnancy_start_tick,
+            "pregnancy_partner_id": self.pregnancy_partner_id,
+            "children": self.children,
         }
 
     @classmethod
@@ -265,4 +351,11 @@ class Agent:
         agent._last_llm_tick = data["last_llm_tick"]
         agent.is_player = data["is_player"]
         agent.partner_id = data.get("partner_id")
+        agent.life_events = data.get("life_events", [])
+        agent.goals = data.get("goals", [])
+        agent._next_goal_id = data.get("_next_goal_id", 0)
+        agent.pregnant = data.get("pregnant", False)
+        agent.pregnancy_start_tick = data.get("pregnancy_start_tick", 0)
+        agent.pregnancy_partner_id = data.get("pregnancy_partner_id")
+        agent.children = data.get("children", [])
         return agent

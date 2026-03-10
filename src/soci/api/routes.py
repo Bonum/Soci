@@ -165,6 +165,7 @@ async def get_agent(agent_id: str):
         "age": p.age,
         "gender": p.gender,
         "occupation": p.occupation,
+        "background": p.background,
         "traits": p.trait_summary,
         "personality": {
             "openness": getattr(p, "openness", 5),
@@ -207,6 +208,10 @@ async def get_agent(agent_id: str):
             }
             for m in agent.memory.get_recent(10)
         ],
+        "life_events": agent.life_events[-20:],
+        "goals": agent.goals,
+        "pregnant": agent.pregnant,
+        "children": agent.children,
     }
 
 

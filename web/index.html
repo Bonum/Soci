@@ -2691,12 +2691,14 @@ function showDefaultDetail() {
       const gi = a.gender==='female'?'\uD83D\uDC69':a.gender==='male'?'\uD83D\uDC68':'\uD83E\uDDD1';
       const stateIcon = a.state==='in_conversation'?' \uD83D\uDCAC':(a.state==='sleeping'?' \uD83D\uDCA4':(a.state==='moving'?' \uD83D\uDEB6':''));
       const partner = a.partner_id && agents[a.partner_id] ? ` \u2764\uFE0F ${agents[a.partner_id].name.split(' ')[0]}` : '';
+      const pregIcon = a.pregnant ? ' \uD83E\uDD30' : '';
+      const kidIcon = a.children_count > 0 ? ` \uD83D\uDC76${a.children_count}` : '';
       return `
         <div class="agent-list-item" onclick="selectedAgentId='${aid}';fetchAgentDetail('${aid}');">
           <span class="agent-dot" style="background:${color}"></span>
           <span style="font-size:13px">${gi}</span>
           <div class="agent-info">
-            <div class="agent-name" style="color:${color}">${a.name}${partner}${stateIcon}</div>
+            <div class="agent-name" style="color:${color}">${a.name}${partner}${pregIcon}${kidIcon}${stateIcon}</div>
             <div class="agent-action">${esc(a.action||'idle')}</div>
           </div>
         </div>`;
@@ -2729,17 +2731,42 @@ function renderAgentDetail(data) {
   const romanceRels=(data.relationships||[]).filter(r=>r.relationship_status&&r.relationship_status!=='none');
   const locName = data.location ? (typeof data.location === 'object' ? data.location.name : data.location) : '?';
 
+  // Life events
+  const lifeEvents = (data.life_events || []).slice(-10).reverse();
+  const evtIcon = {
+    origin:'\uD83C\uDFE0', career:'\uD83D\uDCBC', dating:'\uD83D\uDC95', engaged:'\uD83D\uDC8D',
+    married:'\uD83D\uDC92', pregnant:'\uD83E\uDD30', child_born:'\uD83D\uDC76',
+    promotion:'\uD83D\uDCC8', graduated:'\uD83C\uDF93', achievement:'\u2B50',
+    milestone:'\uD83C\uDFC6', new_job:'\uD83D\uDCBC', moved:'\uD83D\uDE9A',
+    breakup:'\uD83D\uDC94', friendship:'\uD83E\uDD1D',
+  };
+
+  // Goals
+  const goals = data.goals || [];
+  const activeGoals = goals.filter(g => g.status === 'active');
+  const completedGoals = goals.filter(g => g.status === 'completed');
+
+  // Children & pregnancy
+  const children = data.children || [];
+  const isPregnant = data.pregnant || false;
+  const pregnantBadge = isPregnant ? ' \uD83E\uDD30' : '';
+  const childrenBadge = children.length > 0 ? ` \uD83D\uDC76${children.length}` : '';
+
   document.getElementById('agent-detail').innerHTML=`
     <div style="margin-bottom:6px">
       <span style="cursor:pointer;color:#888;font-size:11px" onclick="selectedAgentId=null;showDefaultDetail();">&larr; All Agents</span>
     </div>
-    <h2>${gi} ${data.name||'?'}</h2>
+    <h2>${gi} ${data.name||'?'}${pregnantBadge}${childrenBadge}</h2>
     <p class="subtitle">${data.age||'?'} y/o ${data.occupation||''}</p>
     <p class="subtitle" style="color:#888;font-size:10px">${data.traits||''}</p>
     <p class="subtitle" style="color:#e0e0e0">@ ${esc(locName)} &mdash; ${esc(data.action||'idle')}</p>
 
     ${romanceRels.length>0?`<div style="margin:6px 0;padding:4px 8px;background:rgba(233,30,144,0.1);border:1px solid rgba(233,30,144,0.2);border-radius:4px;font-size:11px;color:#e91e90">
       ${romanceRels.map(r=>`\u2764 ${r.relationship_status} with ${r.name} (${(r.romantic_interest*100).toFixed(0)}%)`).join('<br>')}
+    </div>`:''}
+
+    ${children.length>0?`<div style="margin:4px 0;padding:4px 8px;background:rgba(78,204,163,0.08);border:1px solid rgba(78,204,163,0.2);border-radius:4px;font-size:11px;color:#4ecca3">
+      \uD83D\uDC76 Children: ${children.map(c=>esc(c)).join(', ')}
     </div>`:''}
 
     <div class="bar-container">
@@ -2758,6 +2785,35 @@ function renderAgentDetail(data) {
     <div style="margin-top:6px">
       <div style="font-size:10px;color:#888">Plan: ${esc((data.daily_plan||[]).slice(0,3).join('; ')||'None yet')}</div>
     </div>
+
+    ${activeGoals.length>0||completedGoals.length>0?`
+    <div class="section-header">Goals</div>
+    ${activeGoals.map(g=>{
+      const pct=Math.round((g.progress||0)*100);
+      return `<div style="margin:3px 0;font-size:11px">
+        <div style="display:flex;justify-content:space-between;color:#e0e0f0">
+          <span>\uD83C\uDFAF ${esc(g.description)}</span><span style="color:#888;font-size:9px">${pct}%</span>
+        </div>
+        <div style="height:3px;background:#1a1a3e;border-radius:2px;margin-top:2px">
+          <div style="height:100%;width:${pct}%;background:#4ecca3;border-radius:2px"></div>
+        </div>
+      </div>`;
+    }).join('')}
+    ${completedGoals.slice(-3).map(g=>`<div style="margin:2px 0;font-size:10px;color:#555">\u2705 ${esc(g.description)}</div>`).join('')}
+    `:''}
+
+    ${lifeEvents.length>0?`
+    <div class="section-header">Life History</div>
+    <div style="max-height:160px;overflow-y:auto">
+    ${lifeEvents.map(e=>{
+      const icon = evtIcon[e.type] || '\uD83D\uDD39';
+      const dayLabel = e.day > 0 ? `Day ${e.day}` : 'Background';
+      return `<div style="margin:3px 0;font-size:11px;display:flex;gap:6px;align-items:start">
+        <span style="flex-shrink:0">${icon}</span>
+        <div><span style="color:#555;font-size:9px">${dayLabel}</span><br><span style="color:#c0c0d0">${esc(e.description)}</span></div>
+      </div>`;
+    }).join('')}
+    </div>`:''}
 
     ${(data.relationships||[]).length>0?`
     <div class="section-header">Relationships</div>
@@ -3202,10 +3258,10 @@ function renderPlayerPanel() {
   const locName = agent ? (locations[agent.location]?.name || agent.location || '') : '';
   document.getElementById('pp-loc').textContent = locName ? `@ ${locName}` : '';
 
-  // Populate move dropdown from known locations
+  // Populate move dropdown from known locations (only rebuild if empty)
   const sel = document.getElementById('pp-move-select');
   const locKeys = Object.keys(locations);
-  if (locKeys.length > 0) {
+  if (locKeys.length > 0 && sel.options.length === 0) {
     sel.innerHTML = locKeys.map(lid => {
       const ln = locations[lid]?.name || lid;
       const selected = agent && agent.location === lid ? ' selected' : '';
@@ -3226,15 +3282,38 @@ async function playerMove() {
   } catch(e){}
 }
 
-function openProfileEditor() {
+async function openProfileEditor() {
   if (!playerAgentId) return;
-  const agent = agents[playerAgentId];
-  if (agent) {
-    document.getElementById('pe-name').value = agent.name || '';
-    document.getElementById('pe-age').value = agent.age || 30;
-    document.getElementById('pe-occupation').value = agent.occupation || '';
-    const gSel = document.getElementById('pe-gender');
-    gSel.value = agent.gender || 'unknown';
+  // Fetch full agent detail to get all fields (WS summary may not have everything)
+  try {
+    const res = await fetch(`${API_BASE}/agents/${playerAgentId}`);
+    if (res.ok) {
+      const data = await res.json();
+      document.getElementById('pe-name').value = data.name || '';
+      document.getElementById('pe-age').value = data.age || 30;
+      document.getElementById('pe-occupation').value = data.occupation || '';
+      document.getElementById('pe-gender').value = data.gender || 'unknown';
+      document.getElementById('pe-background').value = data.background || '';
+      const pers = data.personality || {};
+      const extVal = pers.extraversion || 5;
+      const agrVal = pers.agreeableness || 7;
+      const opnVal = pers.openness || 6;
+      document.getElementById('pe-extraversion').value = extVal;
+      document.getElementById('pe-extra-val').textContent = extVal;
+      document.getElementById('pe-agreeableness').value = agrVal;
+      document.getElementById('pe-agree-val').textContent = agrVal;
+      document.getElementById('pe-openness').value = opnVal;
+      document.getElementById('pe-open-val').textContent = opnVal;
+    }
+  } catch(e) {
+    // Fallback to WS data
+    const agent = agents[playerAgentId];
+    if (agent) {
+      document.getElementById('pe-name').value = agent.name || '';
+      document.getElementById('pe-age').value = agent.age || 30;
+      document.getElementById('pe-occupation').value = agent.occupation || '';
+      document.getElementById('pe-gender').value = agent.gender || 'unknown';
+    }
   }
   document.getElementById('profile-modal').style.display = 'flex';
 }

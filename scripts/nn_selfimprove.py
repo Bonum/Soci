@@ -465,7 +465,7 @@ def train(epochs: int = 20, batch_size: int = 512, lr: float = 3e-4):
 # STEP 3: PUSH — Upload improved model to HuggingFace Hub
 # ════════════════════════════════════════════════════════════════════════
 
-def push(repo_id: str = "RayMelius/soci-agent-nn"):
+def push(repo_id: str = "RayMelius/soci-agent-nn", accuracy: float = None):
     """Push the retrained ONNX model to HuggingFace Hub."""
     from huggingface_hub import HfApi, login
 
@@ -480,6 +480,21 @@ def push(repo_id: str = "RayMelius/soci-agent-nn"):
 
     login(token=token)
     api = HfApi()
+
+    # Compare against previous accuracy if available
+    try:
+        from huggingface_hub import hf_hub_download
+        prev_stats_path = hf_hub_download(repo_id=repo_id, filename="training_stats.json", token=token)
+        prev_stats = json.loads(open(prev_stats_path).read())
+        prev_acc = prev_stats.get("best_accuracy")
+        if prev_acc is not None and accuracy is not None:
+            delta = accuracy - prev_acc
+            symbol = "+" if delta >= 0 else ""
+            logger.info(f"Previous accuracy: {prev_acc:.1%} → New: {accuracy:.1%} ({symbol}{delta:.1%})")
+        elif prev_acc is not None:
+            logger.info(f"Previous accuracy: {prev_acc:.1%} (no new accuracy to compare)")
+    except Exception:
+        logger.info("No previous training_stats.json found — first push")
     api.create_repo(repo_id, exist_ok=True)
 
     # Upload ONNX
@@ -508,6 +523,8 @@ def push(repo_id: str = "RayMelius/soci-agent-nn"):
         "model_size_kb": ONNX_PATH.stat().st_size / 1024,
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
+    if accuracy is not None:
+        stats["best_accuracy"] = round(accuracy, 4)
     stats_path = MODEL_DIR / "training_stats.json"
     stats_path.write_text(json.dumps(stats, indent=2))
     api.upload_file(
@@ -911,7 +928,7 @@ async def scheduled(
         # 7. Push improved model
         if os.environ.get("HF_TOKEN"):
             logger.info("Pushing improved model to HF Hub...")
-            push(repo_id=repo_id)
+            push(repo_id=repo_id, accuracy=best_acc)
         else:
             logger.warning("HF_TOKEN not set — skipping push")
 
@@ -1022,10 +1039,11 @@ def main():
         asyncio.run(collect(base_url=args.url, duration_minutes=args.minutes))
 
     if args.mode in ("train", "all"):
-        train(epochs=args.epochs)
+        best_acc = train(epochs=args.epochs)
 
     if args.mode in ("push", "all"):
-        push(repo_id=args.repo)
+        acc = best_acc if args.mode == "all" else None
+        push(repo_id=args.repo, accuracy=acc)
 
     if args.mode == "scheduled":
         asyncio.run(scheduled(

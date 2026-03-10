@@ -1080,10 +1080,21 @@ Respond with a JSON object:
 {{
   "reflections": ["reflection 1", "reflection 2", ...],
   "mood_shift": -0.3 to 0.3,
-  "reasoning": "why your mood shifted this way"
+  "reasoning": "why your mood shifted this way",
+  "life_event": null,
+  "goal_update": null
 }}
 
 Generate 1-3 reflections. Each should be a genuine insight, not just a summary.
+
+If something truly significant happened recently (a promotion, finishing a project, personal milestone,
+making a close friend, learning something important), set life_event to:
+{{"type": "promotion|graduated|achievement|milestone|new_job|moved|breakup|friendship", "description": "what happened"}}
+Most reflections should have life_event as null — only include when genuinely noteworthy.
+
+If you want to set a new goal or update progress on an existing one, set goal_update to:
+{{"action": "add|complete|progress", "description": "goal text", "goal_id": null}}
+For "complete" or "progress", include the goal_id number. For "add", include description only.
 """
 
 CONVERSATION_PROMPT = """\
