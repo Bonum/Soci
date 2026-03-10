@@ -147,7 +147,7 @@
     margin-bottom: 4px;
   }
   #llm-popup .llm-opt {
-    display: flex; align-items: center; gap: 10px;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
     padding: 7px 14px; cursor: pointer; color: #c8c8d8;
     transition: background 0.15s;
   }
@@ -3391,35 +3391,153 @@ document.getElementById('llm-model').addEventListener('click', async (e) => {
   popup.style.left = rect.left + 'px';
   popup.style.top  = (rect.bottom + 6) + 'px';
 
-  // Fetch available providers
+  // Fetch available providers + quota info
   try {
-    const res = await fetch(`${API_BASE}/llm/providers`);
+    const [res, quotaRes] = await Promise.all([
+      fetch(`${API_BASE}/llm/providers`),
+      fetch(`${API_BASE}/llm/quota`).catch(() => null),
+    ]);
     const data = await res.json();
-    const existing = popup.querySelectorAll('.llm-opt');
+    const quota = quotaRes && quotaRes.ok ? await quotaRes.json() : null;
+    const existing = popup.querySelectorAll('.llm-opt,.llm-quota-panel');
     existing.forEach(el => el.remove());
+
+    // Estimate remaining runtime at a given probability
+    function estimateRuntime(q, prob) {
+      if (!q || q.remaining <= 0) return 'exhausted';
+      const sites = 4;
+      const callsPerTick = Math.min(sites * prob, q.max_calls_per_tick || 2);
+      const ticksH = q.ticks_per_hour || 900;
+      const callsPerHour = ticksH * callsPerTick;
+      if (callsPerHour <= 0) return '∞';
+      const hours = q.remaining / callsPerHour;
+      if (hours >= 48) return `~${Math.round(hours / 24)}d`;
+      if (hours >= 1) return `~${hours.toFixed(1)}h`;
+      return `~${Math.round(hours * 60)}min`;
+    }
+
+    const isRateLimited = (id) => id === 'gemini' || id === 'groq';
 
     for (const p of data.providers) {
       const isActive = p.id === data.current && (p.model === data.current_model || (!p.model && p.id !== 'hf'));
       const row = document.createElement('div');
       row.className = 'llm-opt' + (isActive ? ' active' : '');
+
+      // Quota badge for rate-limited providers
+      let badge = '';
+      const pQuota = (quota && quota.providers && quota.providers[p.id]) || null;
+      if (isRateLimited(p.id) && pQuota && pQuota.daily_limit > 0) {
+        const rem = pQuota.remaining || 0;
+        const pct = Math.round((rem / pQuota.daily_limit) * 100);
+        const color = rem <= 0 ? '#e94560' : pct < 20 ? '#f0c040' : '#8899aa';
+        badge = `<span style="font-size:10px;color:${color};margin-left:auto">${rem <= 0 ? 'exhausted' : rem + ' left'}</span>`;
+      }
+
       row.innerHTML = `<span class="llm-check">${isActive ? '✔' : ''}</span>
                        <span style="font-size:15px">${p.icon}</span>
-                       <span>${p.label}</span>`;
-      row.addEventListener('click', async () => {
-        popup.style.display = 'none'; _llmPopupOpen = false;
-        if (isActive) return;
-        try {
-          const body = {provider: p.id};
-          if (p.model) body.model = p.model;
-          const r = await fetch(`${API_BASE}/llm/provider`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(body),
+                       <span>${p.label}</span>${badge}`;
+
+      if (isRateLimited(p.id) && !isActive) {
+        // Rate-limited: show quota panel on click instead of switching immediately
+        row.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          // Remove any existing quota panel
+          popup.querySelectorAll('.llm-quota-panel').forEach(el => el.remove());
+          const panel = document.createElement('div');
+          panel.className = 'llm-quota-panel';
+          panel.style.cssText = 'padding:8px 14px;background:#0a1628;border-top:1px solid #0f3460;border-bottom:1px solid #0f3460;font-size:11px;color:#c8c8d8';
+
+          // Use per-provider quota data
+          const pq = (quota && quota.providers && quota.providers[p.id]) || null;
+          const rem = pq ? (pq.remaining || 0) : 0;
+          const lim = pq ? (pq.daily_limit || 0) : 0;
+          const pct = lim > 0 ? Math.round((rem / lim) * 100) : 0;
+          // Build a quota-like object for estimateRuntime using this provider's data
+          const pqForCalc = {remaining: rem, daily_limit: lim,
+            max_calls_per_tick: quota ? (quota.max_calls_per_tick || 2) : 2,
+            ticks_per_hour: quota ? (quota.ticks_per_hour || 900) : 900};
+
+          if (rem <= 0) {
+            panel.innerHTML = `<div style="color:#e94560;margin-bottom:6px">Quota exhausted (0/${lim}). Resets daily.</div>`;
+            row.after(panel);
+            return;
+          }
+
+          // Runtime estimates table
+          const probs = [0.05, 0.10, 0.20, 0.35, 0.50, 0.75, 1.00];
+          let tableRows = probs.map(pr => {
+            const rt = estimateRuntime(pqForCalc, pr);
+            return `<span style="display:inline-block;width:42px;text-align:right;color:#4ecca3">${Math.round(pr*100)}%</span>` +
+                   `<span style="color:#8899aa;margin-left:6px">${rt}</span>`;
+          }).join('<br>');
+
+          panel.innerHTML =
+            `<div style="color:#4ecca3;font-weight:600;margin-bottom:4px">${p.icon} ${p.label}</div>` +
+            `<div style="margin-bottom:6px">Quota: <b>${rem}</b>/${lim} (${pct}%)</div>` +
+            `<div style="margin-bottom:6px;font-size:10px;color:#8899aa">Estimated runtime by probability:</div>` +
+            `<div style="margin-bottom:8px;font-size:11px;line-height:1.6">${tableRows}</div>` +
+            `<div style="display:flex;align-items:center;gap:8px">` +
+              `<label style="font-size:11px;color:#8899aa">Probability:</label>` +
+              `<input type="range" min="1" max="100" value="20" style="flex:1;accent-color:#4ecca3" id="llm-prob-slider">` +
+              `<span id="llm-prob-val" style="font-size:12px;color:#4ecca3;min-width:32px">20%</span>` +
+            `</div>` +
+            `<div id="llm-prob-runtime" style="font-size:10px;color:#8899aa;margin:4px 0 8px 0">Runtime: ${estimateRuntime(pqForCalc, 0.20)}</div>` +
+            `<button id="llm-switch-btn" style="width:100%;padding:6px;border:none;border-radius:4px;` +
+              `background:#4ecca3;color:#0a0a23;font-weight:600;cursor:pointer;font-size:12px">` +
+              `Switch to ${p.label} at 20%</button>`;
+
+          row.after(panel);
+
+          // Wire up slider
+          const slider = panel.querySelector('#llm-prob-slider');
+          const valLabel = panel.querySelector('#llm-prob-val');
+          const rtLabel = panel.querySelector('#llm-prob-runtime');
+          const btn = panel.querySelector('#llm-switch-btn');
+
+          slider.addEventListener('input', () => {
+            const pv = parseInt(slider.value);
+            valLabel.textContent = pv + '%';
+            rtLabel.textContent = 'Runtime: ' + estimateRuntime(pqForCalc, pv / 100);
+            btn.textContent = `Switch to ${p.label} at ${pv}%`;
           });
-          if (!r.ok) { const err = await r.json(); showToast(`LLM switch failed: ${err.detail}`, 'event'); return; }
-          showToast(`Switched to ${p.label}`, 'conv');
-        } catch (err) { showToast('LLM switch error', 'event'); }
-      });
+
+          btn.addEventListener('click', async (ev2) => {
+            ev2.stopPropagation();
+            const probVal = parseInt(slider.value) / 100;
+            popup.style.display = 'none'; _llmPopupOpen = false;
+            try {
+              // 1. Set probability first
+              await fetch(`${API_BASE}/controls/llm_probability?value=${probVal}`, {method: 'POST'});
+              // 2. Then switch provider
+              const body = {provider: p.id};
+              if (p.model) body.model = p.model;
+              const r = await fetch(`${API_BASE}/llm/provider`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body),
+              });
+              if (!r.ok) { const err = await r.json(); showToast(`LLM switch failed: ${err.detail}`, 'event'); return; }
+              showToast(`Switched to ${p.label} at ${Math.round(probVal*100)}% · ${estimateRuntime(pqForCalc, probVal)} runtime`, 'conv');
+            } catch (err) { showToast('LLM switch error', 'event'); }
+          });
+        });
+      } else if (!isActive) {
+        // Non-rate-limited: switch immediately as before
+        row.addEventListener('click', async () => {
+          popup.style.display = 'none'; _llmPopupOpen = false;
+          try {
+            const body = {provider: p.id};
+            if (p.model) body.model = p.model;
+            const r = await fetch(`${API_BASE}/llm/provider`, {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify(body),
+            });
+            if (!r.ok) { const err = await r.json(); showToast(`LLM switch failed: ${err.detail}`, 'event'); return; }
+            showToast(`Switched to ${p.label}`, 'conv');
+          } catch (err) { showToast('LLM switch error', 'event'); }
+        });
+      }
       popup.appendChild(row);
     }
     // Test button

@@ -158,28 +158,29 @@ async def collect(
 
     # Fetch agent personas (static data)
     async with httpx.AsyncClient(base_url=base_url, timeout=30.0) as client:
-        # Get detailed persona info for each agent
+        # /api/agents returns a dict keyed by agent ID
         agents_resp = await client.get("/api/agents")
         agents_resp.raise_for_status()
-        agents_summary = agents_resp.json()
+        agents_dict = agents_resp.json()  # {aid: {name, age, location, ...}}
 
-        # Build persona cache with personality traits
+        # Build persona cache — detail endpoint has needs/relationships but
+        # not raw personality scores, so we use summary age + defaults
         persona_cache: dict[str, dict] = {}
-        for agent in agents_summary:
-            aid = agent["id"]
+        for aid, agent_summary in agents_dict.items():
             try:
                 detail_resp = await client.get(f"/api/agents/{aid}")
                 if detail_resp.status_code == 200:
                     detail = detail_resp.json()
+                    pers = detail.get("personality", {})
                     persona_cache[aid] = {
-                        "openness": detail.get("persona", {}).get("openness", 5),
-                        "conscientiousness": detail.get("persona", {}).get("conscientiousness", 5),
-                        "extraversion": detail.get("persona", {}).get("extraversion", 5),
-                        "agreeableness": detail.get("persona", {}).get("agreeableness", 5),
-                        "neuroticism": detail.get("persona", {}).get("neuroticism", 5),
-                        "age": detail.get("persona", {}).get("age", 30),
-                        "home": detail.get("persona", {}).get("home_location", ""),
-                        "work": detail.get("persona", {}).get("work_location", ""),
+                        "openness": pers.get("openness", 5),
+                        "conscientiousness": pers.get("conscientiousness", 5),
+                        "extraversion": pers.get("extraversion", 5),
+                        "agreeableness": pers.get("agreeableness", 5),
+                        "neuroticism": pers.get("neuroticism", 5),
+                        "age": detail.get("age", 30),
+                        "home": detail.get("home_location", ""),
+                        "work": detail.get("work_location", ""),
                     }
             except Exception:
                 pass
@@ -740,10 +741,10 @@ async def scheduled(
     repo_id: str = "RayMelius/soci-agent-nn",
     gemini_prob: float = 0.50,
 ):
-    """Nightly training cycle: switch to Gemini at midnight, collect, retrain, push.
+    """Daily training cycle: switch to Gemini at quota reset, collect, retrain, push.
 
     Flow:
-      1. Wait until Gemini quota resets (midnight PT / configurable)
+      1. Wait until Gemini quota resets (10:00 AM Athens / Europe/Athens)
       2. Switch live sim to Gemini provider, raise probability
       3. Collect high-quality (state, action) samples from Gemini decisions
       4. Switch back to NN when done (or when quota exhausted)
@@ -778,8 +779,7 @@ async def scheduled(
             logger.error(f"Failed to switch to {provider}: {resp.status_code if resp else 'no response'}")
             return False
 
-        resp = await _api_call(client, "post", "/api/llm/probability",
-                               json={"value": prob})
+        resp = await _api_call(client, "post", f"/api/controls/llm_probability?value={prob}")
         if resp and resp.status_code == 200:
             logger.info(f"Set probability to: {prob:.0%}")
         else:
@@ -787,12 +787,71 @@ async def scheduled(
 
         return True
 
-    async def wait_until_midnight():
-        """Wait until next midnight (local time) when Gemini quota resets."""
-        now = datetime.datetime.now()
-        tomorrow = now.replace(hour=0, minute=0, second=5, microsecond=0) + datetime.timedelta(days=1)
-        wait_secs = (tomorrow - now).total_seconds()
-        logger.info(f"Waiting {wait_secs/3600:.1f}h until midnight ({tomorrow.strftime('%Y-%m-%d %H:%M')})")
+    async def calculate_probability(client: httpx.AsyncClient, target_minutes: int) -> float:
+        """Query remaining Gemini quota and calculate probability to last target_minutes.
+
+        Math:
+          - ticks_per_hour ≈ 900 (4s tick delay at 1x speed)
+          - max 2 LLM calls per tick (rate-limited budget)
+          - Each call site rolls random() < probability, ~4 sites per tick
+          - Expected LLM calls/hour = ticks_per_hour × min(sites × prob, max_calls_per_tick)
+          - Solve for prob: remaining_quota / (target_hours × ticks_per_hour × effective_rate)
+        """
+        resp = await _api_call(client, "get", "/api/llm/quota")
+        if not resp or resp.status_code != 200:
+            logger.warning("Could not fetch quota — using default probability")
+            return gemini_prob
+
+        quota = resp.json()
+        remaining = quota.get("remaining", 1500)
+        ticks_per_hour = quota.get("ticks_per_hour", 900)
+        max_calls_per_tick = quota.get("max_calls_per_tick", 2)
+        num_agents = quota.get("num_agents", 20)
+
+        if remaining <= 0:
+            logger.warning("No Gemini quota remaining!")
+            return 0.0
+
+        target_hours = target_minutes / 60.0
+
+        # There are ~4 LLM call sites per tick (plan, action, social, reflect),
+        # each gated by probability. But max_calls_per_tick caps the actual calls.
+        # Approximate: at prob P, expected calls/tick ≈ min(num_sites × P, max_calls_per_tick)
+        # We want: remaining = target_hours × ticks_per_hour × calls_per_tick
+        # So: calls_per_tick = remaining / (target_hours × ticks_per_hour)
+        # And: P = calls_per_tick / num_call_sites  (since each site independently rolls P)
+        num_call_sites = 4  # plan, action, social, reflect
+        desired_calls_per_tick = remaining / (target_hours * ticks_per_hour)
+        # Clamp to max budget
+        desired_calls_per_tick = min(desired_calls_per_tick, max_calls_per_tick)
+        prob = desired_calls_per_tick / num_call_sites
+        prob = max(0.01, min(1.0, prob))
+
+        logger.info(
+            f"Quota: {remaining} remaining, target {target_minutes} min → "
+            f"~{desired_calls_per_tick:.2f} calls/tick → probability {prob:.2%}"
+        )
+        return round(prob, 4)
+
+    async def wait_until_reset():
+        """Wait until next Gemini quota reset (10:00 AM Athens / Europe/Athens)."""
+        try:
+            from zoneinfo import ZoneInfo
+        except ImportError:
+            from backports.zoneinfo import ZoneInfo
+
+        athens = ZoneInfo("Europe/Athens")
+        now = datetime.datetime.now(athens)
+        reset_today = now.replace(hour=10, minute=0, second=5, microsecond=0)
+
+        # If we've already passed 10:00 AM today, target tomorrow
+        if now >= reset_today:
+            reset_target = reset_today + datetime.timedelta(days=1)
+        else:
+            reset_target = reset_today
+
+        wait_secs = (reset_target - now).total_seconds()
+        logger.info(f"Waiting {wait_secs/3600:.1f}h until Gemini reset ({reset_target.strftime('%Y-%m-%d %H:%M %Z')})")
         await asyncio.sleep(wait_secs)
 
     # ── Main loop ─────────────────────────────────────────────────────
@@ -803,19 +862,21 @@ async def scheduled(
         logger.info(f"TRAINING CYCLE {cycle}")
         logger.info(f"{'='*60}")
 
-        # 1. Wait for midnight (Gemini quota reset)
-        await wait_until_midnight()
+        # 1. Wait for Gemini quota reset (10:00 AM Athens)
+        await wait_until_reset()
 
         async with httpx.AsyncClient(base_url=base_url) as client:
-            # 2. Switch to Gemini + raise probability
+            # 2. Switch to Gemini first
             logger.info("Switching live sim to Gemini...")
-            ok = await switch_provider(client, "gemini", gemini_prob)
+            ok = await switch_provider(client, "gemini", 0.01)  # start low
             if not ok:
                 logger.error("Could not switch to Gemini — skipping this cycle")
                 continue
 
-            # 3. Collect samples from Gemini-powered sim
-            logger.info(f"Collecting for {collect_minutes} min with Gemini at {gemini_prob:.0%} probability...")
+            # 3. Calculate probability to spread quota over collection period
+            calc_prob = await calculate_probability(client, collect_minutes)
+            await switch_provider(client, "gemini", calc_prob)
+            logger.info(f"Collecting for {collect_minutes} min with Gemini at {calc_prob:.1%} probability...")
 
         # collect() creates its own client
         n_samples = await collect(
@@ -854,7 +915,78 @@ async def scheduled(
         else:
             logger.warning("HF_TOKEN not set — skipping push")
 
-        logger.info(f"Cycle {cycle} complete! Next cycle at midnight.")
+        logger.info(f"Cycle {cycle} complete! Next cycle at 10:00 AM Athens.")
+
+
+# ════════════════════════════════════════════════════════════════════════
+# STEP 5: BUDGET — Check quota and auto-set probability
+# ════════════════════════════════════════════════════════════════════════
+
+async def budget(
+    base_url: str = "https://raymelius-soci2.hf.space",
+    target_minutes: int = 60,
+    apply: bool = True,
+):
+    """Check Gemini quota, calculate and optionally apply the right probability.
+
+    Usage:
+        python nn_selfimprove.py budget --minutes 60   # spread quota over 1 hour
+        python nn_selfimprove.py budget --minutes 120  # spread over 2 hours
+    """
+    async with httpx.AsyncClient(base_url=base_url, timeout=30.0) as client:
+        resp = await client.get("/api/llm/quota")
+        if resp.status_code != 200:
+            logger.error(f"Could not fetch quota: {resp.status_code}")
+            return
+
+        quota = resp.json()
+        remaining = quota.get("remaining", 0)
+        daily_limit = quota.get("daily_limit", 1500)
+        daily_requests = quota.get("daily_requests", 0)
+        ticks_per_hour = quota.get("ticks_per_hour", 900)
+        max_calls_per_tick = quota.get("max_calls_per_tick", 2)
+        provider = quota.get("provider", "?")
+        num_agents = quota.get("num_agents", 0)
+
+        logger.info(f"Provider: {provider}")
+        logger.info(f"Daily quota: {daily_requests}/{daily_limit} used, {remaining} remaining")
+        logger.info(f"Sim: {num_agents} agents, ~{ticks_per_hour:.0f} ticks/hour")
+
+        if remaining <= 0:
+            logger.warning("No quota remaining! Wait for reset (10:00 AM Athens).")
+            return
+
+        target_hours = target_minutes / 60.0
+        num_call_sites = 4
+        desired_calls_per_tick = remaining / (target_hours * ticks_per_hour)
+        desired_calls_per_tick = min(desired_calls_per_tick, max_calls_per_tick)
+        prob = desired_calls_per_tick / num_call_sites
+        prob = max(0.01, min(1.0, prob))
+        prob = round(prob, 4)
+
+        expected_calls = target_hours * ticks_per_hour * min(num_call_sites * prob, max_calls_per_tick)
+        logger.info(
+            f"Target: {target_minutes} min → probability {prob:.2%} "
+            f"(~{expected_calls:.0f} calls, {remaining} available)"
+        )
+
+        if apply:
+            # Switch to Gemini if not already
+            if provider != "gemini":
+                resp = await client.post("/api/llm/provider", json={"provider": "gemini"})
+                if resp.status_code == 200:
+                    logger.info("Switched to Gemini")
+                else:
+                    logger.warning(f"Could not switch to Gemini: {resp.status_code}")
+
+            resp = await client.post(f"/api/controls/llm_probability?value={prob}")
+            if resp.status_code == 200:
+                logger.info(f"Applied probability: {prob:.2%}")
+            else:
+                logger.warning(f"Could not set probability: {resp.status_code}")
+
+            logger.info(f"Done! Gemini will run at {prob:.2%} for ~{target_minutes} min. "
+                        f"Start collecting: python nn_selfimprove.py collect --minutes {target_minutes}")
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -863,9 +995,10 @@ async def scheduled(
 
 def main():
     parser = argparse.ArgumentParser(description="Soci Agent NN — Self-Improvement Pipeline")
-    parser.add_argument("mode", choices=["collect", "train", "push", "all", "scheduled"],
+    parser.add_argument("mode", choices=["collect", "train", "push", "all", "scheduled", "budget"],
                         help="collect=watch live sim, train=retrain NN, push=upload to HF, "
-                             "all=full pipeline, scheduled=nightly Gemini cycle")
+                             "all=full pipeline, scheduled=daily Gemini cycle, "
+                             "budget=check quota & set probability for target duration")
     parser.add_argument("--url", default="https://raymelius-soci2.hf.space",
                         help="Live simulation URL (default: HF Space)")
     parser.add_argument("--minutes", type=int, default=60,
@@ -897,6 +1030,9 @@ def main():
             repo_id=args.repo,
             gemini_prob=args.gemini_prob,
         ))
+
+    if args.mode == "budget":
+        asyncio.run(budget(base_url=args.url, target_minutes=args.minutes, apply=True))
 
 
 if __name__ == "__main__":

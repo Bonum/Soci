@@ -158,13 +158,23 @@ async def get_agent(agent_id: str):
         raise HTTPException(status_code=404, detail=f"Agent {agent_id} not found")
 
     loc = sim.city.get_location(agent.location)
+    p = agent.persona
     return {
         "id": agent.id,
         "name": agent.name,
-        "age": agent.persona.age,
-        "gender": agent.persona.gender,
-        "occupation": agent.persona.occupation,
-        "traits": agent.persona.trait_summary,
+        "age": p.age,
+        "gender": p.gender,
+        "occupation": p.occupation,
+        "traits": p.trait_summary,
+        "personality": {
+            "openness": getattr(p, "openness", 5),
+            "conscientiousness": getattr(p, "conscientiousness", 5),
+            "extraversion": getattr(p, "extraversion", 5),
+            "agreeableness": getattr(p, "agreeableness", 5),
+            "neuroticism": getattr(p, "neuroticism", 5),
+        },
+        "home_location": getattr(p, "home_location", ""),
+        "work_location": getattr(p, "work_location", ""),
         "location": {"id": agent.location, "name": loc.name if loc else "unknown"},
         "state": agent.state.value,
         "mood": round(agent.mood, 2),
@@ -320,6 +330,69 @@ async def set_llm_provider(req: SwitchProviderRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/llm/quota")
+async def get_llm_quota():
+    """Return remaining daily quota and usage stats for budget planning.
+
+    Supports Gemini (tracked internally) and Groq (estimated from RPM × hours remaining).
+    """
+    import os
+    from soci.api.server import get_simulation, get_llm_provider, _sim_speed
+    sim = get_simulation()
+    llm = sim.llm
+    provider = get_llm_provider()
+
+    # Per-provider quota info
+    # Gemini: has internal daily tracking (_daily_limit, _daily_requests)
+    # Groq: 30 RPM free tier, ~14,400 RPD; no internal daily counter
+    daily_limit = getattr(llm, "_daily_limit", 0)
+    daily_requests = getattr(llm, "_daily_requests", 0)
+
+    # Build quota for all rate-limited providers (even if not currently active)
+    providers_quota = {}
+
+    # Gemini quota
+    if os.environ.get("GEMINI_API_KEY"):
+        g_limit = daily_limit if provider == "gemini" else 1500
+        g_used = daily_requests if provider == "gemini" else 0
+        providers_quota["gemini"] = {
+            "daily_limit": g_limit,
+            "daily_requests": g_used,
+            "remaining": max(0, g_limit - g_used),
+        }
+
+    # Groq quota (estimated: 30 RPM × 60 min × 24h = 14,400 RPD free tier)
+    if os.environ.get("GROQ_API_KEY"):
+        groq_limit = int(os.environ.get("GROQ_DAILY_LIMIT", "14400"))
+        groq_used = getattr(llm, "_daily_requests", 0) if provider == "groq" else 0
+        providers_quota["groq"] = {
+            "daily_limit": groq_limit,
+            "daily_requests": groq_used,
+            "remaining": max(0, groq_limit - groq_used),
+        }
+
+    # Current provider's quota (for backward compat with nn_selfimprove)
+    cur = providers_quota.get(provider, {"daily_limit": 0, "daily_requests": 0, "remaining": 0})
+
+    # Estimate ticks per hour
+    tick_delay = 4.0 if provider in ("gemini", "groq") else 2.0
+    ticks_per_hour = 3600.0 / (tick_delay * max(_sim_speed, 0.01))
+    max_calls_per_tick = 2 if provider in ("gemini", "groq") else 5
+    num_agents = len(sim.agents)
+
+    return {
+        "provider": provider,
+        "daily_limit": cur["daily_limit"],
+        "daily_requests": cur["daily_requests"],
+        "remaining": cur["remaining"],
+        "providers": providers_quota,
+        "ticks_per_hour": round(ticks_per_hour, 1),
+        "max_calls_per_tick": max_calls_per_tick,
+        "num_agents": num_agents,
+        "sim_speed": _sim_speed,
+    }
 
 
 @router.get("/stats")
