@@ -889,15 +889,7 @@ async def stockex_order(req: StockExOrderRequest):
     """Place a trade on StockEx on behalf of a Soci player agent."""
     from soci.api.server import get_simulation
     sim = get_simulation()
-
-    # Verify Soci player token
-    from soci.persistence.database import Database
-    db = Database()
-    user = await db.get_user_by_token(req.token)
-    if not user or not user.get("agent_id"):
-        raise HTTPException(status_code=401, detail="Invalid token")
-
-    agent = sim.agents.get(user["agent_id"])
+    user, agent = await _get_player_from_token(req.token)
     if not agent:
         raise HTTPException(status_code=404, detail="Player agent not found")
 
