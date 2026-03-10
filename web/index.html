@@ -3424,12 +3424,15 @@ document.getElementById('llm-model').addEventListener('click', async (e) => {
       // Quota badge for rate-limited providers
       let badge = '';
       const pQuota = (quota && quota.providers && quota.providers[p.id]) || null;
-      if (isRateLimited(p.id) && pQuota && pQuota.daily_limit > 0) {
-        const rem = pQuota.remaining || 0;
-        const isLimited = pQuota.status === 'limited' || rem <= 0;
-        const pct = Math.round((rem / pQuota.daily_limit) * 100);
-        const color = isLimited ? '#e94560' : pct < 20 ? '#f0c040' : '#8899aa';
-        badge = `<span style="font-size:10px;color:${color};margin-left:auto">${isLimited ? 'exhausted' : rem + ' left'}</span>`;
+      if (isRateLimited(p.id) && pQuota) {
+        const isLimited = pQuota.status === 'limited';
+        const rpm = pQuota.rpm || 4;
+        if (isLimited) {
+          badge = `<span style="font-size:10px;color:#e94560;margin-left:auto">exhausted</span>`;
+        } else {
+          const rt = estimateRuntime({remaining: pQuota.daily_limit, rpm, max_calls_per_hour: rpm * 60});
+          badge = `<span style="font-size:10px;color:#8899aa;margin-left:auto">${pQuota.daily_limit}/day · ${rt}</span>`;
+        }
       }
 
       row.innerHTML = `<span class="llm-check">${isActive ? '✔' : ''}</span>
@@ -3446,51 +3449,54 @@ document.getElementById('llm-model').addEventListener('click', async (e) => {
           panel.className = 'llm-quota-panel';
           panel.style.cssText = 'padding:8px 14px;background:#0a1628;border-top:1px solid #0f3460;border-bottom:1px solid #0f3460;font-size:11px;color:#c8c8d8';
 
+          // IMPORTANT: stop clicks inside panel from closing the popup
+          panel.addEventListener('click', (e) => e.stopPropagation());
+          panel.addEventListener('mousedown', (e) => e.stopPropagation());
+
           // Use per-provider quota data
           const pq = (quota && quota.providers && quota.providers[p.id]) || null;
-          const rem = pq ? (pq.remaining || 0) : 0;
           const lim = pq ? (pq.daily_limit || 0) : 0;
-          const pct = lim > 0 ? Math.round((rem / lim) * 100) : 0;
-          // Build a quota-like object for estimateRuntime using this provider's RPM
-          const pqForCalc = {remaining: rem, daily_limit: lim,
-            rpm: pq.rpm || 4,
-            max_calls_per_hour: pq.max_calls_per_hour || 240};
+          const rpm = (pq && pq.rpm) || 4;
+          const maxPerHour = (pq && pq.max_calls_per_hour) || (rpm * 60);
+          // Runtime based on full daily quota (counter is unreliable across restarts)
+          const pqForCalc = {remaining: lim, rpm: rpm, max_calls_per_hour: maxPerHour};
+          const isExhausted = pq && pq.status === 'limited';
 
-          const isExhausted = rem <= 0 || (pq && pq.status === 'limited');
           if (isExhausted) {
             panel.innerHTML = `<div style="color:#e94560;margin-bottom:6px">Quota exhausted. Resets daily (10:00 AM).</div>`;
             row.after(panel);
             return;
           }
 
-          const rpm = pqForCalc.rpm || 4;
           const runtime = estimateRuntime(pqForCalc);
-          const curProb = Math.round(llmCallProbability * 100) || 10;
+          // Default probability for rate-limited providers (not inherited from NN's 100%)
+          const defaultProb = 10;
 
           panel.innerHTML =
             `<div style="color:#4ecca3;font-weight:600;margin-bottom:4px">${p.icon} ${p.label}</div>` +
-            `<div style="margin-bottom:4px">Quota: <b>${rem}</b>/${lim} (${pct}%)</div>` +
+            `<div style="margin-bottom:4px">Daily limit: <b>${lim}</b> requests</div>` +
             `<div style="margin-bottom:6px;font-size:10px;color:#8899aa">` +
-              `Rate limit: ${rpm} req/min · Estimated runtime: <b style="color:#4ecca3">${runtime}</b></div>` +
+              `${rpm} req/min · Max runtime: <b style="color:#4ecca3">${runtime}</b></div>` +
             `<div style="display:flex;align-items:center;gap:8px;margin-top:6px">` +
               `<label style="font-size:11px;color:#8899aa">Probability:</label>` +
-              `<input type="range" min="1" max="100" value="${curProb}" style="flex:1;accent-color:#4ecca3" class="popup-prob-slider">` +
-              `<span class="popup-prob-val" style="font-size:12px;color:#4ecca3;min-width:32px">${curProb}%</span>` +
+              `<input type="range" min="1" max="100" value="${defaultProb}" style="flex:1;accent-color:#4ecca3" class="popup-prob-slider">` +
+              `<span class="popup-prob-val" style="font-size:12px;color:#4ecca3;min-width:32px">${defaultProb}%</span>` +
             `</div>` +
             `<div style="font-size:10px;color:#8899aa;margin:2px 0 8px 0">` +
               `Higher = more LLM decisions, lower = more routine behavior</div>` +
             `<button class="popup-switch-btn" style="width:100%;padding:6px;border:none;border-radius:4px;` +
               `background:#4ecca3;color:#0a0a23;font-weight:600;cursor:pointer;font-size:12px">` +
-              `Switch to ${p.label} at ${curProb}%</button>`;
+              `Switch to ${p.label} at ${defaultProb}%</button>`;
 
           row.after(panel);
 
-          // Wire up slider (use class selectors to avoid ID collision with top slider)
+          // Wire up slider
           const slider = panel.querySelector('.popup-prob-slider');
           const valLabel = panel.querySelector('.popup-prob-val');
           const btn = panel.querySelector('.popup-switch-btn');
 
-          slider.addEventListener('input', () => {
+          slider.addEventListener('input', (e) => {
+            e.stopPropagation();
             const pv = parseInt(slider.value);
             valLabel.textContent = pv + '%';
             btn.textContent = `Switch to ${p.label} at ${pv}%`;
@@ -3514,7 +3520,7 @@ document.getElementById('llm-model').addEventListener('click', async (e) => {
               if (!r.ok) { const err = await r.json(); showToast(`LLM switch failed: ${err.detail}`, 'event'); return; }
               // 3. Sync the top probability slider
               updateLlmProbUI(probVal);
-              showToast(`Switched to ${p.label} at ${Math.round(probVal*100)}% · ${runtime} runtime`, 'conv');
+              showToast(`Switched to ${p.label} at ${Math.round(probVal*100)}% · ${runtime}`, 'conv');
             } catch (err) { showToast('LLM switch error', 'event'); }
           });
         });
