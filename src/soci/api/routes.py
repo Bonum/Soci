@@ -382,11 +382,14 @@ async def get_llm_quota():
     max_calls_per_tick = 2 if provider in ("gemini", "groq") else 5
     num_agents = len(sim.agents)
 
-    # Per-provider tick estimates (for frontend runtime calc when switching TO a provider)
+    # Per-provider rate info (RPM is the real bottleneck, not probability)
+    # Gemini: 4 RPM hard limit → max 240 calls/hour
+    # Groq: 28 RPM hard limit → max 1680 calls/hour
+    provider_rpm = {"gemini": 4, "groq": 28}
     for pid in providers_quota:
-        rl_delay = 4.0 if pid in ("gemini", "groq") else 2.0
-        providers_quota[pid]["ticks_per_hour"] = round(3600.0 / (rl_delay * max(_sim_speed, 0.01)), 1)
-        providers_quota[pid]["max_calls_per_tick"] = 2 if pid in ("gemini", "groq") else 5
+        rpm = provider_rpm.get(pid, 30)
+        providers_quota[pid]["rpm"] = rpm
+        providers_quota[pid]["max_calls_per_hour"] = rpm * 60
 
     return {
         "provider": provider,

@@ -788,14 +788,12 @@ async def scheduled(
         return True
 
     async def calculate_probability(client: httpx.AsyncClient, target_minutes: int) -> float:
-        """Query remaining Gemini quota and calculate probability to last target_minutes.
+        """Query remaining Gemini quota and return a reasonable probability.
 
-        Math:
-          - ticks_per_hour ≈ 900 (4s tick delay at 1x speed)
-          - max 2 LLM calls per tick (rate-limited budget)
-          - Each call site rolls random() < probability, ~4 sites per tick
-          - Expected LLM calls/hour = ticks_per_hour × min(sites × prob, max_calls_per_tick)
-          - Solve for prob: remaining_quota / (target_hours × ticks_per_hour × effective_rate)
+        The real bottleneck is RPM (requests per minute), not probability.
+        With 50 agents, even low probability saturates the RPM rate limiter.
+        Gemini: 4 RPM → max 240 calls/hour → 1500 RPD lasts ~6.25h.
+        Probability mainly controls LLM-vs-routine quality, not quota duration.
         """
         resp = await _api_call(client, "get", "/api/llm/quota")
         if not resp or resp.status_code != 200:
@@ -804,33 +802,35 @@ async def scheduled(
 
         quota = resp.json()
         remaining = quota.get("remaining", 1500)
-        ticks_per_hour = quota.get("ticks_per_hour", 900)
-        max_calls_per_tick = quota.get("max_calls_per_tick", 2)
-        num_agents = quota.get("num_agents", 20)
 
         if remaining <= 0:
             logger.warning("No Gemini quota remaining!")
             return 0.0
 
+        # Get per-provider RPM info
+        providers = quota.get("providers", {})
+        gemini_info = providers.get("gemini", {})
+        rpm = gemini_info.get("rpm", 4)
+        max_calls_per_hour = rpm * 60
+        hours_available = remaining / max_calls_per_hour
         target_hours = target_minutes / 60.0
 
-        # There are ~4 LLM call sites per tick (plan, action, social, reflect),
-        # each gated by probability. But max_calls_per_tick caps the actual calls.
-        # Approximate: at prob P, expected calls/tick ≈ min(num_sites × P, max_calls_per_tick)
-        # We want: remaining = target_hours × ticks_per_hour × calls_per_tick
-        # So: calls_per_tick = remaining / (target_hours × ticks_per_hour)
-        # And: P = calls_per_tick / num_call_sites  (since each site independently rolls P)
-        num_call_sites = 4  # plan, action, social, reflect
-        desired_calls_per_tick = remaining / (target_hours * ticks_per_hour)
-        # Clamp to max budget
-        desired_calls_per_tick = min(desired_calls_per_tick, max_calls_per_tick)
-        prob = desired_calls_per_tick / num_call_sites
-        prob = max(0.01, min(1.0, prob))
-
         logger.info(
-            f"Quota: {remaining} remaining, target {target_minutes} min → "
-            f"~{desired_calls_per_tick:.2f} calls/tick → probability {prob:.2%}"
+            f"Quota: {remaining} remaining, RPM={rpm} → "
+            f"max {max_calls_per_hour} calls/h → ~{hours_available:.1f}h available"
         )
+
+        if hours_available >= target_hours:
+            prob = gemini_prob
+            logger.info(f"Quota sufficient for {target_minutes}min target → using {prob:.0%}")
+        else:
+            # Quota won't last — reduce probability (marginal help with many agents)
+            prob = max(0.02, 0.10 * (hours_available / target_hours))
+            logger.warning(
+                f"Quota only lasts ~{hours_available:.1f}h but target is {target_hours:.1f}h "
+                f"→ reducing probability to {prob:.1%}"
+            )
+
         return round(prob, 4)
 
     async def wait_until_reset():
@@ -940,34 +940,39 @@ async def budget(
             return
 
         quota = resp.json()
-        remaining = quota.get("remaining", 0)
-        daily_limit = quota.get("daily_limit", 1500)
-        daily_requests = quota.get("daily_requests", 0)
-        ticks_per_hour = quota.get("ticks_per_hour", 900)
-        max_calls_per_tick = quota.get("max_calls_per_tick", 2)
         provider = quota.get("provider", "?")
         num_agents = quota.get("num_agents", 0)
 
+        # Get Gemini-specific quota from providers dict
+        providers = quota.get("providers", {})
+        gemini_info = providers.get("gemini", {})
+        remaining = gemini_info.get("remaining", quota.get("remaining", 0))
+        daily_limit = gemini_info.get("daily_limit", quota.get("daily_limit", 1500))
+        daily_requests = gemini_info.get("daily_requests", quota.get("daily_requests", 0))
+        rpm = gemini_info.get("rpm", 4)
+        max_calls_per_hour = rpm * 60
+        hours_available = remaining / max_calls_per_hour if max_calls_per_hour > 0 else 0
+
         logger.info(f"Provider: {provider}")
         logger.info(f"Daily quota: {daily_requests}/{daily_limit} used, {remaining} remaining")
-        logger.info(f"Sim: {num_agents} agents, ~{ticks_per_hour:.0f} ticks/hour")
+        logger.info(f"Rate limit: {rpm} RPM → max {max_calls_per_hour} calls/hour")
+        logger.info(f"Estimated runtime at max RPM: ~{hours_available:.1f}h")
+        logger.info(f"Sim: {num_agents} agents")
 
         if remaining <= 0:
             logger.warning("No quota remaining! Wait for reset (10:00 AM Athens).")
             return
 
         target_hours = target_minutes / 60.0
-        num_call_sites = 4
-        desired_calls_per_tick = remaining / (target_hours * ticks_per_hour)
-        desired_calls_per_tick = min(desired_calls_per_tick, max_calls_per_tick)
-        prob = desired_calls_per_tick / num_call_sites
-        prob = max(0.01, min(1.0, prob))
-        prob = round(prob, 4)
+        # Probability controls LLM-vs-routine quality, RPM is the real bottleneck
+        if hours_available >= target_hours:
+            prob = 0.20  # moderate: good mix of LLM and routine
+        else:
+            prob = max(0.02, 0.10 * (hours_available / target_hours))
 
-        expected_calls = target_hours * ticks_per_hour * min(num_call_sites * prob, max_calls_per_tick)
         logger.info(
             f"Target: {target_minutes} min → probability {prob:.2%} "
-            f"(~{expected_calls:.0f} calls, {remaining} available)"
+            f"(RPM-limited to ~{max_calls_per_hour} calls/h, {remaining} remaining)"
         )
 
         if apply:
