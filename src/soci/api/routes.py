@@ -285,7 +285,7 @@ async def get_llm_providers():
     current_model = getattr(get_simulation().llm, "default_model", "")
     providers = []
     # NN is always available — local ONNX model, no API key needed
-    providers.append({"id": "nn",     "label": "Soci Agent NN (local)",  "icon": "🧠", "model": ""})
+    providers.append({"id": "nn",     "label": "Soci Agent NN",  "icon": "🧠", "model": ""})
     if os.environ.get("ANTHROPIC_API_KEY"):
         providers.append({"id": "claude",  "label": "Claude Haiku",        "icon": "◆", "model": ""})
     if os.environ.get("GROQ_API_KEY"):
@@ -390,6 +390,14 @@ async def get_llm_quota():
         rpm = provider_rpm.get(pid, 30)
         providers_quota[pid]["rpm"] = rpm
         providers_quota[pid]["max_calls_per_hour"] = rpm * 60
+
+    # Expose rate-limit status (detects actual exhaustion from 429 errors)
+    llm_status = getattr(llm, "llm_status", "active")
+    if provider in providers_quota:
+        providers_quota[provider]["status"] = llm_status
+        if llm_status == "limited":
+            # Override remaining to 0 — the API is actually returning 429s
+            providers_quota[provider]["remaining"] = 0
 
     return {
         "provider": provider,

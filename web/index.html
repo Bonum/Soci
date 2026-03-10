@@ -3426,9 +3426,10 @@ document.getElementById('llm-model').addEventListener('click', async (e) => {
       const pQuota = (quota && quota.providers && quota.providers[p.id]) || null;
       if (isRateLimited(p.id) && pQuota && pQuota.daily_limit > 0) {
         const rem = pQuota.remaining || 0;
+        const isLimited = pQuota.status === 'limited' || rem <= 0;
         const pct = Math.round((rem / pQuota.daily_limit) * 100);
-        const color = rem <= 0 ? '#e94560' : pct < 20 ? '#f0c040' : '#8899aa';
-        badge = `<span style="font-size:10px;color:${color};margin-left:auto">${rem <= 0 ? 'exhausted' : rem + ' left'}</span>`;
+        const color = isLimited ? '#e94560' : pct < 20 ? '#f0c040' : '#8899aa';
+        badge = `<span style="font-size:10px;color:${color};margin-left:auto">${isLimited ? 'exhausted' : rem + ' left'}</span>`;
       }
 
       row.innerHTML = `<span class="llm-check">${isActive ? '✔' : ''}</span>
@@ -3450,19 +3451,21 @@ document.getElementById('llm-model').addEventListener('click', async (e) => {
           const rem = pq ? (pq.remaining || 0) : 0;
           const lim = pq ? (pq.daily_limit || 0) : 0;
           const pct = lim > 0 ? Math.round((rem / lim) * 100) : 0;
-          // Build a quota-like object for estimateRuntime using this provider's own tick rate
+          // Build a quota-like object for estimateRuntime using this provider's RPM
           const pqForCalc = {remaining: rem, daily_limit: lim,
-            max_calls_per_tick: pq.max_calls_per_tick || 2,
-            ticks_per_hour: pq.ticks_per_hour || 900};
+            rpm: pq.rpm || 4,
+            max_calls_per_hour: pq.max_calls_per_hour || 240};
 
-          if (rem <= 0) {
-            panel.innerHTML = `<div style="color:#e94560;margin-bottom:6px">Quota exhausted (0/${lim}). Resets daily.</div>`;
+          const isExhausted = rem <= 0 || (pq && pq.status === 'limited');
+          if (isExhausted) {
+            panel.innerHTML = `<div style="color:#e94560;margin-bottom:6px">Quota exhausted. Resets daily (10:00 AM).</div>`;
             row.after(panel);
             return;
           }
 
           const rpm = pqForCalc.rpm || 4;
           const runtime = estimateRuntime(pqForCalc);
+          const curProb = Math.round(llmCallProbability * 100) || 10;
 
           panel.innerHTML =
             `<div style="color:#4ecca3;font-weight:600;margin-bottom:4px">${p.icon} ${p.label}</div>` +
@@ -3471,14 +3474,14 @@ document.getElementById('llm-model').addEventListener('click', async (e) => {
               `Rate limit: ${rpm} req/min · Estimated runtime: <b style="color:#4ecca3">${runtime}</b></div>` +
             `<div style="display:flex;align-items:center;gap:8px;margin-top:6px">` +
               `<label style="font-size:11px;color:#8899aa">Probability:</label>` +
-              `<input type="range" min="1" max="100" value="20" style="flex:1;accent-color:#4ecca3" class="popup-prob-slider">` +
-              `<span class="popup-prob-val" style="font-size:12px;color:#4ecca3;min-width:32px">20%</span>` +
+              `<input type="range" min="1" max="100" value="${curProb}" style="flex:1;accent-color:#4ecca3" class="popup-prob-slider">` +
+              `<span class="popup-prob-val" style="font-size:12px;color:#4ecca3;min-width:32px">${curProb}%</span>` +
             `</div>` +
             `<div style="font-size:10px;color:#8899aa;margin:2px 0 8px 0">` +
               `Higher = more LLM decisions, lower = more routine behavior</div>` +
             `<button class="popup-switch-btn" style="width:100%;padding:6px;border:none;border-radius:4px;` +
               `background:#4ecca3;color:#0a0a23;font-weight:600;cursor:pointer;font-size:12px">` +
-              `Switch to ${p.label} at 20%</button>`;
+              `Switch to ${p.label} at ${curProb}%</button>`;
 
           row.after(panel);
 
@@ -3516,10 +3519,13 @@ document.getElementById('llm-model').addEventListener('click', async (e) => {
           });
         });
       } else if (!isActive) {
-        // Non-rate-limited: switch immediately as before
+        // Non-rate-limited (NN, Claude, Ollama): switch immediately, set probability to 100%
         row.addEventListener('click', async () => {
           popup.style.display = 'none'; _llmPopupOpen = false;
           try {
+            // Set probability to 100% for local/unlimited providers
+            const autoProb = (p.id === 'nn') ? 1.0 : 0.10;
+            await fetch(`${API_BASE}/controls/llm_probability?value=${autoProb}`, {method: 'POST'});
             const body = {provider: p.id};
             if (p.model) body.model = p.model;
             const r = await fetch(`${API_BASE}/llm/provider`, {
@@ -3528,7 +3534,8 @@ document.getElementById('llm-model').addEventListener('click', async (e) => {
               body: JSON.stringify(body),
             });
             if (!r.ok) { const err = await r.json(); showToast(`LLM switch failed: ${err.detail}`, 'event'); return; }
-            showToast(`Switched to ${p.label}`, 'conv');
+            updateLlmProbUI(autoProb);
+            showToast(`Switched to ${p.label} at ${Math.round(autoProb*100)}%`, 'conv');
           } catch (err) { showToast('LLM switch error', 'event'); }
         });
       }
