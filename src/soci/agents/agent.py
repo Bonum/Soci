@@ -79,7 +79,7 @@ class Agent:
 
         # Life history — append-only timeline of significant events
         self.life_events: list[dict] = []
-        # Personal goals — evolving aspirations
+        # Personal goals — evolving aspirations (each has "term": "short" or "long")
         self.goals: list[dict] = []
         self._next_goal_id: int = 0
         # Pregnancy (female agents)
@@ -88,6 +88,23 @@ class Agent:
         self.pregnancy_partner_id: Optional[str] = None
         # Children (name strings)
         self.children: list[str] = []
+
+        # Age progression — tracks starting age and the day it was set
+        self._birth_age: int = persona.age  # Age when simulation started
+        self._birth_day: int = 0            # Sim day when agent was created
+        # Alive status
+        self.alive: bool = True
+        self.death_day: int = 0
+        self.death_cause: str = ""
+        # Parent agent IDs (for baby agents)
+        self.parent_ids: list[str] = []
+        # Lifecycle stage
+        self.lifecycle_stage: str = self._compute_lifecycle_stage()
+        # Mayor status
+        self.is_mayor: bool = False
+        self.mayor_term_start_day: int = 0
+        # Community contribution score (for election)
+        self.community_score: float = 0.0
 
     @property
     def is_busy(self) -> bool:
@@ -207,15 +224,76 @@ class Agent:
         """Reset plan flag for a new day."""
         self._has_plan_today = False
 
+    def _compute_lifecycle_stage(self) -> str:
+        """Compute lifecycle stage from current age."""
+        age = self.persona.age
+        if age < 4:
+            return "infant"
+        elif age < 6:
+            return "toddler"
+        elif age < 12:
+            return "child"
+        elif age < 18:
+            return "teenager"
+        elif age < 30:
+            return "young_adult"
+        elif age < 60:
+            return "adult"
+        elif age < 75:
+            return "senior"
+        else:
+            return "elderly"
+
+    def get_current_age(self, current_day: int) -> int:
+        """Calculate agent's current age based on sim days elapsed.
+        Each 365 sim days = 1 year of age."""
+        days_elapsed = max(0, current_day - self._birth_day)
+        years_elapsed = days_elapsed // 365
+        return self._birth_age + years_elapsed
+
+    def tick_age(self, current_day: int) -> bool:
+        """Update age based on current sim day. Returns True if age changed."""
+        new_age = self.get_current_age(current_day)
+        if new_age != self.persona.age:
+            self.persona.age = new_age
+            self.lifecycle_stage = self._compute_lifecycle_stage()
+            return True
+        return False
+
+    def check_death(self, current_day: int) -> bool:
+        """Check if this agent should die of old age. Only agents 80+ have a chance."""
+        import random
+        if not self.alive or self.persona.age < 80:
+            return False
+        # Gentle curve: agents live a few years past 80 on average
+        # 80 = 0.05%/day (~17% annual), 90 = 0.2%/day (~52% annual),
+        # 100 = 0.5%/day (~84% annual), 110 = 1%/day (~97% annual)
+        age = self.persona.age
+        daily_death_chance = 0.0005 * (1.08 ** (age - 80))  # exponential growth
+        return random.random() < daily_death_chance
+
+    def die(self, day: int, tick: int, cause: str = "old age") -> None:
+        """Mark agent as dead."""
+        self.alive = False
+        self.death_day = day
+        self.death_cause = cause
+        self.state = AgentState.IDLE
+        self.current_action = None
+        self._action_ticks_remaining = 0
+        self.add_life_event(day, tick, "death", f"Passed away from {cause} at age {self.persona.age}")
+
     def add_life_event(self, day: int, tick: int, event_type: str, description: str) -> dict:
         """Record a significant life event (promotion, marriage, birth, etc.)."""
         event = {"day": day, "tick": tick, "type": event_type, "description": description}
         self.life_events.append(event)
         return event
 
-    def add_goal(self, description: str, status: str = "active") -> dict:
-        """Add a personal goal."""
-        goal = {"id": self._next_goal_id, "description": description, "status": status, "progress": 0.0}
+    def add_goal(self, description: str, status: str = "active", term: str = "long") -> dict:
+        """Add a personal goal. term: 'short' (day/week) or 'long' (life goal)."""
+        goal = {
+            "id": self._next_goal_id, "description": description,
+            "status": status, "progress": 0.0, "term": term,
+        }
         self._next_goal_id += 1
         self.goals.append(goal)
         return goal
@@ -233,21 +311,35 @@ class Agent:
     def seed_biography(self, day: int, tick: int) -> None:
         """Generate initial life events from persona background. Called on sim reset."""
         p = self.persona
+        self._birth_day = day  # Track when agent entered the sim
         # Origin event
-        self.add_life_event(0, 0, "origin", f"Born and raised. {p.background}")
+        self.add_life_event(day, tick, "origin", f"Born and raised. {p.background}")
         # Career event
         if p.occupation and p.occupation.lower() not in ("newcomer", "unknown", "unemployed"):
-            self.add_life_event(0, 0, "career", f"Works as {p.occupation}")
-        # Seed initial goals based on persona
+            self.add_life_event(day, tick, "career", f"Works as {p.occupation}")
+        # Seed initial LONG-TERM goals based on persona
         occ_lower = (p.occupation or "").lower()
         if "student" in occ_lower:
-            self.add_goal("Graduate and find a career")
+            self.add_goal("Graduate and find a career", term="long")
         elif p.age < 30:
-            self.add_goal("Advance in my career")
+            self.add_goal("Advance in my career", term="long")
         if p.age >= 20 and p.age < 40:
-            self.add_goal("Find meaningful relationships")
+            self.add_goal("Find meaningful relationships", term="long")
         if p.age >= 30:
-            self.add_goal("Build a stable and happy life")
+            self.add_goal("Build a stable and happy life", term="long")
+        # Seed initial SHORT-TERM goals
+        if p.age >= 18:
+            self.add_goal("Meet someone new this week", term="short")
+        # Baby/child lifecycle goals
+        if p.age < 4:
+            self.lifecycle_stage = "infant"
+        elif p.age < 6:
+            self.add_goal("Go to kindergarten", term="long")
+        elif p.age < 12:
+            self.add_goal("Do well in school", term="long")
+        elif p.age < 18:
+            self.add_goal("Graduate high school", term="long")
+            self.add_goal("Figure out what to do after school", term="long")
 
     def biography_summary(self) -> str:
         """Short biography string for LLM context."""
@@ -279,9 +371,17 @@ class Agent:
             parts.append("I am currently pregnant.")
             parts.append("")
         active_goals = [g for g in self.goals if g["status"] == "active"]
-        if active_goals:
-            parts.append("MY GOALS:")
-            for g in active_goals:
+        long_goals = [g for g in active_goals if g.get("term") == "long"]
+        short_goals = [g for g in active_goals if g.get("term") == "short"]
+        if long_goals:
+            parts.append("MY LONG-TERM GOALS:")
+            for g in long_goals:
+                pct = int(g.get("progress", 0) * 100)
+                parts.append(f"- {g['description']} ({pct}% progress)")
+            parts.append("")
+        if short_goals:
+            parts.append("MY SHORT-TERM GOALS (this week):")
+            for g in short_goals:
                 pct = int(g.get("progress", 0) * 100)
                 parts.append(f"- {g['description']} ({pct}% progress)")
             parts.append("")
@@ -331,6 +431,16 @@ class Agent:
             "pregnancy_start_tick": self.pregnancy_start_tick,
             "pregnancy_partner_id": self.pregnancy_partner_id,
             "children": self.children,
+            "_birth_age": self._birth_age,
+            "_birth_day": self._birth_day,
+            "alive": self.alive,
+            "death_day": self.death_day,
+            "death_cause": self.death_cause,
+            "parent_ids": self.parent_ids,
+            "lifecycle_stage": self.lifecycle_stage,
+            "is_mayor": self.is_mayor,
+            "mayor_term_start_day": self.mayor_term_start_day,
+            "community_score": self.community_score,
         }
 
     @classmethod
@@ -358,4 +468,14 @@ class Agent:
         agent.pregnancy_start_tick = data.get("pregnancy_start_tick", 0)
         agent.pregnancy_partner_id = data.get("pregnancy_partner_id")
         agent.children = data.get("children", [])
+        agent._birth_age = data.get("_birth_age", agent.persona.age)
+        agent._birth_day = data.get("_birth_day", 0)
+        agent.alive = data.get("alive", True)
+        agent.death_day = data.get("death_day", 0)
+        agent.death_cause = data.get("death_cause", "")
+        agent.parent_ids = data.get("parent_ids", [])
+        agent.lifecycle_stage = data.get("lifecycle_stage", agent._compute_lifecycle_stage())
+        agent.is_mayor = data.get("is_mayor", False)
+        agent.mayor_term_start_day = data.get("mayor_term_start_day", 0)
+        agent.community_score = data.get("community_score", 0.0)
         return agent

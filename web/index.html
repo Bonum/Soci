@@ -2732,22 +2732,30 @@ function showDefaultDetail() {
     return (a[1].name || '').localeCompare(b[1].name || '');
   });
 
+  const aliveCount = sorted.filter(([,a]) => a.alive !== false).length;
+  const deadCount = sorted.length - aliveCount;
+  const mayorInfo = window._mayorData ? `<div style="font-size:10px;color:#f0c040;margin:4px 0">\uD83C\uDFDB\uFE0F Mayor: ${esc(window._mayorData.name)}</div>` : '';
   el.innerHTML = `
-    <div class="section-header">Population (${Object.keys(agents).length})</div>
+    <div class="section-header">Population (${aliveCount} alive${deadCount > 0 ? `, ${deadCount} deceased` : ''})</div>
+    ${mayorInfo}
     ${sorted.map(([aid,a]) => {
-      const color = AGENT_COLORS[getAgentIdx(aid) % AGENT_COLORS.length];
-      const gi = a.gender==='female'?'\uD83D\uDC69':a.gender==='male'?'\uD83D\uDC68':'\uD83E\uDDD1';
-      const stateIcon = a.state==='in_conversation'?' \uD83D\uDCAC':(a.state==='sleeping'?' \uD83D\uDCA4':(a.state==='moving'?' \uD83D\uDEB6':''));
+      const isDead = a.alive === false;
+      const color = isDead ? '#555' : AGENT_COLORS[getAgentIdx(aid) % AGENT_COLORS.length];
+      const stg = a.lifecycle_stage || '';
+      const gi = isDead ? '\u2620\uFE0F' : (stg==='infant'||stg==='toddler') ? '\uD83D\uDC76' : (stg==='child'||stg==='teenager') ? '\uD83E\uDDD2' : a.gender==='female'?'\uD83D\uDC69':a.gender==='male'?'\uD83D\uDC68':'\uD83E\uDDD1';
+      const stateIcon = isDead ? '' : a.state==='in_conversation'?' \uD83D\uDCAC':(a.state==='sleeping'?' \uD83D\uDCA4':(a.state==='moving'?' \uD83D\uDEB6':''));
       const partner = a.partner_id && agents[a.partner_id] ? ` \u2764\uFE0F ${agents[a.partner_id].name.split(' ')[0]}` : '';
       const pregIcon = a.pregnant ? ' \uD83E\uDD30' : '';
       const kidIcon = a.children_count > 0 ? ` \uD83D\uDC76${a.children_count}` : '';
+      const mayorBadge = a.is_mayor ? ' \uD83C\uDFDB\uFE0F' : '';
+      const ageStr = a.age != null ? ` (${a.age})` : '';
       return `
-        <div class="agent-list-item" onclick="selectedAgentId='${aid}';fetchAgentDetail('${aid}');">
+        <div class="agent-list-item" onclick="selectedAgentId='${aid}';fetchAgentDetail('${aid}');" style="${isDead ? 'opacity:0.5' : ''}">
           <span class="agent-dot" style="background:${color}"></span>
           <span style="font-size:13px">${gi}</span>
           <div class="agent-info">
-            <div class="agent-name" style="color:${color}">${a.name}${partner}${pregIcon}${kidIcon}${stateIcon}</div>
-            <div class="agent-action">${esc(a.action||'idle')}</div>
+            <div class="agent-name" style="color:${color}">${a.name}${ageStr}${mayorBadge}${partner}${pregIcon}${kidIcon}${stateIcon}</div>
+            <div class="agent-action">${isDead ? 'Deceased' : esc(a.action||'idle')}</div>
           </div>
         </div>`;
     }).join('')}`;
@@ -2787,12 +2795,16 @@ function renderAgentDetail(data) {
     promotion:'\uD83D\uDCC8', graduated:'\uD83C\uDF93', achievement:'\u2B50',
     milestone:'\uD83C\uDFC6', new_job:'\uD83D\uDCBC', moved:'\uD83D\uDE9A',
     breakup:'\uD83D\uDC94', friendship:'\uD83E\uDD1D',
+    death:'\u2620\uFE0F', birthday:'\uD83C\uDF82', divorce:'\uD83D\uDC94',
+    politics:'\uD83C\uDFDB\uFE0F', bereavement:'\uD83D\uDE22',
   };
 
-  // Goals
+  // Goals — split into short-term and long-term
   const goals = data.goals || [];
   const activeGoals = goals.filter(g => g.status === 'active');
   const completedGoals = goals.filter(g => g.status === 'completed');
+  const shortTermGoals = activeGoals.filter(g => g.term === 'short');
+  const longTermGoals = activeGoals.filter(g => g.term !== 'short');
 
   // Children & pregnancy
   const children = data.children || [];
@@ -2800,14 +2812,25 @@ function renderAgentDetail(data) {
   const pregnantBadge = isPregnant ? ' \uD83E\uDD30' : '';
   const childrenBadge = children.length > 0 ? ` \uD83D\uDC76${children.length}` : '';
 
+  const isDead = data.alive === false;
+  const mayorBadge = data.is_mayor ? ' \uD83C\uDFDB\uFE0F Mayor' : '';
+  const lifeStageBadge = data.lifecycle_stage ? `<span style="color:#888;font-size:10px;margin-left:6px">${data.lifecycle_stage}</span>` : '';
+  const parentNames = (data.parent_names || []);
+  const deathInfo = isDead ? `<div style="margin:6px 0;padding:6px 8px;background:rgba(233,69,96,0.15);border:1px solid rgba(233,69,96,0.3);border-radius:4px;font-size:11px;color:#e94560">
+    \u2620\uFE0F Deceased (Day ${data.death_day}) — ${esc(data.death_cause || 'unknown')}</div>` : '';
+
   document.getElementById('agent-detail').innerHTML=`
     <div style="margin-bottom:6px">
       <span style="cursor:pointer;color:#888;font-size:11px" onclick="selectedAgentId=null;showDefaultDetail();">&larr; All Agents</span>
     </div>
     <h2>${gi} ${data.name||'?'}${pregnantBadge}${childrenBadge}</h2>
-    <p class="subtitle">${data.age||'?'} y/o ${data.occupation||''}</p>
+    <p class="subtitle">${data.age||'?'} y/o ${data.occupation||''}${mayorBadge}${lifeStageBadge}</p>
     <p class="subtitle" style="color:#888;font-size:10px">${data.traits||''}</p>
     <p class="subtitle" style="color:#e0e0e0">@ ${esc(locName)} &mdash; ${esc(data.action||'idle')}</p>
+
+    ${deathInfo}
+
+    ${parentNames.length>0?`<div style="margin:4px 0;font-size:10px;color:#888">\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67 Parents: ${parentNames.map(n=>esc(n)).join(' & ')}</div>`:''}
 
     ${romanceRels.length>0?`<div style="margin:6px 0;padding:4px 8px;background:rgba(233,30,144,0.1);border:1px solid rgba(233,30,144,0.2);border-radius:4px;font-size:11px;color:#e91e90">
       ${romanceRels.map(r=>`\u2764 ${r.relationship_status} with ${r.name} (${(r.romantic_interest*100).toFixed(0)}%)`).join('<br>')}
@@ -2817,6 +2840,7 @@ function renderAgentDetail(data) {
       \uD83D\uDC76 Children: ${children.map(c=>esc(c)).join(', ')}
     </div>`:''}
 
+    ${!isDead ? `
     <div class="bar-container">
       <div class="bar-label"><span>Mood: ${moodLabel}</span><span>${moodPct}%</span></div>
       <div class="bar-bg"><div class="bar-fill ${moodColor}" style="width:${moodPct}%"></div></div>
@@ -2833,10 +2857,11 @@ function renderAgentDetail(data) {
     <div style="margin-top:6px">
       <div style="font-size:10px;color:#888">Plan: ${esc((data.daily_plan||[]).slice(0,3).join('; ')||'None yet')}</div>
     </div>
+    ` : ''}
 
-    ${activeGoals.length>0||completedGoals.length>0?`
-    <div class="section-header">Goals</div>
-    ${activeGoals.map(g=>{
+    ${longTermGoals.length>0?`
+    <div class="section-header">Long-Term Goals</div>
+    ${longTermGoals.map(g=>{
       const pct=Math.round((g.progress||0)*100);
       return `<div style="margin:3px 0;font-size:11px">
         <div style="display:flex;justify-content:space-between;color:#e0e0f0">
@@ -2847,8 +2872,27 @@ function renderAgentDetail(data) {
         </div>
       </div>`;
     }).join('')}
-    ${completedGoals.slice(-3).map(g=>`<div style="margin:2px 0;font-size:10px;color:#555">\u2705 ${esc(g.description)}</div>`).join('')}
     `:''}
+
+    ${shortTermGoals.length>0?`
+    <div class="section-header">This Week's Goals</div>
+    ${shortTermGoals.map(g=>{
+      const pct=Math.round((g.progress||0)*100);
+      return `<div style="margin:3px 0;font-size:11px">
+        <div style="display:flex;justify-content:space-between;color:#e0e0f0">
+          <span>\u26A1 ${esc(g.description)}</span><span style="color:#888;font-size:9px">${pct}%</span>
+        </div>
+        <div style="height:3px;background:#1a1a3e;border-radius:2px;margin-top:2px">
+          <div style="height:100%;width:${pct}%;background:#f0c040;border-radius:2px"></div>
+        </div>
+      </div>`;
+    }).join('')}
+    `:''}
+
+    ${completedGoals.length>0?`
+    <div style="margin-top:4px">
+    ${completedGoals.slice(-3).map(g=>`<div style="margin:2px 0;font-size:10px;color:#555">\u2705 ${esc(g.description)}</div>`).join('')}
+    </div>`:''}
 
     ${lifeEvents.length>0?`
     <div class="section-header">Life History</div>
@@ -2888,11 +2932,37 @@ function renderAgentDetail(data) {
     <div class="section-header">Recent Memories</div>
     ${memories.map(m=>`<div class="memory-item"><span class="memory-time">${m.time||''}</span> ${esc(m.content||'')}</div>`).join('')||'<div class="memory-item" style="color:#555">No memories yet</div>'}
 
+    <div class="section-header">Ask About Memories</div>
+    <div style="display:flex;gap:4px;margin:4px 0">
+      <input type="text" id="memory-query-input" placeholder="e.g. Describe your feelings about..." style="flex:1;background:#0a1628;color:#e0e0e0;border:1px solid #1a3a6e;padding:5px 8px;border-radius:3px;font-size:11px" onkeydown="if(event.key==='Enter')askAgentMemory('${data.id}')">
+      <button onclick="askAgentMemory('${data.id}')" style="background:#4ecca3;color:#0a1628;border:none;padding:5px 10px;border-radius:3px;cursor:pointer;font-weight:700;font-size:11px">Ask</button>
+    </div>
+    <div id="memory-query-result" style="font-size:11px;color:#c0c0d0;margin:4px 0;max-height:200px;overflow-y:auto"></div>
+
     ${playerToken && playerAgentId && data.id !== playerAgentId ? `
     <div style="margin-top:10px">
       <button class="btn-primary" style="width:100%" onclick="openChat('${data.id}')">Talk to ${esc(data.name||'them')}</button>
     </div>` : ''}
   `;
+}
+
+async function askAgentMemory(agentId) {
+  const input = document.getElementById('memory-query-input');
+  const result = document.getElementById('memory-query-result');
+  const question = input.value.trim();
+  if (!question) return;
+  result.innerHTML = '<span style="color:#888">Thinking...</span>';
+  try {
+    const res = await fetch(`${API_BASE}/agents/${agentId}/ask`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({question}),
+    });
+    const data = await res.json();
+    result.innerHTML = `<div style="padding:6px 8px;background:rgba(78,204,163,0.06);border:1px solid rgba(78,204,163,0.15);border-radius:4px;margin-top:4px;line-height:1.5">${esc(data.answer || '(no response)')}</div><div style="color:#555;font-size:9px;margin-top:2px">${data.memories_used || 0} memories referenced</div>`;
+  } catch(e) {
+    result.innerHTML = `<span style="color:#e94560">Error: ${e.message}</span>`;
+  }
 }
 
 // ============================================================
@@ -3026,6 +3096,7 @@ function processStateData(data) {
   }
 
   agents = data.agents || {};
+  window._mayorData = data.mayor || null;
   renderPlayerPanel();
 
   const tick = clock.total_ticks || 0;

@@ -212,6 +212,16 @@ async def get_agent(agent_id: str):
         "goals": agent.goals,
         "pregnant": agent.pregnant,
         "children": agent.children,
+        "alive": agent.alive,
+        "death_day": agent.death_day,
+        "death_cause": agent.death_cause,
+        "lifecycle_stage": agent.lifecycle_stage,
+        "parent_ids": agent.parent_ids,
+        "parent_names": [
+            sim.agents[pid].name for pid in agent.parent_ids if pid in sim.agents
+        ],
+        "is_mayor": agent.is_mayor,
+        "community_score": round(agent.community_score, 1),
     }
 
 
@@ -235,6 +245,71 @@ async def get_agent_memories(agent_id: str, limit: int = 20):
         }
         for m in agent.memory.memories[-limit:]
     ]
+
+
+class MemoryQueryRequest(BaseModel):
+    question: str
+
+
+@router.post("/agents/{agent_id}/ask")
+async def ask_agent_memory(agent_id: str, request: MemoryQueryRequest):
+    """Ask an agent about their memories using LLM. The agent reflects on their
+    experiences and answers the question in character."""
+    from soci.api.server import get_simulation
+    sim = get_simulation()
+    agent = sim.agents.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail=f"Agent {agent_id} not found")
+
+    # Gather relevant memories by searching for keywords in the question
+    all_memories = agent.memory.memories
+    question_lower = request.question.lower()
+
+    # Score memories by relevance to the question
+    scored = []
+    for m in all_memories:
+        score = m.importance
+        content_lower = m.content.lower()
+        # Boost if question keywords appear in memory
+        for word in question_lower.split():
+            if len(word) > 3 and word in content_lower:
+                score += 5
+        scored.append((score, m))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    relevant = scored[:20]
+
+    memories_text = "\n".join(
+        f"- [Day {m.day} {m.time_str}] {m.content}" for _, m in relevant
+    )
+
+    # Also include life events
+    life_events_text = "\n".join(
+        f"- Day {e['day']}: {e['description']}" for e in agent.life_events[-15:]
+    )
+
+    # Build prompt
+    prompt = (
+        f"A person is asking you to reflect on your memories and life experiences.\n\n"
+        f"QUESTION: {request.question}\n\n"
+        f"YOUR RELEVANT MEMORIES:\n{memories_text}\n\n"
+        f"YOUR LIFE HISTORY:\n{life_events_text}\n\n"
+        f"Answer the question thoughtfully and in character, drawing on your actual "
+        f"memories and experiences. Be personal and emotional. If you don't have "
+        f"relevant memories, say so honestly."
+    )
+
+    try:
+        from soci.engine.llm import MODEL_HAIKU
+        response = await sim.llm.complete(
+            system=agent.persona.system_prompt(),
+            user_message=prompt,
+            model=MODEL_HAIKU,
+            temperature=0.8,
+            max_tokens=512,
+        )
+        return {"answer": response or "(no response)", "memories_used": len(relevant)}
+    except Exception as e:
+        return {"answer": f"(Could not generate response: {str(e)})", "memories_used": 0}
 
 
 @router.get("/conversations")

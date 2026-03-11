@@ -199,6 +199,10 @@ class Simulation:
         routine_actions: list[tuple[Agent, AgentAction]] = []
 
         for agent in ordered_agents:
+            # Skip dead agents and infants (under 4 — no autonomous behavior)
+            if not agent.alive or agent.persona.age < 4:
+                continue
+
             # Tick needs
             is_sleeping = agent.state.value == "sleeping"
             agent.tick_needs(is_sleeping=is_sleeping)
@@ -343,6 +347,26 @@ class Simulation:
 
         # 9b. Pregnancy — check for new pregnancies and births
         self._tick_pregnancy()
+
+        # 9c. Age progression — once per sim day at midnight
+        if self.clock.hour == 0 and self.clock.minute == 0:
+            self._tick_aging()
+
+        # 9d. Divorce — check for unhappy marriages
+        if self.clock.hour == 12 and self.clock.minute == 0:
+            self._tick_divorce()
+
+        # 9e. Cohabitation — married couples move in together
+        if self.clock.hour == 8 and self.clock.minute == 0:
+            self._tick_cohabitation()
+
+        # 9f. Mayor election — every 365 days
+        if self.clock.day > 0 and self.clock.day % 365 == 0 and self.clock.hour == 10 and self.clock.minute == 0:
+            self._tick_election()
+
+        # 9g. Short-term goal refresh — weekly
+        if self.clock.day > 0 and self.clock.day % 7 == 0 and self.clock.hour == 6 and self.clock.minute == 0:
+            self._tick_short_term_goals()
 
         # 10. Advance clock
         self.clock.tick()
@@ -618,6 +642,12 @@ class Simulation:
         if len(self.conversation_history) > self._max_conversation_history:
             self.conversation_history = self.conversation_history[-self._max_conversation_history:]
 
+        # Boost community score for social interaction
+        for agent_id in conv.participants:
+            agent = self.agents.get(agent_id)
+            if agent and agent.alive:
+                agent.community_score += 0.5
+
         self._emit(
             f"  [CONV END] Conversation about '{conv.topic}' between "
             f"{', '.join(self.agents[p].name for p in conv.participants if p in self.agents)} ended."
@@ -758,6 +788,8 @@ class Simulation:
         agents_list = list(self.agents.values())
 
         for agent in agents_list:
+            if not agent.alive or agent.persona.age < 16:
+                continue
             loc = self.city.get_location(agent.location)
             if not loc:
                 continue
@@ -860,21 +892,33 @@ class Simulation:
                     if other_rel and other_rel.romantic_interest > 0.8:
                         rel.relationship_status = "married"
                         other_rel.relationship_status = "married"
-                        self._emit(f"  [ROMANCE] {agent.name} and {other.name} got married!")
+                        # Move both to church for the ceremony
+                        church = self.city.get_location("church")
+                        if church:
+                            for a in [agent, other]:
+                                old_loc = self.city.get_location(a.location)
+                                if old_loc and a.location != "church":
+                                    old_loc.remove_occupant(a.id)
+                                    church.add_occupant(a.id)
+                                    a.location = "church"
+                        self._emit(f"  [ROMANCE] {agent.name} and {other.name} got married at the church!")
                         for a, o in [(agent, other), (other, agent)]:
                             a.add_observation(
                                 tick=self.clock.total_ticks, day=self.clock.day,
                                 time_str=self.clock.time_str,
-                                content=f"I married {o.name} today. I couldn't be happier.",
+                                content=f"I married {o.name} today at the church. I couldn't be happier.",
                                 importance=10, involved_agents=[o.id],
                             )
                             a.add_life_event(self.clock.day, self.clock.total_ticks,
-                                             "married", f"Married {o.name}")
+                                             "married", f"Married {o.name} at St. Mary's Church")
+                            # Boost community score for getting married
+                            a.community_score += 5.0
 
     def _tick_pregnancy(self) -> None:
-        """Handle pregnancy for married couples. Children are born after ~7 sim-days."""
+        """Handle pregnancy for married couples. Children are born at the hospital after ~9 sim-months."""
         import random as _rand
-        PREGNANCY_DURATION_TICKS = 672  # ~7 days (96 ticks/day at 15-min intervals)
+        # 9 sim-months: 9 * 30 days * 96 ticks/day = 25920, but compressed to ~9 sim-days
+        PREGNANCY_DURATION_TICKS = 864  # ~9 days (96 ticks/day × 9 days)
 
         for agent in list(self.agents.values()):
             # New pregnancy chance: married female, at home with partner
@@ -906,9 +950,25 @@ class Simulation:
                         a.mood = min(1.0, a.mood + 0.4)
                     self._emit(f"  [LIFE] {agent.name} and {partner.name} are expecting!")
 
-            # Birth check
+            # Move to hospital when close to due date (~1 day before)
             if agent.pregnant:
                 elapsed = self.clock.total_ticks - agent.pregnancy_start_tick
+                if elapsed >= (PREGNANCY_DURATION_TICKS - 96) and agent.location != "hospital":
+                    hospital = self.city.get_location("hospital")
+                    if hospital:
+                        old_loc = self.city.get_location(agent.location)
+                        if old_loc:
+                            old_loc.remove_occupant(agent.id)
+                        hospital.add_occupant(agent.id)
+                        agent.location = "hospital"
+                        agent.add_observation(
+                            tick=self.clock.total_ticks, day=self.clock.day,
+                            time_str=self.clock.time_str,
+                            content="Going to the hospital — the baby is coming soon!",
+                            importance=8,
+                        )
+                        self._emit(f"  [LIFE] {agent.name} went to the hospital for delivery!")
+
                 if elapsed >= PREGNANCY_DURATION_TICKS:
                     partner = self.agents.get(agent.pregnancy_partner_id)
                     # Pick a baby name
@@ -917,41 +977,343 @@ class Simulation:
                     baby_names_f = ["Emma", "Olivia", "Sophia", "Mia", "Isabella", "Zoe", "Luna", "Aria"]
                     is_girl = _r.random() < 0.5
                     pool = baby_names_f if is_girl else baby_names_m
-                    # Avoid duplicate names
-                    used = set(agent.children)
+                    # Avoid duplicate names across all agents
+                    used = set(agent.children) | {a.name.split()[-1] for a in self.agents.values()}
                     available = [n for n in pool if n not in used]
                     baby_name = _r.choice(available) if available else _r.choice(pool)
+                    # Surname from mother
+                    surname = agent.name.split()[-1] if " " in agent.name else ""
+                    full_baby_name = f"{baby_name} {surname}".strip()
 
                     agent.pregnant = False
-                    agent.children.append(baby_name)
+                    agent.children.append(full_baby_name)
                     agent.add_life_event(self.clock.day, self.clock.total_ticks,
-                                         "child_born", f"Gave birth to {baby_name}!")
+                                         "child_born", f"Gave birth to {full_baby_name}!")
                     agent.add_observation(
                         tick=self.clock.total_ticks, day=self.clock.day,
                         time_str=self.clock.time_str,
-                        content=f"Our baby {baby_name} was born today! I'm overwhelmed with joy.",
+                        content=f"Our baby {full_baby_name} was born today! I'm overwhelmed with joy.",
                         importance=10,
                     )
                     if partner:
-                        partner.children.append(baby_name)
+                        partner.children.append(full_baby_name)
                         partner.add_life_event(self.clock.day, self.clock.total_ticks,
-                                               "child_born", f"{agent.name} and I welcomed {baby_name}!")
+                                               "child_born", f"{agent.name} and I welcomed {full_baby_name}!")
                         partner.add_observation(
                             tick=self.clock.total_ticks, day=self.clock.day,
                             time_str=self.clock.time_str,
-                            content=f"Our baby {baby_name} was born! I'm a parent now!",
+                            content=f"Our baby {full_baby_name} was born! I'm a parent now!",
                             importance=10,
                         )
                         partner.mood = min(1.0, partner.mood + 0.5)
                     agent.mood = min(1.0, agent.mood + 0.5)
-                    self._emit(f"  [LIFE] {agent.name} gave birth to {baby_name}!")
+                    self._emit(f"  [LIFE] {agent.name} gave birth to {full_baby_name}!")
+
+                    # Create actual baby agent living with parents
+                    baby_id = f"baby_{full_baby_name.lower().replace(' ', '_')}_{self.clock.total_ticks}"
+                    baby_gender = "female" if is_girl else "male"
+                    baby_persona = Persona(
+                        id=baby_id,
+                        name=full_baby_name,
+                        age=0,
+                        occupation="infant",
+                        gender=baby_gender,
+                        background=f"Born to {agent.name}" + (f" and {partner.name}" if partner else "") + " in Soci City.",
+                        home_location=agent.persona.home_location,
+                        work_location="",
+                        openness=_r.randint(3, 8),
+                        conscientiousness=_r.randint(3, 8),
+                        extraversion=_r.randint(3, 8),
+                        agreeableness=_r.randint(4, 9),
+                        neuroticism=_r.randint(2, 7),
+                    )
+                    baby_agent = Agent(baby_persona)
+                    baby_agent._birth_day = self.clock.day
+                    baby_agent._birth_age = 0
+                    baby_agent.parent_ids = [agent.id] + ([partner.id] if partner else [])
+                    baby_agent.lifecycle_stage = "infant"
+                    # Baby lives at parents' home, no memories until age 4
+                    self.add_agent(baby_agent)
+                    self._emit(f"  [LIFE] New citizen: {full_baby_name} born!")
+
+    def _tick_aging(self) -> None:
+        """Update ages for all agents. Check for death of elderly agents."""
+        for agent in list(self.agents.values()):
+            if not agent.alive:
+                continue
+            old_age = agent.persona.age
+            changed = agent.tick_age(self.clock.day)
+            if changed:
+                new_age = agent.persona.age
+                # Birthday event
+                agent.add_life_event(
+                    self.clock.day, self.clock.total_ticks,
+                    "birthday", f"Turned {new_age} years old",
+                )
+                agent.add_observation(
+                    tick=self.clock.total_ticks, day=self.clock.day,
+                    time_str=self.clock.time_str,
+                    content=f"Today is my birthday! I'm now {new_age} years old.",
+                    importance=6,
+                )
+                self._emit(f"  [LIFE] {agent.name} turned {new_age}!")
+
+                # Lifecycle stage transitions with goal updates
+                if new_age == 4:
+                    agent.add_goal("Go to kindergarten", term="long")
+                    self._emit(f"  [LIFE] {agent.name} is old enough for kindergarten!")
+                elif new_age == 6:
+                    agent.add_goal("Do well in school", term="long")
+                elif new_age == 12:
+                    agent.add_goal("Graduate high school", term="long")
+                elif new_age == 18:
+                    agent.add_goal("Go to university", term="long")
+                    agent.add_goal("Get a job", term="long")
+                elif new_age == 22:
+                    agent.add_goal("Start a career", term="long")
+
+            # Death check for elderly
+            if agent.persona.age >= 80 and agent.check_death(self.clock.day):
+                agent.die(self.clock.day, self.clock.total_ticks)
+                self._emit(f"  [DEATH] {agent.name} passed away at age {agent.persona.age}.")
+                # Notify partner
+                if agent.partner_id and agent.partner_id in self.agents:
+                    partner = self.agents[agent.partner_id]
+                    partner.partner_id = None
+                    partner.mood = max(-1.0, partner.mood - 0.6)
+                    partner.add_life_event(
+                        self.clock.day, self.clock.total_ticks,
+                        "bereavement", f"Lost my partner {agent.name}",
+                    )
+                    partner.add_observation(
+                        tick=self.clock.total_ticks, day=self.clock.day,
+                        time_str=self.clock.time_str,
+                        content=f"My partner {agent.name} passed away. I'm devastated.",
+                        importance=10, involved_agents=[agent.id],
+                    )
+                # Remove from city location
+                loc = self.city.get_location(agent.location)
+                if loc:
+                    loc.remove_occupant(agent.id)
+
+    def _tick_divorce(self) -> None:
+        """Check for unhappy marriages that lead to divorce."""
+        for agent in list(self.agents.values()):
+            if not agent.alive or not agent.partner_id:
+                continue
+            partner = self.agents.get(agent.partner_id)
+            if not partner or not partner.alive:
+                continue
+            rel = agent.relationships.get(partner.id)
+            if not rel or rel.relationship_status != "married":
+                continue
+            # Divorce conditions: very low sentiment + trust + mood for extended period
+            if (rel.sentiment < 0.2 and rel.trust < 0.25
+                    and agent.mood < -0.3
+                    and random.random() < 0.01):  # 1% daily chance when unhappy
+                # Divorce!
+                rel.relationship_status = "divorced"
+                rel.romantic_interest = max(0, rel.romantic_interest - 0.5)
+                other_rel = partner.relationships.get(agent.id)
+                if other_rel:
+                    other_rel.relationship_status = "divorced"
+                    other_rel.romantic_interest = max(0, other_rel.romantic_interest - 0.5)
+                agent.partner_id = None
+                partner.partner_id = None
+                for a, o in [(agent, partner), (partner, agent)]:
+                    a.add_life_event(
+                        self.clock.day, self.clock.total_ticks,
+                        "divorce", f"Divorced {o.name}",
+                    )
+                    a.add_observation(
+                        tick=self.clock.total_ticks, day=self.clock.day,
+                        time_str=self.clock.time_str,
+                        content=f"I divorced {o.name}. Our marriage wasn't working anymore.",
+                        importance=9, involved_agents=[o.id],
+                    )
+                    a.mood = max(-1.0, a.mood - 0.4)
+                self._emit(f"  [ROMANCE] {agent.name} and {partner.name} got divorced!")
+
+    def _tick_cohabitation(self) -> None:
+        """Married couples move in together — move to one partner's home."""
+        processed = set()
+        for agent in list(self.agents.values()):
+            if not agent.alive or not agent.partner_id or agent.id in processed:
+                continue
+            partner = self.agents.get(agent.partner_id)
+            if not partner or not partner.alive or partner.id in processed:
+                continue
+            rel = agent.relationships.get(partner.id)
+            if not rel or rel.relationship_status != "married":
+                continue
+            # Already living together?
+            if agent.persona.home_location == partner.persona.home_location:
+                processed.add(agent.id)
+                processed.add(partner.id)
+                continue
+            # Move to the home of the agent who has lived there longer (or whichever is non-empty)
+            new_home = agent.persona.home_location
+            mover = partner
+            partner.persona.home_location = new_home
+            mover.add_life_event(
+                self.clock.day, self.clock.total_ticks,
+                "moved", f"Moved in with {agent.name} at {new_home}",
+            )
+            agent.add_observation(
+                tick=self.clock.total_ticks, day=self.clock.day,
+                time_str=self.clock.time_str,
+                content=f"{partner.name} moved in with me!",
+                importance=8, involved_agents=[partner.id],
+            )
+            self._emit(f"  [LIFE] {partner.name} moved in with {agent.name}")
+            processed.add(agent.id)
+            processed.add(partner.id)
+
+    def _tick_election(self) -> None:
+        """Annual mayor election — all citizens 18+ vote for the most community-oriented agent."""
+        eligible_voters = [
+            a for a in self.agents.values()
+            if a.alive and a.persona.age >= 18
+        ]
+        if len(eligible_voters) < 3:
+            return
+
+        # Candidates: all eligible non-player agents
+        candidates = [a for a in eligible_voters if not a.is_player]
+        if not candidates:
+            return
+
+        # Score candidates by community contribution:
+        # - interaction_count with diverse agents
+        # - agreeableness trait
+        # - community_score (accumulated from actions)
+        # - mood (positive people inspire)
+        scores: dict[str, float] = {}
+        for c in candidates:
+            score = 0.0
+            # Social connections
+            known = c.relationships.get_closest(20)
+            score += len(known) * 2.0
+            score += sum(r.sentiment for r in known) * 3.0
+            # Personality
+            score += c.persona.agreeableness * 1.5
+            score += c.persona.extraversion * 0.5
+            # Mood and contribution
+            score += max(0, c.mood) * 5.0
+            score += c.community_score
+            scores[c.id] = score
+
+        # Each voter votes — weighted random choice biased toward high scores
+        votes: dict[str, int] = {c.id: 0 for c in candidates}
+        for voter in eligible_voters:
+            # Bias toward people the voter knows and likes
+            voter_scores = {}
+            for c in candidates:
+                if c.id == voter.id:
+                    continue
+                base = scores.get(c.id, 0)
+                rel = voter.relationships.get(c.id)
+                if rel:
+                    base += rel.sentiment * 10 + rel.trust * 5
+                voter_scores[c.id] = max(0.1, base)
+            if not voter_scores:
+                continue
+            total = sum(voter_scores.values())
+            r = random.random() * total
+            cumulative = 0.0
+            chosen = list(voter_scores.keys())[0]
+            for cid, s in voter_scores.items():
+                cumulative += s
+                if r <= cumulative:
+                    chosen = cid
+                    break
+            votes[chosen] = votes.get(chosen, 0) + 1
+
+        # Winner
+        winner_id = max(votes, key=lambda k: votes[k])
+        winner = self.agents[winner_id]
+        vote_count = votes[winner_id]
+
+        # Remove old mayor
+        for a in self.agents.values():
+            if a.is_mayor:
+                a.is_mayor = False
+                a.add_life_event(
+                    self.clock.day, self.clock.total_ticks,
+                    "politics", "Term as Mayor ended",
+                )
+
+        # Set new mayor
+        winner.is_mayor = True
+        winner.mayor_term_start_day = self.clock.day
+        winner.add_life_event(
+            self.clock.day, self.clock.total_ticks,
+            "politics", f"Elected as Mayor of Soci City with {vote_count} votes!",
+        )
+        winner.add_observation(
+            tick=self.clock.total_ticks, day=self.clock.day,
+            time_str=self.clock.time_str,
+            content=f"I was elected Mayor of Soci City! {vote_count} people voted for me.",
+            importance=10,
+        )
+        winner.mood = min(1.0, winner.mood + 0.5)
+        self._emit(f"  [ELECTION] {winner.name} elected Mayor with {vote_count}/{len(eligible_voters)} votes!")
+
+        # All voters remember the election
+        for voter in eligible_voters:
+            if voter.id != winner_id:
+                voter.add_observation(
+                    tick=self.clock.total_ticks, day=self.clock.day,
+                    time_str=self.clock.time_str,
+                    content=f"{winner.name} was elected as our new Mayor.",
+                    importance=6, involved_agents=[winner_id],
+                )
+
+    def _tick_short_term_goals(self) -> None:
+        """Refresh short-term goals weekly — expire old ones, add new ones."""
+        import random as _r
+        short_goals_pool = [
+            "Meet someone new this week",
+            "Try a new restaurant",
+            "Exercise at least twice",
+            "Read something interesting",
+            "Help a neighbor",
+            "Visit the park",
+            "Have a deep conversation",
+            "Cook something special",
+            "Explore a new part of town",
+            "Catch up with an old friend",
+            "Organize my home",
+            "Learn something new",
+            "Spend time outdoors",
+            "Do something creative",
+        ]
+        for agent in self.agents.values():
+            if not agent.alive or agent.persona.age < 6:
+                continue
+            # Expire active short-term goals
+            for g in agent.goals:
+                if g.get("term") == "short" and g["status"] == "active":
+                    if g["progress"] >= 0.7:
+                        g["status"] = "completed"
+                        g["progress"] = 1.0
+                    else:
+                        g["status"] = "abandoned"
+            # Add 1-2 new short-term goals
+            count = _r.randint(1, 2)
+            for _ in range(count):
+                goal_desc = _r.choice(short_goals_pool)
+                agent.add_goal(goal_desc, term="short")
 
     def get_state_summary(self) -> dict:
         """Get a summary of the current simulation state."""
+        # Find current mayor
+        mayor = next((a for a in self.agents.values() if a.is_mayor and a.alive), None)
         return {
             "clock": self.clock.to_dict(),
             "weather": self.events.weather.value,
             "active_events": [e.to_dict() for e in self.events.active_events],
+            "mayor": {"id": mayor.id, "name": mayor.name} if mayor else None,
             "agents": {
                 aid: {
                     "name": a.name,
@@ -968,6 +1330,9 @@ class Simulation:
                     "is_player": a.is_player,
                     "pregnant": a.pregnant,
                     "children_count": len(a.children),
+                    "alive": a.alive,
+                    "lifecycle_stage": a.lifecycle_stage,
+                    "is_mayor": a.is_mayor,
                 }
                 for aid, a in self.agents.items()
             },
