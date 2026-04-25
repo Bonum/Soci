@@ -1,0 +1,2423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Soci 3D — Live City Simulation</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { overflow: hidden; background: #0a0a12; font-family: 'Segoe UI', system-ui, sans-serif; }
+  canvas { display: block; }
+
+  #status-bar {
+    position: fixed; top: 0; left: 0; right: 0;
+    display: flex; align-items: center; gap: 18px;
+    padding: 10px 20px;
+    background: rgba(10,10,18,0.75);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    color: #e0e0e8; font-size: 13px; z-index: 100;
+    pointer-events: none;
+  }
+  #status-bar > * { pointer-events: auto; }
+  .status-live {
+    display: flex; align-items: center; gap: 6px;
+    font-weight: 600; letter-spacing: 0.5px;
+  }
+  .live-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #4ecca3; box-shadow: 0 0 8px #4ecca3;
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+  }
+  .status-time { font-size: 15px; font-weight: 500; }
+  .status-weather { font-size: 15px; }
+  .status-agents { color: #aaa; }
+  .status-cost { color: #888; font-size: 12px; }
+  .status-spacer { flex: 1; }
+
+  #info-panel {
+    position: fixed; right: 16px; top: 60px;
+    width: 280px; max-height: calc(100vh - 80px);
+    background: rgba(10,10,18,0.85);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    color: #e0e0e8; font-size: 13px;
+    padding: 16px; overflow-y: auto;
+    z-index: 100; display: none;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  }
+  #info-panel.visible { display: block; }
+  #info-panel h3 {
+    font-size: 16px; margin-bottom: 8px;
+    color: #fff; font-weight: 600;
+  }
+  #info-panel .close-btn {
+    position: absolute; top: 10px; right: 12px;
+    cursor: pointer; color: #888; font-size: 18px;
+    background: none; border: none;
+  }
+  #info-panel .close-btn:hover { color: #fff; }
+  .info-section { margin: 10px 0; }
+  .info-section h4 {
+    font-size: 11px; text-transform: uppercase;
+    letter-spacing: 1px; color: #888; margin-bottom: 4px;
+  }
+  .info-row {
+    display: flex; justify-content: space-between;
+    padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .info-row .label { color: #aaa; }
+  .info-row .value { color: #e0e0e8; font-weight: 500; }
+  .need-bar {
+    height: 4px; background: #222; border-radius: 2px;
+    margin: 3px 0; overflow: hidden;
+  }
+  .need-bar-fill { height: 100%; border-radius: 2px; transition: width 0.5s; }
+  .memory-item {
+    padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.04);
+    font-size: 12px; color: #bbb;
+  }
+
+  #zoom-hint {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.4); font-size: 12px;
+    pointer-events: none; z-index: 100;
+    transition: opacity 0.5s;
+  }
+
+  #controls-bar {
+    position: fixed; bottom: 16px; right: 16px;
+    display: flex; gap: 6px; z-index: 100;
+  }
+  .ctrl-btn {
+    width: 36px; height: 36px; border-radius: 8px;
+    background: rgba(10,10,18,0.75);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #ccc; font-size: 16px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s;
+  }
+  .ctrl-btn:hover { background: rgba(30,30,50,0.85); color: #fff; }
+  .ctrl-btn.active { background: rgba(78,204,163,0.3); border-color: #4ecca3; color: #4ecca3; }
+
+  #loading {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: #0a0a12; color: #e0e0e8; z-index: 200;
+    transition: opacity 0.8s;
+  }
+  #loading.hidden { opacity: 0; pointer-events: none; }
+  .loading-title { font-size: 28px; font-weight: 300; letter-spacing: 4px; margin-bottom: 12px; }
+  .loading-sub { font-size: 13px; color: #888; }
+  .loading-spinner {
+    width: 32px; height: 32px; border: 2px solid #333;
+    border-top-color: #4ecca3; border-radius: 50%;
+    animation: spin 1s linear infinite; margin-top: 20px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="loading-title">SOCI</div>
+  <div class="loading-sub">Connecting to live simulation...</div>
+  <div class="loading-spinner"></div>
+</div>
+
+<div id="status-bar">
+  <div class="status-live"><div class="live-dot"></div>LIVE</div>
+  <div class="status-time" id="sim-time">--:--</div>
+  <div class="status-weather" id="sim-weather"></div>
+  <div class="status-agents" id="sim-agents">0 agents</div>
+  <div class="status-spacer"></div>
+  <div class="status-cost" id="sim-cost"></div>
+</div>
+
+<div id="info-panel">
+  <button class="close-btn" onclick="closeInfoPanel()">&times;</button>
+  <div id="info-content"></div>
+</div>
+
+<div id="zoom-hint">Scroll to zoom &middot; Drag to orbit &middot; Right-drag to pan &middot; Click to inspect</div>
+
+<div id="controls-bar">
+  <button class="ctrl-btn" onclick="resetCamera()" title="Reset view">&#8962;</button>
+  <button class="ctrl-btn" onclick="toggleTopDown()" title="Top-down view">&#9650;</button>
+  <button class="ctrl-btn" onclick="zoomIn()" title="Zoom in">+</button>
+  <button class="ctrl-btn" onclick="zoomOut()" title="Zoom out">&minus;</button>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ============================================================
+// CONSTANTS
+// ============================================================
+const WORLD_SIZE = 100;
+const HALF = WORLD_SIZE / 2;
+
+const PALETTE = {
+  ground:    0x5a9a5a,
+  groundAlt: 0x4e8e4e,
+  road:      0x444444,
+  roadLine:  0x666666,
+  sidewalk:  0x999988,
+  water:     0x4488bb,
+  sky:       0x87ceeb,
+  skyNight:  0x0a0a1e,
+  fog:       0x87ceeb,
+  fogNight:  0x0a0a1e,
+};
+
+const BLDG_COLORS = {
+  house:     [0xf2dc7c, 0xf5c9a0, 0xe8d4a0, 0xd4e8c0, 0xf0c8a0, 0xc8d8e8],
+  roof:      [0xcc6644, 0xbb5533, 0x8b6040, 0x996644, 0xa87050, 0x885530],
+  shop:      [0x5bb8a9, 0xe88a7a, 0x6fa8d6, 0xd4a76a, 0xc78ab8, 0xa8c878],
+  apartment: [0xd8c8a8, 0xc8b898, 0xb8a888, 0xccc0b0],
+  office:    0x88b8d8,
+  tower:     0x6898c0,
+  hospital:  0xf0f0f0,
+  church:    0xc8b898,
+  school:    0xcc7858,
+  factory:   0x787878,
+  cinema:    0x8b3050,
+  park:      0x4a8a4a,
+  sports:    0x3a7a3a,
+  square:    0xaaa090,
+  police:    0x3a5a8a,
+  fire:      0xcc3333,
+  museum:    0xd8c8a0,
+  mall:      [0xc0a080, 0xb0c8d8, 0xd0b8a0],
+  townhall:  0xc8b898,
+  market:    [0xe8a040, 0xd09030, 0xc88030],
+  window:    0xa8d8f0,
+  windowLit: 0xffd860,
+  door:      0x6b4020,
+  tree:      [0x2a7a2a, 0x3a8a3a, 0x4a9a4a, 0x358a35],
+  trunk:     0x6b4020,
+};
+
+const AGENT_COLORS = [
+  0xe94560, 0x4ecca3, 0xf0c040, 0x4e9eca, 0x9b59b6,
+  0xe67e22, 0x1abc9c, 0xe74c3c, 0x3498db, 0x2ecc71,
+  0xf39c12, 0x8e44ad, 0x16a085, 0xc0392b, 0x2980b9,
+  0x27ae60, 0xd35400, 0x7d3c98, 0x148f77, 0xcb4335,
+];
+
+const SKIN_COLORS  = [0xf5d0a0, 0xe8c090, 0xd4a878, 0xc49060, 0xa07040, 0x805830];
+const HAIR_COLORS  = [0x2a1a0a, 0x4a3020, 0x1a1a1a, 0x8a6a40, 0xd4a460, 0x6a2a1a, 0xaaaaaa];
+const PANTS_COLORS = [0x2a3a5a, 0x3a3a3a, 0x4a3a2a, 0x2a2a3a, 0x5a4a3a, 0x28283a];
+const SKIRT_COLORS = [0xcc6688, 0x6688aa, 0xaa8866, 0x88aa66, 0xcc8844, 0x9966aa];
+const SHOE_COLORS  = [0x2a2a2a, 0x3a2a1a, 0x1a1a1a, 0x4a3020];
+
+const SKY_PHASES = {
+  dawn:      { top:'#2d1b4e', mid:'#a06840', bot:'#e8a860' },
+  morning:   { top:'#4a90c8', mid:'#88b8d8', bot:'#c8e0f0' },
+  afternoon: { top:'#2878b8', mid:'#60a0d0', bot:'#88c8e8' },
+  evening:   { top:'#1a1040', mid:'#884060', bot:'#e07840' },
+  night:     { top:'#060610', mid:'#0a0a18', bot:'#101028' },
+};
+
+const LOCATION_POSITIONS = {
+  // ── Residential — houses ──────────────────────────────────
+  house_elena:   { x: 0.08, y: 0.19, type: 'house',     label: 'Elena & Lila' },
+  house_marcus:  { x: 0.24, y: 0.19, type: 'house',     label: 'Marcus & Zoe' },
+  house_helen:   { x: 0.62, y: 0.19, type: 'house',     label: 'Helen & Alice' },
+  house_diana:   { x: 0.78, y: 0.19, type: 'house',     label: 'Diana & Marco' },
+  house_kai:     { x: 0.08, y: 0.36, type: 'house',     label: "Kai's Studio" },
+  house_james:   { x: 0.08, y: 0.65, type: 'house',     label: 'James & Theo' },
+  house_rosa:    { x: 0.24, y: 0.65, type: 'house',     label: 'Rosa & Omar' },
+  house_yuki:    { x: 0.62, y: 0.65, type: 'house',     label: 'Yuki & Devon' },
+  house_frank:   { x: 0.78, y: 0.65, type: 'house',     label: 'Frank+George+Sam' },
+  house_ada:     { x: 0.16, y: 0.12, type: 'house',     label: 'Ada & Ben' },
+  house_carlos:  { x: 0.70, y: 0.12, type: 'house',     label: 'Carlos & Mia' },
+  house_dara:    { x: 0.16, y: 0.72, type: 'house',     label: 'Dara & Leo' },
+  house_sven:    { x: 0.70, y: 0.72, type: 'house',     label: 'Sven & Hana' },
+  house_ivan:    { x: 0.86, y: 0.12, type: 'house',     label: 'Ivan & Vera' },
+  house_nadia:   { x: 0.86, y: 0.72, type: 'house',     label: 'Nadia & Rami' },
+  house_petra:   { x: 0.08, y: 0.88, type: 'house',     label: 'Petra & Tom' },
+  house_ling:    { x: 0.24, y: 0.88, type: 'house',     label: 'Ling & Jun' },
+
+  // ── Residential — apartments ──────────────────────────────
+  apartment_block_1: { x: 0.40, y: 0.19, type: 'apartment', label: 'Northside Apts' },
+  apartment_block_2: { x: 0.40, y: 0.65, type: 'apartment', label: 'Southside Apts' },
+  apartment_block_3: { x: 0.56, y: 0.50, type: 'apartment', label: 'Central Apts' },
+  apt_northeast: { x: 0.93, y: 0.22, type: 'apartment', label: 'Eastview Terrace' },
+  apt_northwest: { x: 0.07, y: 0.22, type: 'apartment', label: 'Hilltop Gardens' },
+  apt_southeast: { x: 0.93, y: 0.78, type: 'apartment', label: 'Riverside Commons' },
+  apt_southwest: { x: 0.07, y: 0.78, type: 'apartment', label: 'Orchard Hill Flats' },
+  apt_midtown:   { x: 0.50, y: 0.65, type: 'apartment', label: 'Midtown Residence' },
+  apt_heights:   { x: 0.35, y: 0.12, type: 'apartment', label: 'Sunrise Heights' },
+  apt_plaza:     { x: 0.56, y: 0.12, type: 'apartment', label: 'Plaza Apartments' },
+  apt_harbor:    { x: 0.62, y: 0.88, type: 'apartment', label: 'Harbor View' },
+
+  // ── Shops & food ──────────────────────────────────────────
+  cafe:          { x: 0.35, y: 0.34, type: 'shop',      label: 'The Daily Grind' },
+  grocery:       { x: 0.65, y: 0.34, type: 'shop',      label: 'Green Basket' },
+  bakery:        { x: 0.22, y: 0.34, type: 'shop',      label: 'Golden Crust' },
+  restaurant:    { x: 0.35, y: 0.50, type: 'shop',      label: "Mama Rosa's" },
+  bar:           { x: 0.65, y: 0.50, type: 'shop',      label: 'Rusty Anchor' },
+  gym:           { x: 0.22, y: 0.50, type: 'shop',      label: 'Iron & Grit' },
+  library:       { x: 0.78, y: 0.78, type: 'shop',      label: 'Public Library' },
+  diner:         { x: 0.92, y: 0.36, type: 'shop',      label: 'Blue Moon Diner' },
+  pharmacy:      { x: 0.35, y: 0.78, type: 'shop',      label: 'SociMed Pharmacy' },
+  bookshop:      { x: 0.44, y: 0.34, type: 'shop',      label: 'Chapter One' },
+  florist:       { x: 0.56, y: 0.34, type: 'shop',      label: 'Petal & Stem' },
+  barbershop:    { x: 0.22, y: 0.42, type: 'shop',      label: "Nick's Cuts" },
+  pizzeria:      { x: 0.78, y: 0.42, type: 'shop',      label: 'Napoli Slice' },
+  coffeehouse:   { x: 0.56, y: 0.78, type: 'shop',      label: 'Bean & Leaf' },
+  sushi_bar:     { x: 0.44, y: 0.78, type: 'shop',      label: 'Sakura Sushi' },
+  laundry:       { x: 0.86, y: 0.42, type: 'shop',      label: 'Clean Spin' },
+  electronics:   { x: 0.44, y: 0.42, type: 'shop',      label: 'TechZone' },
+  pet_shop:      { x: 0.56, y: 0.42, type: 'shop',      label: 'Paws & Claws' },
+
+  // ── Market stalls (open-air) ──────────────────────────────
+  market:        { x: 0.50, y: 0.78, type: 'market',    label: 'Farmers Market' },
+
+  // ── Mall ──────────────────────────────────────────────────
+  mall:          { x: 0.78, y: 0.88, type: 'mall',      label: 'City Mall' },
+
+  // ── Offices & towers ──────────────────────────────────────
+  office:        { x: 0.50, y: 0.34, type: 'office',    label: 'The Hive' },
+  office_tower:  { x: 0.80, y: 0.34, type: 'tower',     label: 'Pinnacle Tower' },
+  office_tech:   { x: 0.65, y: 0.42, type: 'office',    label: 'TechCorp HQ' },
+  office_media:  { x: 0.35, y: 0.42, type: 'office',    label: 'Media House' },
+  tower_2:       { x: 0.92, y: 0.19, type: 'tower',     label: 'Atlas Tower' },
+
+  // ── Industry ──────────────────────────────────────────────
+  factory:       { x: 0.92, y: 0.65, type: 'factory',   label: 'Ironworks' },
+  factory_2:     { x: 0.92, y: 0.88, type: 'factory',   label: 'Soci Textiles' },
+
+  // ── Public services ───────────────────────────────────────
+  school:        { x: 0.08, y: 0.50, type: 'school',    label: 'Soci School' },
+  hospital:      { x: 0.92, y: 0.50, type: 'hospital',  label: 'City Hospital' },
+  church:        { x: 0.08, y: 0.78, type: 'church',    label: "St. Mary's" },
+  police:        { x: 0.22, y: 0.58, type: 'police',    label: 'Police Station' },
+  fire_station:  { x: 0.78, y: 0.58, type: 'fire',      label: 'Fire Station' },
+  townhall:      { x: 0.44, y: 0.50, type: 'townhall',  label: 'Town Hall' },
+  museum:        { x: 0.22, y: 0.19, type: 'museum',    label: 'City Museum' },
+  priya_house:   { x: 0.93, y: 0.42, type: 'house',     label: 'Priya & Nina' },
+
+  // ── Entertainment & leisure ───────────────────────────────
+  cinema:        { x: 0.78, y: 0.50, type: 'cinema',    label: 'Starlight Cinema' },
+  park:          { x: 0.50, y: 0.19, type: 'park',      label: 'Willow Park' },
+  town_square:   { x: 0.50, y: 0.50, type: 'square',    label: 'Town Square' },
+  sports_field:  { x: 0.22, y: 0.78, type: 'sports',    label: 'Sports Field' },
+  park_east:     { x: 0.86, y: 0.58, type: 'park',      label: 'Rose Garden' },
+  park_south:    { x: 0.40, y: 0.88, type: 'park',      label: 'Lakeside Park' },
+  playground:    { x: 0.15, y: 0.58, type: 'park',      label: 'Kids Playground' },
+};
+
+function toWorld(nx, ny) {
+  return { x: (nx - 0.5) * WORLD_SIZE, z: (ny - 0.5) * WORLD_SIZE };
+}
+
+// ============================================================
+// SCENE SETUP
+// ============================================================
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(PALETTE.sky);
+scene.fog = new THREE.FogExp2(PALETTE.fog, 0.004);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.appendChild(renderer.domElement);
+
+// Orthographic camera for isometric feel
+const aspect = window.innerWidth / window.innerHeight;
+let frustum = 45;
+const camera = new THREE.OrthographicCamera(
+  -frustum * aspect, frustum * aspect,
+  frustum, -frustum, 0.1, 500
+);
+camera.position.set(55, 70, 55);
+camera.lookAt(0, 0, 0);
+camera.zoom = 1;
+camera.updateProjectionMatrix();
+
+// Controls
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minZoom = 0.3;
+controls.maxZoom = 12;
+controls.maxPolarAngle = Math.PI / 2.2;
+controls.minPolarAngle = 0.3;
+controls.target.set(0, 0, 0);
+controls.panSpeed = 1.2;
+controls.zoomSpeed = 1.8;
+controls.mouseButtons = {
+  LEFT: THREE.MOUSE.ROTATE,
+  MIDDLE: THREE.MOUSE.DOLLY,
+  RIGHT: THREE.MOUSE.PAN,
+};
+
+// ============================================================
+// LIGHTING
+// ============================================================
+const hemiLight = new THREE.HemisphereLight(0x87ceeb, 0x4a7a38, 0.6);
+scene.add(hemiLight);
+
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+scene.add(ambientLight);
+
+const sunLight = new THREE.DirectionalLight(0xffeedd, 1.2);
+sunLight.position.set(30, 50, 20);
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.width = 2048;
+sunLight.shadow.mapSize.height = 2048;
+sunLight.shadow.camera.left = -60;
+sunLight.shadow.camera.right = 60;
+sunLight.shadow.camera.top = 60;
+sunLight.shadow.camera.bottom = -60;
+sunLight.shadow.camera.near = 1;
+sunLight.shadow.camera.far = 150;
+sunLight.shadow.bias = -0.001;
+scene.add(sunLight);
+
+// ============================================================
+// GROUND
+// ============================================================
+const groundGeo = new THREE.PlaneGeometry(WORLD_SIZE * 1.6, WORLD_SIZE * 1.6);
+const groundMat = new THREE.MeshStandardMaterial({
+  color: PALETTE.ground, roughness: 0.95, metalness: 0,
+});
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -0.05;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// Subtle grid
+const gridHelper = new THREE.GridHelper(WORLD_SIZE * 1.2, 60, 0x3a6a3a, 0x3a6a3a);
+gridHelper.material.opacity = 0.15;
+gridHelper.material.transparent = true;
+gridHelper.position.y = 0.01;
+scene.add(gridHelper);
+
+// ============================================================
+// ROADS
+// ============================================================
+function createRoad(x1, z1, x2, z2, width = 3) {
+  const dx = x2 - x1, dz = z2 - z1;
+  const len = Math.sqrt(dx * dx + dz * dz);
+  const angle = Math.atan2(dx, dz);
+  const geo = new THREE.BoxGeometry(width, 0.08, len);
+  const mat = new THREE.MeshStandardMaterial({ color: PALETTE.road, roughness: 0.9 });
+  const road = new THREE.Mesh(geo, mat);
+  road.position.set((x1 + x2) / 2, 0.04, (z1 + z2) / 2);
+  road.rotation.y = angle;
+  road.receiveShadow = true;
+  scene.add(road);
+
+  // Center line
+  const lineGeo = new THREE.BoxGeometry(0.15, 0.09, len - 1);
+  const lineMat = new THREE.MeshStandardMaterial({ color: PALETTE.roadLine, roughness: 0.8 });
+  const line = new THREE.Mesh(lineGeo, lineMat);
+  line.position.copy(road.position);
+  line.position.y = 0.09;
+  line.rotation.y = angle;
+  scene.add(line);
+}
+
+// Main roads
+const ns = toWorld(0.5, 0);
+createRoad(0, -HALF * 1.1, 0, HALF * 1.1, 4);            // N-S main
+createRoad(-HALF * 1.1, -7, HALF * 1.1, -7, 4);           // E-W main
+
+// Secondary horizontal roads
+createRoad(-HALF * 1.1, -38, HALF * 1.1, -38, 2.5);       // far north
+createRoad(-HALF * 1.1, -31, HALF * 1.1, -31, 2.5);       // north row
+createRoad(-HALF * 1.1, -16, HALF * 1.1, -16, 2.5);       // upper-mid
+createRoad(-HALF * 1.1, 0, HALF * 1.1, 0, 2.5);           // center
+createRoad(-HALF * 1.1, 8, HALF * 1.1, 8, 2);             // inner mid
+createRoad(-HALF * 1.1, 15, HALF * 1.1, 15, 2.5);         // lower-mid
+createRoad(-HALF * 1.1, 28, HALF * 1.1, 28, 2.5);         // south row
+createRoad(-HALF * 1.1, 38, HALF * 1.1, 38, 2.5);         // far south
+
+// Secondary vertical roads
+createRoad(-42, -HALF * 1.1, -42, HALF * 1.1, 2.5);
+createRoad(-33, -HALF * 1.1, -33, HALF * 1.1, 2);
+createRoad(-26, -HALF * 1.1, -26, HALF * 1.1, 2.5);
+createRoad(-12, -HALF * 1.1, -12, HALF * 1.1, 2);
+createRoad(6, -HALF * 1.1, 6, HALF * 1.1, 2);
+createRoad(15, -HALF * 1.1, 15, HALF * 1.1, 2.5);
+createRoad(28, -HALF * 1.1, 28, HALF * 1.1, 2);
+createRoad(35, -HALF * 1.1, 35, HALF * 1.1, 2.5);
+createRoad(42, -HALF * 1.1, 42, HALF * 1.1, 2.5);
+
+// ============================================================
+// MATERIAL HELPERS
+// ============================================================
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({
+    color, roughness: opts.roughness ?? 0.85,
+    metalness: opts.metalness ?? 0.05,
+    flatShading: true, ...opts
+  });
+}
+
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function hash(s) { let h = 0; for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0; return h >>> 0; }
+
+function addEdges(mesh, color = 0x000000, opacity = 0.1) {
+  const edges = new THREE.EdgesGeometry(mesh.geometry);
+  const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color, opacity, transparent: true }));
+  mesh.add(line);
+}
+
+// ============================================================
+// TREE GENERATOR
+// ============================================================
+function createTree(x, z, scale = 1) {
+  const group = new THREE.Group();
+  const trunkH = 1.5 * scale;
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.2 * scale, 0.3 * scale, trunkH, 6),
+    mat(BLDG_COLORS.trunk)
+  );
+  trunk.position.y = trunkH / 2;
+  trunk.castShadow = true;
+  group.add(trunk);
+
+  const foliage = new THREE.Mesh(
+    new THREE.ConeGeometry(1.2 * scale, 2.5 * scale, 7),
+    mat(pick(BLDG_COLORS.tree))
+  );
+  foliage.position.y = trunkH + 1.0 * scale;
+  foliage.castShadow = true;
+  group.add(foliage);
+
+  // Second layer
+  const f2 = new THREE.Mesh(
+    new THREE.ConeGeometry(0.9 * scale, 2 * scale, 7),
+    mat(pick(BLDG_COLORS.tree))
+  );
+  f2.position.y = trunkH + 2.2 * scale;
+  f2.castShadow = true;
+  group.add(f2);
+
+  group.position.set(x, 0, z);
+  scene.add(group);
+  return group;
+}
+
+// ============================================================
+// BUILDING GENERATORS
+// ============================================================
+const buildingMeshes = new Map();
+const labelSprites = new Map();
+let isNight = false;
+
+function createLabel(text, parent, yOffset = 0) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 256;
+  canvas.height = 64;
+  ctx.fillStyle = 'rgba(0,0,0,0)';
+  ctx.fillRect(0, 0, 256, 64);
+  ctx.font = 'bold 22px Segoe UI, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillText(text, 129, 33);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(text, 128, 32);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(spriteMat);
+  sprite.scale.set(8, 2, 1);
+  sprite.position.y = yOffset;
+  sprite.renderOrder = 999;
+  parent.add(sprite);
+  return sprite;
+}
+
+function createOccupantBadge(parent, yOffset) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 64;
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(spriteMat);
+  sprite.scale.set(1.5, 1.5, 1);
+  sprite.position.y = yOffset + 2;
+  sprite.renderOrder = 1000;
+  sprite.visible = false;
+  parent.add(sprite);
+  return { sprite, canvas, tex };
+}
+
+function updateBadge(badge, count) {
+  if (count <= 0) { badge.sprite.visible = false; return; }
+  badge.sprite.visible = true;
+  const ctx = badge.canvas.getContext('2d');
+  ctx.clearRect(0, 0, 64, 64);
+  ctx.beginPath();
+  ctx.arc(32, 32, 24, 0, Math.PI * 2);
+  ctx.fillStyle = '#e94560';
+  ctx.fill();
+  ctx.font = 'bold 24px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#fff';
+  ctx.fillText(count, 32, 40);
+  badge.tex.needsUpdate = true;
+}
+
+function createHouse(id, locData) {
+  const group = new THREE.Group();
+  const h = hash(id);
+  const w = 3 + (h % 2), d = 3 + ((h >> 2) % 2), wallH = 2.5 + (h % 3) * 0.3;
+  const wallColor = BLDG_COLORS.house[h % BLDG_COLORS.house.length];
+  const roofColor = BLDG_COLORS.roof[h % BLDG_COLORS.roof.length];
+
+  // Walls
+  const walls = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), mat(wallColor));
+  walls.position.y = wallH / 2;
+  walls.castShadow = true;
+  walls.receiveShadow = true;
+  addEdges(walls, 0x000000, 0.08);
+  group.add(walls);
+
+  // Roof
+  const roofH = 1.5;
+  const roofGeo = new THREE.ConeGeometry(Math.max(w, d) * 0.75, roofH, 4);
+  roofGeo.rotateY(Math.PI / 4);
+  const roof = new THREE.Mesh(roofGeo, mat(roofColor));
+  roof.position.y = wallH + roofH / 2;
+  roof.castShadow = true;
+  group.add(roof);
+
+  // Door
+  const door = new THREE.Mesh(
+    new THREE.BoxGeometry(0.6, 1.2, 0.1),
+    mat(BLDG_COLORS.door)
+  );
+  door.position.set(0, 0.6, d / 2 + 0.05);
+  group.add(door);
+
+  // Windows
+  const winMat = mat(isNight ? BLDG_COLORS.windowLit : BLDG_COLORS.window,
+    isNight ? { emissive: BLDG_COLORS.windowLit, emissiveIntensity: 0.5 } : {});
+  for (let side of [-1, 1]) {
+    const win = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.5, 0.1), winMat);
+    win.position.set(side * (w / 2 + 0.05), wallH * 0.6, 0);
+    win.rotation.y = Math.PI / 2;
+    win.userData.isWindow = true;
+    group.add(win);
+  }
+
+  const label = createLabel(locData.label, group, wallH + roofH + 1);
+  const badge = createOccupantBadge(group, wallH + roofH);
+  group.userData = { id, type: 'house', label, badge, locData };
+  return group;
+}
+
+function createApartment(id, locData) {
+  const group = new THREE.Group();
+  const h = hash(id);
+  const w = 5, d = 4, wallH = 7 + (h % 4);
+  const wallColor = BLDG_COLORS.apartment[h % BLDG_COLORS.apartment.length];
+
+  const walls = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), mat(wallColor));
+  walls.position.y = wallH / 2;
+  walls.castShadow = true;
+  walls.receiveShadow = true;
+  addEdges(walls);
+  group.add(walls);
+
+  // Flat roof cap
+  const roofCap = new THREE.Mesh(
+    new THREE.BoxGeometry(w + 0.3, 0.3, d + 0.3),
+    mat(wallColor - 0x202020)
+  );
+  roofCap.position.y = wallH;
+  group.add(roofCap);
+
+  // Window grid
+  const winMat = mat(isNight ? BLDG_COLORS.windowLit : BLDG_COLORS.window,
+    isNight ? { emissive: BLDG_COLORS.windowLit, emissiveIntensity: 0.4 } : {});
+  const floors = Math.floor(wallH / 2);
+  for (let f = 0; f < floors; f++) {
+    for (let wx = -1; wx <= 1; wx++) {
+      const win = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.6, 0.1), winMat);
+      win.position.set(wx * 1.4, 1.5 + f * 2, d / 2 + 0.05);
+      win.userData.isWindow = true;
+      group.add(win);
+    }
+  }
+
+  const label = createLabel(locData.label, group, wallH + 2);
+  const badge = createOccupantBadge(group, wallH + 1);
+  group.userData = { id, type: 'apartment', label, badge, locData };
+  return group;
+}
+
+function createShop(id, locData) {
+  const group = new THREE.Group();
+  const h = hash(id);
+  const w = 4, d = 3.5, wallH = 3;
+  const wallColor = BLDG_COLORS.shop[h % BLDG_COLORS.shop.length];
+
+  const walls = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), mat(wallColor));
+  walls.position.y = wallH / 2;
+  walls.castShadow = true;
+  walls.receiveShadow = true;
+  addEdges(walls);
+  group.add(walls);
+
+  // Flat roof
+  const roofCap = new THREE.Mesh(new THREE.BoxGeometry(w + 0.3, 0.2, d + 0.3), mat(0x666666));
+  roofCap.position.y = wallH;
+  group.add(roofCap);
+
+  // Awning
+  const awning = new THREE.Mesh(
+    new THREE.BoxGeometry(w + 0.5, 0.08, 1.2),
+    mat(wallColor + 0x101010, { roughness: 0.6 })
+  );
+  awning.position.set(0, wallH * 0.75, d / 2 + 0.6);
+  awning.castShadow = true;
+  group.add(awning);
+
+  // Storefront window
+  const storefront = new THREE.Mesh(
+    new THREE.BoxGeometry(w * 0.7, wallH * 0.5, 0.1),
+    mat(BLDG_COLORS.window, { roughness: 0.3, metalness: 0.1 })
+  );
+  storefront.position.set(0, wallH * 0.35, d / 2 + 0.05);
+  storefront.userData.isWindow = true;
+  group.add(storefront);
+
+  const label = createLabel(locData.label, group, wallH + 2);
+  const badge = createOccupantBadge(group, wallH + 1);
+  group.userData = { id, type: 'shop', label, badge, locData };
+  return group;
+}
+
+function createOffice(id, locData) {
+  const group = new THREE.Group();
+  const w = 5, d = 5, wallH = 5;
+
+  const walls = new THREE.Mesh(
+    new THREE.BoxGeometry(w, wallH, d),
+    mat(BLDG_COLORS.office, { roughness: 0.4, metalness: 0.2 })
+  );
+  walls.position.y = wallH / 2;
+  walls.castShadow = true;
+  walls.receiveShadow = true;
+  addEdges(walls);
+  group.add(walls);
+
+  // Glass windows
+  const winMat = mat(BLDG_COLORS.window, { roughness: 0.2, metalness: 0.3, opacity: 0.7, transparent: true });
+  for (let f = 0; f < 2; f++) {
+    for (let side of [1, -1]) {
+      const win = new THREE.Mesh(new THREE.BoxGeometry(w * 0.35, 1.2, 0.1), winMat);
+      win.position.set(side * (w * 0.2), 1.5 + f * 2, d / 2 + 0.05);
+      win.userData.isWindow = true;
+      group.add(win);
+    }
+  }
+
+  const label = createLabel(locData.label, group, wallH + 2);
+  const badge = createOccupantBadge(group, wallH + 1);
+  group.userData = { id, type: 'office', label, badge, locData };
+  return group;
+}
+
+function createTower(id, locData) {
+  const group = new THREE.Group();
+  const w = 4.5, d = 4.5, wallH = 14;
+
+  // Base wider section
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(w + 1, 3, d + 1),
+    mat(BLDG_COLORS.tower - 0x101010)
+  );
+  base.position.y = 1.5;
+  base.castShadow = true;
+  base.receiveShadow = true;
+  addEdges(base);
+  group.add(base);
+
+  // Tower body
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(w, wallH, d),
+    mat(BLDG_COLORS.tower, { roughness: 0.3, metalness: 0.3 })
+  );
+  body.position.y = wallH / 2;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  addEdges(body);
+  group.add(body);
+
+  // Glass strips
+  const glassMat = mat(BLDG_COLORS.window, { roughness: 0.15, metalness: 0.4, opacity: 0.6, transparent: true });
+  for (let f = 0; f < 6; f++) {
+    const strip = new THREE.Mesh(new THREE.BoxGeometry(w * 0.8, 0.8, 0.1), glassMat);
+    strip.position.set(0, 2 + f * 2, d / 2 + 0.05);
+    strip.userData.isWindow = true;
+    group.add(strip);
+  }
+
+  // Antenna
+  const antenna = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.08, 3, 6),
+    mat(0x888888, { metalness: 0.5 })
+  );
+  antenna.position.y = wallH + 1.5;
+  group.add(antenna);
+
+  const label = createLabel(locData.label, group, wallH + 4);
+  const badge = createOccupantBadge(group, wallH + 3);
+  group.userData = { id, type: 'tower', label, badge, locData };
+  return group;
+}
+
+function createHospital(id, locData) {
+  const group = new THREE.Group();
+  const w = 7, d = 5, wallH = 4;
+
+  const walls = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), mat(BLDG_COLORS.hospital));
+  walls.position.y = wallH / 2;
+  walls.castShadow = true;
+  walls.receiveShadow = true;
+  addEdges(walls);
+  group.add(walls);
+
+  // Red cross
+  const crossMat = mat(0xcc2222);
+  const crossH = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.4, 0.1), crossMat);
+  crossH.position.set(0, wallH * 0.7, d / 2 + 0.06);
+  group.add(crossH);
+  const crossV = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.5, 0.1), crossMat);
+  crossV.position.set(0, wallH * 0.7, d / 2 + 0.06);
+  group.add(crossV);
+
+  const label = createLabel(locData.label, group, wallH + 2);
+  const badge = createOccupantBadge(group, wallH + 1);
+  group.userData = { id, type: 'hospital', label, badge, locData };
+  return group;
+}
+
+function createChurch(id, locData) {
+  const group = new THREE.Group();
+  const w = 4, d = 6, wallH = 4;
+
+  const walls = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), mat(BLDG_COLORS.church));
+  walls.position.y = wallH / 2;
+  walls.castShadow = true;
+  walls.receiveShadow = true;
+  addEdges(walls);
+  group.add(walls);
+
+  // Roof
+  const roofGeo = new THREE.BufferGeometry();
+  const hw = w / 2 + 0.2, hd = d / 2 + 0.2;
+  const rh = 2;
+  const verts = new Float32Array([
+    -hw, wallH, -hd,  hw, wallH, -hd,  0, wallH + rh, -hd,
+    -hw, wallH,  hd,  hw, wallH,  hd,  0, wallH + rh,  hd,
+    -hw, wallH, -hd,  -hw, wallH,  hd,  0, wallH + rh, -hd,  0, wallH + rh,  hd,
+     hw, wallH, -hd,   hw, wallH,  hd,  0, wallH + rh, -hd,  0, wallH + rh,  hd,
+  ]);
+  const idx = [0,1,2, 3,5,4, 2,3,0, 2,5,3, 1,4,5, 1,5,2];
+  roofGeo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+  roofGeo.setIndex(idx);
+  roofGeo.computeVertexNormals();
+  const roof = new THREE.Mesh(roofGeo, mat(BLDG_COLORS.roof[0]));
+  roof.castShadow = true;
+  group.add(roof);
+
+  // Steeple
+  const steeple = new THREE.Mesh(
+    new THREE.ConeGeometry(0.8, 4, 4),
+    mat(BLDG_COLORS.roof[1])
+  );
+  steeple.position.set(0, wallH + rh + 2, -d / 2 + 1);
+  steeple.castShadow = true;
+  group.add(steeple);
+
+  // Steeple base
+  const stBase = new THREE.Mesh(
+    new THREE.BoxGeometry(1.6, 2, 1.6),
+    mat(BLDG_COLORS.church)
+  );
+  stBase.position.set(0, wallH + 1, -d / 2 + 1);
+  group.add(stBase);
+
+  const label = createLabel(locData.label, group, wallH + rh + 5);
+  const badge = createOccupantBadge(group, wallH + rh + 4);
+  group.userData = { id, type: 'church', label, badge, locData };
+  return group;
+}
+
+function createSchool(id, locData) {
+  const group = new THREE.Group();
+  const w = 6, d = 5, wallH = 3.5;
+
+  const walls = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), mat(BLDG_COLORS.school));
+  walls.position.y = wallH / 2;
+  walls.castShadow = true;
+  walls.receiveShadow = true;
+  addEdges(walls);
+  group.add(walls);
+
+  // Windows
+  const winMat = mat(BLDG_COLORS.window);
+  for (let i = -2; i <= 2; i++) {
+    const win = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.8, 0.1), winMat);
+    win.position.set(i * 1.1, wallH * 0.6, d / 2 + 0.05);
+    win.userData.isWindow = true;
+    group.add(win);
+  }
+
+  // Flag pole
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 3, 6), mat(0x888888));
+  pole.position.set(w / 2 - 0.5, wallH + 1.5, -d / 2 + 0.5);
+  group.add(pole);
+
+  const flag = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.6), mat(0xcc3333, { side: THREE.DoubleSide }));
+  flag.position.set(w / 2 - 0.5 + 0.5, wallH + 2.5, -d / 2 + 0.5);
+  group.add(flag);
+
+  const label = createLabel(locData.label, group, wallH + 4);
+  const badge = createOccupantBadge(group, wallH + 3);
+  group.userData = { id, type: 'school', label, badge, locData };
+  return group;
+}
+
+function createFactory(id, locData) {
+  const group = new THREE.Group();
+  const w = 7, d = 5, wallH = 4.5;
+
+  const walls = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), mat(BLDG_COLORS.factory));
+  walls.position.y = wallH / 2;
+  walls.castShadow = true;
+  walls.receiveShadow = true;
+  addEdges(walls);
+  group.add(walls);
+
+  // Chimney
+  const chimney = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.5, 0.6, 4, 8),
+    mat(0x555555)
+  );
+  chimney.position.set(w / 2 - 1, wallH + 2, -d / 2 + 1);
+  chimney.castShadow = true;
+  group.add(chimney);
+
+  // Second chimney
+  const chimney2 = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.4, 0.5, 3, 8),
+    mat(0x555555)
+  );
+  chimney2.position.set(w / 2 - 2.5, wallH + 1.5, -d / 2 + 1);
+  chimney2.castShadow = true;
+  group.add(chimney2);
+
+  // Sawtooth roof detail
+  const roofCap = new THREE.Mesh(
+    new THREE.BoxGeometry(w + 0.2, 0.3, d + 0.2),
+    mat(0x555555)
+  );
+  roofCap.position.y = wallH;
+  group.add(roofCap);
+
+  const label = createLabel(locData.label, group, wallH + 5);
+  const badge = createOccupantBadge(group, wallH + 4);
+  group.userData = { id, type: 'factory', label, badge, locData };
+  return group;
+}
+
+function createCinema(id, locData) {
+  const group = new THREE.Group();
+  const w = 5.5, d = 5, wallH = 5;
+
+  const walls = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), mat(BLDG_COLORS.cinema));
+  walls.position.y = wallH / 2;
+  walls.castShadow = true;
+  walls.receiveShadow = true;
+  addEdges(walls);
+  group.add(walls);
+
+  // Marquee
+  const marquee = new THREE.Mesh(
+    new THREE.BoxGeometry(w + 1, 0.8, 0.5),
+    mat(0xddcc44, { emissive: 0x887722, emissiveIntensity: 0.3 })
+  );
+  marquee.position.set(0, wallH * 0.8, d / 2 + 0.3);
+  group.add(marquee);
+
+  const label = createLabel(locData.label, group, wallH + 2);
+  const badge = createOccupantBadge(group, wallH + 1);
+  group.userData = { id, type: 'cinema', label, badge, locData };
+  return group;
+}
+
+function createPark(id, locData) {
+  const group = new THREE.Group();
+
+  // Park ground
+  const parkGround = new THREE.Mesh(
+    new THREE.BoxGeometry(8, 0.1, 6),
+    mat(BLDG_COLORS.park)
+  );
+  parkGround.position.y = 0.05;
+  parkGround.receiveShadow = true;
+  group.add(parkGround);
+
+  // Path
+  const path = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 0.12, 6),
+    mat(0xccbbaa)
+  );
+  path.position.y = 0.06;
+  group.add(path);
+
+  // Trees
+  for (let i = 0; i < 5; i++) {
+    const tx = (Math.random() - 0.5) * 6;
+    const tz = (Math.random() - 0.5) * 4;
+    if (Math.abs(tx) > 1) {
+      const t = createTree(0, 0, 0.7 + Math.random() * 0.5);
+      t.position.set(tx, 0, tz);
+      scene.remove(t);
+      group.add(t);
+    }
+  }
+
+  // Bench
+  const benchSeat = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.1, 0.5), mat(0x8b6040));
+  benchSeat.position.set(2, 0.5, 0);
+  group.add(benchSeat);
+  const benchBack = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.6, 0.08), mat(0x8b6040));
+  benchBack.position.set(2, 0.7, -0.22);
+  group.add(benchBack);
+
+  const label = createLabel(locData.label, group, 5);
+  const badge = createOccupantBadge(group, 4);
+  group.userData = { id, type: 'park', label, badge, locData };
+  return group;
+}
+
+function createSportsField(id, locData) {
+  const group = new THREE.Group();
+
+  const field = new THREE.Mesh(
+    new THREE.BoxGeometry(8, 0.1, 6),
+    mat(BLDG_COLORS.sports)
+  );
+  field.position.y = 0.05;
+  field.receiveShadow = true;
+  group.add(field);
+
+  // White lines
+  const lineMat = mat(0xffffff);
+  const outline = new THREE.Mesh(new THREE.BoxGeometry(7.5, 0.12, 0.08), lineMat);
+  outline.position.set(0, 0.06, 2.5);
+  group.add(outline);
+  const outline2 = outline.clone();
+  outline2.position.z = -2.5;
+  group.add(outline2);
+  const outline3 = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 5), lineMat);
+  outline3.position.set(3.75, 0.06, 0);
+  group.add(outline3);
+  const outline4 = outline3.clone();
+  outline4.position.x = -3.75;
+  group.add(outline4);
+  // Center line
+  const center = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 5), lineMat);
+  center.position.set(0, 0.06, 0);
+  group.add(center);
+
+  const label = createLabel(locData.label, group, 3);
+  const badge = createOccupantBadge(group, 2);
+  group.userData = { id, type: 'sports', label, badge, locData };
+  return group;
+}
+
+function createPolice(id, locData) {
+  const group = new THREE.Group();
+  const w = 5, d = 4, wallH = 3.5;
+  const walls = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), mat(BLDG_COLORS.police));
+  walls.position.y = wallH / 2; walls.castShadow = true; walls.receiveShadow = true;
+  addEdges(walls); group.add(walls);
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 0.25, d + 0.4), mat(0x2a4a6a));
+  roof.position.y = wallH; group.add(roof);
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(w + 0.1, 0.6, 0.1), mat(0x4488cc));
+  stripe.position.set(0, wallH * 0.85, d / 2 + 0.06); group.add(stripe);
+  const door = new THREE.Mesh(new THREE.BoxGeometry(1, 2, 0.1), mat(0x2a3a5a));
+  door.position.set(0, 1, d / 2 + 0.06); group.add(door);
+  for (let sx of [-1.5, 1.5]) {
+    const win = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.1), mat(BLDG_COLORS.window, { roughness: 0.3 }));
+    win.position.set(sx, wallH * 0.6, d / 2 + 0.06); win.userData.isWindow = true; group.add(win);
+  }
+  const label = createLabel(locData.label, group, wallH + 2);
+  const badge = createOccupantBadge(group, wallH + 1);
+  group.userData = { id, type: 'police', label, badge, locData };
+  return group;
+}
+
+function createFireStation(id, locData) {
+  const group = new THREE.Group();
+  const w = 5.5, d = 5, wallH = 4;
+  const walls = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), mat(BLDG_COLORS.fire));
+  walls.position.y = wallH / 2; walls.castShadow = true; walls.receiveShadow = true;
+  addEdges(walls); group.add(walls);
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 0.3, d + 0.4), mat(0x881818));
+  roof.position.y = wallH; group.add(roof);
+  const garageDoor = new THREE.Mesh(new THREE.BoxGeometry(3, 2.8, 0.12), mat(0x555555));
+  garageDoor.position.set(0, 1.4, d / 2 + 0.06); group.add(garageDoor);
+  const towerH = 7;
+  const tower = new THREE.Mesh(new THREE.BoxGeometry(1.2, towerH, 1.2), mat(0xaa2222));
+  tower.position.set(w / 2 - 0.8, towerH / 2, -d / 2 + 0.8); tower.castShadow = true; group.add(tower);
+  const towerCap = new THREE.Mesh(new THREE.ConeGeometry(1, 1.5, 4), mat(0x881818));
+  towerCap.position.set(w / 2 - 0.8, towerH + 0.75, -d / 2 + 0.8); towerCap.rotation.y = Math.PI / 4; group.add(towerCap);
+  const label = createLabel(locData.label, group, towerH + 3);
+  const badge = createOccupantBadge(group, wallH + 1);
+  group.userData = { id, type: 'fire', label, badge, locData };
+  return group;
+}
+
+function createMuseum(id, locData) {
+  const group = new THREE.Group();
+  const w = 6, d = 5, wallH = 4;
+  const walls = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), mat(BLDG_COLORS.museum));
+  walls.position.y = wallH / 2; walls.castShadow = true; walls.receiveShadow = true;
+  addEdges(walls); group.add(walls);
+  const pediment = new THREE.Mesh(
+    new THREE.ConeGeometry(w * 0.55, 2, 3),
+    mat(BLDG_COLORS.museum)
+  );
+  pediment.rotation.set(0, Math.PI / 6, 0);
+  pediment.scale.set(1, 1, 0.4);
+  pediment.position.set(0, wallH + 0.8, 0); pediment.castShadow = true; group.add(pediment);
+  for (let cx = -2; cx <= 2; cx += 1.3) {
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.25, wallH, 8), mat(0xd0c090));
+    col.position.set(cx, wallH / 2, d / 2 + 0.4); col.castShadow = true; group.add(col);
+  }
+  const steps = new THREE.Mesh(new THREE.BoxGeometry(w + 1, 0.3, 1.5), mat(0xc8c0a0));
+  steps.position.set(0, 0.15, d / 2 + 1); steps.receiveShadow = true; group.add(steps);
+  const label = createLabel(locData.label, group, wallH + 4);
+  const badge = createOccupantBadge(group, wallH + 3);
+  group.userData = { id, type: 'museum', label, badge, locData };
+  return group;
+}
+
+function createMall(id, locData) {
+  const group = new THREE.Group();
+  const h = hash(id);
+  const w = 8, d = 6, wallH = 5;
+  const clr = Array.isArray(BLDG_COLORS.mall) ? BLDG_COLORS.mall[h % BLDG_COLORS.mall.length] : BLDG_COLORS.mall;
+  const walls = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), mat(clr));
+  walls.position.y = wallH / 2; walls.castShadow = true; walls.receiveShadow = true;
+  addEdges(walls); group.add(walls);
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.5, 0.3, d + 0.5), mat(0x808080));
+  roof.position.y = wallH; group.add(roof);
+  const glass = new THREE.Mesh(
+    new THREE.BoxGeometry(w * 0.8, wallH * 0.6, 0.1),
+    mat(BLDG_COLORS.window, { roughness: 0.2, metalness: 0.2, transparent: true, opacity: 0.7 })
+  );
+  glass.position.set(0, wallH * 0.4, d / 2 + 0.06); glass.userData.isWindow = true; group.add(glass);
+  for (let sx of [-2.5, 0, 2.5]) {
+    const awning = new THREE.Mesh(new THREE.BoxGeometry(2, 0.08, 1.2), mat(0xcc8844, { roughness: 0.6 }));
+    awning.position.set(sx, wallH * 0.7, d / 2 + 0.6); awning.castShadow = true; group.add(awning);
+  }
+  const label = createLabel(locData.label, group, wallH + 2);
+  const badge = createOccupantBadge(group, wallH + 1);
+  group.userData = { id, type: 'mall', label, badge, locData };
+  return group;
+}
+
+function createTownHall(id, locData) {
+  const group = new THREE.Group();
+  const w = 6, d = 5, wallH = 5;
+  const walls = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), mat(BLDG_COLORS.townhall));
+  walls.position.y = wallH / 2; walls.castShadow = true; walls.receiveShadow = true;
+  addEdges(walls); group.add(walls);
+  const domeR = 2;
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(domeR, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2), mat(0x88a888));
+  dome.position.y = wallH; dome.castShadow = true; group.add(dome);
+  const clockTower = new THREE.Mesh(new THREE.BoxGeometry(1.2, 3, 1.2), mat(0xb8a888));
+  clockTower.position.set(0, wallH + domeR + 1.5, 0); clockTower.castShadow = true; group.add(clockTower);
+  const spire = new THREE.Mesh(new THREE.ConeGeometry(0.5, 2, 4), mat(0x88a888));
+  spire.position.set(0, wallH + domeR + 4, 0); spire.rotation.y = Math.PI / 4; group.add(spire);
+  for (let cx of [-2, -0.7, 0.7, 2]) {
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.25, wallH * 0.8, 8), mat(0xc0b090));
+    col.position.set(cx, wallH * 0.4, d / 2 + 0.35); col.castShadow = true; group.add(col);
+  }
+  const steps = new THREE.Mesh(new THREE.BoxGeometry(w + 1.5, 0.4, 2), mat(0xb8b0a0));
+  steps.position.set(0, 0.2, d / 2 + 1.2); steps.receiveShadow = true; group.add(steps);
+  const label = createLabel(locData.label, group, wallH + domeR + 6);
+  const badge = createOccupantBadge(group, wallH + domeR + 5);
+  group.userData = { id, type: 'townhall', label, badge, locData };
+  return group;
+}
+
+function createMarket(id, locData) {
+  const group = new THREE.Group();
+  const plaza = new THREE.Mesh(new THREE.BoxGeometry(8, 0.08, 6), mat(0xb8a888));
+  plaza.position.y = 0.04; plaza.receiveShadow = true; group.add(plaza);
+  const stallColors = [0xe8a040, 0xcc4444, 0x44aa66, 0x4488cc, 0xcc8844, 0xaa44aa];
+  for (let row = 0; row < 2; row++) {
+    for (let col = 0; col < 3; col++) {
+      const sx = (col - 1) * 2.5, sz = (row - 0.5) * 2.5;
+      const stall = new THREE.Group();
+      const counter = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1, 1.2), mat(0x8b6040));
+      counter.position.y = 0.5; stall.add(counter);
+      const canopy = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.06, 1.6), mat(stallColors[(row * 3 + col) % stallColors.length]));
+      canopy.position.y = 2.2; canopy.castShadow = true; stall.add(canopy);
+      const pole1 = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.2, 4), mat(0x666666));
+      pole1.position.set(-0.8, 1.1, -0.6); stall.add(pole1);
+      const pole2 = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.2, 4), mat(0x666666));
+      pole2.position.set(0.8, 1.1, -0.6); stall.add(pole2);
+      stall.position.set(sx, 0, sz);
+      group.add(stall);
+    }
+  }
+  const label = createLabel(locData.label, group, 4);
+  const badge = createOccupantBadge(group, 3);
+  group.userData = { id, type: 'market', label, badge, locData };
+  return group;
+}
+
+function createSquare(id, locData) {
+  const group = new THREE.Group();
+
+  const plaza = new THREE.Mesh(
+    new THREE.BoxGeometry(7, 0.1, 7),
+    mat(BLDG_COLORS.square)
+  );
+  plaza.position.y = 0.05;
+  plaza.receiveShadow = true;
+  group.add(plaza);
+
+  // Fountain
+  const basin = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.2, 1.4, 0.5, 12),
+    mat(0x999988)
+  );
+  basin.position.y = 0.25;
+  group.add(basin);
+  const waterTop = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.1, 1.1, 0.05, 12),
+    mat(PALETTE.water, { roughness: 0.2, metalness: 0.1 })
+  );
+  waterTop.position.y = 0.48;
+  group.add(waterTop);
+  const spout = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.1, 0.15, 1, 8),
+    mat(0x888888)
+  );
+  spout.position.y = 1;
+  group.add(spout);
+
+  const label = createLabel(locData.label, group, 4);
+  const badge = createOccupantBadge(group, 3);
+  group.userData = { id, type: 'square', label, badge, locData };
+  return group;
+}
+
+// Building factory dispatch
+function createBuilding(id, locData) {
+  const type = locData.type;
+  let bldg;
+  switch (type) {
+    case 'house':     bldg = createHouse(id, locData); break;
+    case 'apartment': bldg = createApartment(id, locData); break;
+    case 'shop':      bldg = createShop(id, locData); break;
+    case 'office':    bldg = createOffice(id, locData); break;
+    case 'tower':     bldg = createTower(id, locData); break;
+    case 'hospital':  bldg = createHospital(id, locData); break;
+    case 'church':    bldg = createChurch(id, locData); break;
+    case 'school':    bldg = createSchool(id, locData); break;
+    case 'factory':   bldg = createFactory(id, locData); break;
+    case 'cinema':    bldg = createCinema(id, locData); break;
+    case 'park':      bldg = createPark(id, locData); break;
+    case 'sports':    bldg = createSportsField(id, locData); break;
+    case 'square':    bldg = createSquare(id, locData); break;
+    case 'police':    bldg = createPolice(id, locData); break;
+    case 'fire':      bldg = createFireStation(id, locData); break;
+    case 'museum':    bldg = createMuseum(id, locData); break;
+    case 'mall':      bldg = createMall(id, locData); break;
+    case 'townhall':  bldg = createTownHall(id, locData); break;
+    case 'market':    bldg = createMarket(id, locData); break;
+    default:          bldg = createShop(id, locData); break;
+  }
+  const pos = toWorld(locData.x, locData.y);
+  bldg.position.set(pos.x, 0, pos.z);
+  scene.add(bldg);
+  buildingMeshes.set(id, bldg);
+  return bldg;
+}
+
+// ============================================================
+// PLACE ALL BUILDINGS
+// ============================================================
+const BLDG_SIZES = {
+  house: [4,4], apartment: [6,5], shop: [5,4], office: [6,6], tower: [5,5],
+  hospital: [8,6], church: [5,7], school: [7,6], factory: [8,6], cinema: [6,6],
+  park: [8,8], sports: [10,8], square: [8,8], police: [6,5], fire: [6,6],
+  museum: [8,7], mall: [9,7], townhall: [8,7], market: [9,7],
+};
+const obstacles = [];
+
+for (const [id, loc] of Object.entries(LOCATION_POSITIONS)) {
+  if (loc.type === 'street') continue;
+  createBuilding(id, loc);
+  const pos = toWorld(loc.x, loc.y);
+  const sz = BLDG_SIZES[loc.type] || [5, 4];
+  const margin = 0.6;
+  obstacles.push({ x: pos.x, z: pos.z, hw: sz[0] / 2 + margin, hd: sz[1] / 2 + margin });
+}
+
+// Scatter trees along roads
+const treePositions = [];
+for (let i = 0; i < 80; i++) {
+  const tx = (Math.random() - 0.5) * WORLD_SIZE * 1.1;
+  const tz = (Math.random() - 0.5) * WORLD_SIZE * 1.1;
+  let tooClose = false;
+  for (const [, loc] of Object.entries(LOCATION_POSITIONS)) {
+    const p = toWorld(loc.x, loc.y);
+    if (Math.abs(tx - p.x) < 5 && Math.abs(tz - p.z) < 5) { tooClose = true; break; }
+  }
+  if (Math.abs(tx) < 2.5 || Math.abs(tz + 7) < 2.5) tooClose = true; // avoid main roads
+  if (!tooClose) {
+    createTree(tx, tz, 0.6 + Math.random() * 0.8);
+    treePositions.push({ x: tx, z: tz });
+  }
+}
+
+// ============================================================
+// SKY ENVIRONMENT — mountains, sun, moon, clouds, stars
+// ============================================================
+let currentPhase = 'morning';
+let simHour = 10;
+
+// Sky gradient background (canvas texture)
+const skyCanvas = document.createElement('canvas');
+skyCanvas.width = 2; skyCanvas.height = 512;
+const skyTex = new THREE.CanvasTexture(skyCanvas);
+
+function updateSkyGradient(phase) {
+  const p = SKY_PHASES[phase] || SKY_PHASES.morning;
+  const ctx = skyCanvas.getContext('2d');
+  const g = ctx.createLinearGradient(0, 0, 0, 512);
+  g.addColorStop(0, p.top);
+  g.addColorStop(0.45, p.mid);
+  g.addColorStop(1, p.bot);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 2, 512);
+  skyTex.needsUpdate = true;
+  scene.background = skyTex;
+}
+updateSkyGradient('morning');
+
+// Celestial glow texture helper
+function celestialTex(color) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const ctx = c.getContext('2d');
+  const col = '#' + new THREE.Color(color).getHexString();
+  const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0, col);
+  g.addColorStop(0.25, col + 'cc');
+  g.addColorStop(0.6, col + '33');
+  g.addColorStop(1, col + '00');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(c);
+}
+
+// Mountains ring — smooth, distant, ethereal ridges
+const mountainGroup = new THREE.Group();
+const MTN_COLOR = 0x4a5a6a;
+
+function makeMountainRidge(radius, baseHeight, peakHeight, segments, yOffset, colorHex, opacity) {
+  const pts = [];
+  const segCount = segments;
+  for (let i = 0; i <= segCount; i++) {
+    const t = i / segCount;
+    const ang = t * Math.PI * 2;
+    const noise1 = Math.sin(ang * 3.7 + 1.2) * 0.3 + Math.sin(ang * 7.1 + 4.5) * 0.15;
+    const noise2 = Math.sin(ang * 5.3 + 2.8) * 0.2;
+    const h = baseHeight + (peakHeight - baseHeight) * (0.5 + noise1 + noise2);
+    pts.push(new THREE.Vector3(Math.cos(ang) * radius, Math.max(h, baseHeight * 0.7), Math.sin(ang) * radius));
+  }
+  const shape = new THREE.BufferGeometry();
+  const verts = [], indices = [];
+  for (let i = 0; i <= segCount; i++) {
+    const p = pts[i % pts.length];
+    verts.push(p.x, 0, p.z);
+    verts.push(p.x, p.y, p.z);
+  }
+  for (let i = 0; i < segCount; i++) {
+    const a = i * 2, b = a + 1, c = a + 2, d = a + 3;
+    indices.push(a, b, c, b, d, c);
+  }
+  shape.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+  shape.setIndex(indices);
+  shape.computeVertexNormals();
+  const m = new THREE.Mesh(shape, new THREE.MeshStandardMaterial({
+    color: colorHex, transparent: true, opacity: opacity,
+    side: THREE.DoubleSide, flatShading: false, fog: true,
+    depthWrite: opacity > 0.7
+  }));
+  m.position.y = yOffset;
+  m.receiveShadow = true;
+  return m;
+}
+
+// Three layered ridges — back (farthest, palest) to front
+const ridge1 = makeMountainRidge(85, 3, 18, 128, 0, 0x6a7a8a, 0.35);
+const ridge2 = makeMountainRidge(75, 2, 14, 128, 0, 0x5a6a7a, 0.50);
+const ridge3 = makeMountainRidge(66, 1, 10, 128, 0, 0x4a5a6a, 0.70);
+mountainGroup.add(ridge1, ridge2, ridge3);
+
+// Snow-capped highlight on the tallest ridge (sprite ring for ethereal look)
+for (let i = 0; i < 20; i++) {
+  const ang = (i / 20) * Math.PI * 2 + Math.random() * 0.3;
+  const r = 85 + Math.random() * 2;
+  const snowTex = celestialTex('#e8e8f0');
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: snowTex, transparent: true, opacity: 0.25 }));
+  const h = 12 + Math.random() * 6;
+  sp.position.set(Math.cos(ang) * r, h, Math.sin(ang) * r);
+  sp.scale.set(8, 4, 1);
+  mountainGroup.add(sp);
+}
+scene.add(mountainGroup);
+
+// Sun
+const sunSprite = new THREE.Sprite(
+  new THREE.SpriteMaterial({ map: celestialTex(0xffdd44), transparent: true, depthTest: false })
+);
+sunSprite.scale.set(14, 14, 1);
+sunSprite.renderOrder = -1;
+scene.add(sunSprite);
+
+// Moon
+const moonSprite = new THREE.Sprite(
+  new THREE.SpriteMaterial({ map: celestialTex(0xccddff), transparent: true, depthTest: false })
+);
+moonSprite.scale.set(7, 7, 1);
+moonSprite.renderOrder = -1;
+moonSprite.visible = false;
+scene.add(moonSprite);
+
+// Stars
+const starCount = 250;
+const starPos = new Float32Array(starCount * 3);
+for (let i = 0; i < starCount; i++) {
+  const th = Math.random() * Math.PI * 2;
+  const ph = Math.random() * Math.PI * 0.45;
+  const r = 95;
+  starPos[i*3]   = Math.cos(th) * Math.sin(ph) * r;
+  starPos[i*3+1] = Math.cos(ph) * r + 10;
+  starPos[i*3+2] = Math.sin(th) * Math.sin(ph) * r;
+}
+const starGeo = new THREE.BufferGeometry();
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+const starPoints = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.5, transparent: true, opacity: 0.85 }));
+starPoints.visible = false;
+scene.add(starPoints);
+
+// Clouds
+const clouds = [];
+for (let ci = 0; ci < 7; ci++) {
+  const cg = new THREE.Group();
+  const nPuffs = 3 + Math.floor(Math.random() * 4);
+  const cMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, metalness: 0, transparent: true, opacity: 0.8, flatShading: true });
+  for (let j = 0; j < nPuffs; j++) {
+    const pf = new THREE.Mesh(new THREE.SphereGeometry(1.2 + Math.random() * 1.8, 7, 5), cMat.clone());
+    pf.scale.y = 0.32;
+    pf.position.set((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 3);
+    cg.add(pf);
+  }
+  cg.position.set((Math.random() - 0.5) * 130, 26 + Math.random() * 16, (Math.random() - 0.5) * 130);
+  cg.userData.speed = 0.004 + Math.random() * 0.008;
+  scene.add(cg);
+  clouds.push(cg);
+}
+
+// Position sun/moon based on hour
+function updateCelestials(hour) {
+  // Sun: rises 6, peaks 12, sets 18
+  const sp = (hour - 6) / 12;
+  if (sp > -0.05 && sp < 1.05) {
+    const a = Math.max(0, Math.min(1, sp)) * Math.PI;
+    sunSprite.position.set(Math.cos(a) * 75, Math.sin(a) * 55 + 3, -65);
+    sunSprite.visible = true;
+    sunLight.position.set(Math.cos(a) * 40, Math.sin(a) * 50 + 5, -30);
+  } else {
+    sunSprite.visible = false;
+  }
+  // Moon: rises ~19, peaks ~0, sets ~5
+  const mh = ((hour - 19 + 24) % 24);
+  if (hour >= 18 || hour <= 6) {
+    const ma = (mh / 11) * Math.PI;
+    moonSprite.position.set(-Math.cos(ma) * 65, Math.sin(ma) * 45 + 5, -60);
+    moonSprite.visible = true;
+  } else {
+    moonSprite.visible = false;
+  }
+  starPoints.visible = hour >= 20 || hour <= 5;
+}
+updateCelestials(10);
+
+// Full time-of-day updater (replaces old updateLighting)
+function updateTimeOfDay(phase, hour) {
+  currentPhase = phase;
+  simHour = hour;
+  isNight = phase === 'night' || phase === 'evening';
+
+  updateSkyGradient(phase);
+  updateCelestials(hour);
+
+  // Mountain tint — fade ridges for time of day
+  const mc = isNight ? 0x141828 : (phase === 'evening' ? 0x3a2838 : (phase === 'dawn' ? 0x4a3848 : MTN_COLOR));
+  mountainGroup.children.forEach(m => {
+    if (m.material && m.material.color) m.material.color.set(mc);
+    if (m.isSprite && m.material) m.material.opacity = isNight ? 0.05 : 0.25;
+  });
+
+  // Cloud tint
+  const cc = isNight ? 0x1a1a30 : (phase === 'evening' ? 0xe8a070 : (phase === 'dawn' ? 0xd8a080 : 0xffffff));
+  const co = isNight ? 0.25 : 0.8;
+  clouds.forEach(c => c.children.forEach(p => { p.material.color.set(cc); p.material.opacity = co; }));
+
+  // Lighting
+  if (isNight) {
+    hemiLight.intensity = 0.12; hemiLight.color.set(0x224466);
+    ambientLight.intensity = 0.08;
+    sunLight.intensity = 0.12; sunLight.color.set(0x4466aa);
+    ground.material.color.set(0x142a14);
+    gridHelper.material.opacity = 0.04;
+    scene.fog = new THREE.FogExp2(0x080818, 0.007);
+  } else if (phase === 'evening') {
+    hemiLight.intensity = 0.35; hemiLight.color.set(0xcc8855);
+    ambientLight.intensity = 0.2;
+    sunLight.intensity = 0.6; sunLight.color.set(0xff8844);
+    ground.material.color.set(0x3a6a30);
+    gridHelper.material.opacity = 0.08;
+    scene.fog = new THREE.FogExp2(0x442222, 0.005);
+  } else if (phase === 'dawn') {
+    hemiLight.intensity = 0.4; hemiLight.color.set(0xcc9966);
+    ambientLight.intensity = 0.25;
+    sunLight.intensity = 0.7; sunLight.color.set(0xffaa66);
+    ground.material.color.set(0x3a6a30);
+    gridHelper.material.opacity = 0.1;
+    scene.fog = new THREE.FogExp2(0x886644, 0.004);
+  } else {
+    hemiLight.intensity = 0.6; hemiLight.color.set(0x87ceeb);
+    ambientLight.intensity = 0.3;
+    sunLight.intensity = 1.2; sunLight.color.set(0xffeedd);
+    ground.material.color.set(PALETTE.ground);
+    gridHelper.material.opacity = 0.15;
+    scene.fog = new THREE.FogExp2(PALETTE.fog, 0.004);
+  }
+
+  // Window glow
+  scene.traverse(o => {
+    if (o.userData?.isWindow && o.material) {
+      if (isNight) {
+        o.material.color.set(BLDG_COLORS.windowLit);
+        o.material.emissive = new THREE.Color(BLDG_COLORS.windowLit);
+        o.material.emissiveIntensity = 0.5;
+      } else {
+        o.material.color.set(BLDG_COLORS.window);
+        o.material.emissive = new THREE.Color(0x000000);
+        o.material.emissiveIntensity = 0;
+      }
+    }
+  });
+}
+
+// Parse simulation time string → { hour, phase }
+function parseSimTime(timeStr) {
+  const hm = timeStr.match(/(\d{1,2}):(\d{2})/);
+  const hour = hm ? parseInt(hm[1]) : 12;
+  const tm = timeStr.match(/\((\w+)\)/);
+  let phase = tm ? tm[1].trim() : 'morning';
+  if (!SKY_PHASES[phase]) {
+    if (hour >= 5 && hour < 7) phase = 'dawn';
+    else if (hour >= 7 && hour < 12) phase = 'morning';
+    else if (hour >= 12 && hour < 17) phase = 'afternoon';
+    else if (hour >= 17 && hour < 20) phase = 'evening';
+    else phase = 'night';
+  }
+  return { hour, phase };
+}
+
+// ============================================================
+// AGENTS (3D Figures)
+// ============================================================
+const agentMeshes = new Map();
+const agentTargetPositions = new Map();
+let agentIdxCounter = 0;
+const agentIdxMap = {};
+
+function getAgentIdx(id) {
+  if (!(id in agentIdxMap)) agentIdxMap[id] = agentIdxCounter++;
+  return agentIdxMap[id];
+}
+
+function createLimb(length, radius, color) {
+  const g = new THREE.Group();
+  const m = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius, radius * 0.85, length, 6),
+    mat(color)
+  );
+  m.position.y = -length / 2;
+  m.castShadow = true;
+  g.add(m);
+  return g;
+}
+
+function createAgentMesh(agentId, agentData) {
+  const group = new THREE.Group();
+  const idx = getAgentIdx(agentId);
+  const h = hash(agentId);
+  const shirtColor = AGENT_COLORS[idx % AGENT_COLORS.length];
+  const skinColor  = SKIN_COLORS[h % SKIN_COLORS.length];
+  const hairColor  = HAIR_COLORS[(h >> 3) % HAIR_COLORS.length];
+  const wearsSkirt = (h >> 6) % 3 === 0;
+  const bottomColor = wearsSkirt
+    ? SKIRT_COLORS[(h >> 8) % SKIRT_COLORS.length]
+    : PANTS_COLORS[(h >> 8) % PANTS_COLORS.length];
+  const shoeColor = SHOE_COLORS[(h >> 10) % SHOE_COLORS.length];
+
+  const S = 0.6;
+
+  // --- Head ---
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.22 * S, 8, 6), mat(skinColor));
+  head.position.y = 1.58 * S;
+  head.castShadow = true;
+  group.add(head);
+
+  // Hair
+  const hairGeo = (h & 1)
+    ? new THREE.SphereGeometry(0.24 * S, 8, 6, 0, Math.PI * 2, 0, Math.PI * 0.55)
+    : new THREE.BoxGeometry(0.38 * S, 0.13 * S, 0.36 * S);
+  const hair = new THREE.Mesh(hairGeo, mat(hairColor));
+  hair.position.y = ((h & 1) ? 1.65 : 1.70) * S;
+  group.add(hair);
+
+  // --- Torso (shirt) ---
+  const torso = new THREE.Mesh(
+    new THREE.BoxGeometry(0.38 * S, 0.48 * S, 0.20 * S),
+    mat(shirtColor)
+  );
+  torso.position.y = 1.18 * S;
+  torso.castShadow = true;
+  group.add(torso);
+
+  // --- Arms (pivoted at shoulder) ---
+  const armLen = 0.42 * S, armR = 0.055 * S;
+  const leftArm  = createLimb(armLen, armR, skinColor);
+  leftArm.position.set(-0.24 * S, 1.38 * S, 0);
+  group.add(leftArm);
+  const rightArm = createLimb(armLen, armR, skinColor);
+  rightArm.position.set(0.24 * S, 1.38 * S, 0);
+  group.add(rightArm);
+
+  // Sleeve cuffs (shirt-colored upper arm overlay)
+  const sleeveLen = armLen * 0.45;
+  const leftSleeve = new THREE.Mesh(
+    new THREE.CylinderGeometry(armR * 1.3, armR * 1.15, sleeveLen, 6),
+    mat(shirtColor)
+  );
+  leftSleeve.position.y = -sleeveLen / 2;
+  leftArm.add(leftSleeve);
+  const rightSleeve = leftSleeve.clone();
+  rightArm.add(rightSleeve);
+
+  // --- Legs ---
+  const legLen = 0.50 * S, legR = 0.065 * S;
+  const hipW = 0.09 * S, hipY = 0.92 * S;
+  let leftLeg, rightLeg;
+
+  if (wearsSkirt) {
+    // Skirt piece
+    const skirt = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.10 * S, 0.28 * S, 0.30 * S, 8),
+      mat(bottomColor)
+    );
+    skirt.position.y = 0.78 * S;
+    group.add(skirt);
+    // Shorter visible legs below skirt
+    const visLen = 0.28 * S;
+    leftLeg  = createLimb(visLen, legR * 0.9, skinColor);
+    leftLeg.position.set(-hipW, 0.62 * S, 0);
+    rightLeg = createLimb(visLen, legR * 0.9, skinColor);
+    rightLeg.position.set(hipW, 0.62 * S, 0);
+  } else {
+    // Full-length pants legs
+    leftLeg  = createLimb(legLen, legR, bottomColor);
+    leftLeg.position.set(-hipW, hipY, 0);
+    rightLeg = createLimb(legLen, legR, bottomColor);
+    rightLeg.position.set(hipW, hipY, 0);
+  }
+  group.add(leftLeg);
+  group.add(rightLeg);
+
+  // --- Shoes ---
+  const shoeGeo = new THREE.BoxGeometry(0.10 * S, 0.05 * S, 0.16 * S);
+  const shoeMat = mat(shoeColor);
+  const leftShoe = new THREE.Mesh(shoeGeo, shoeMat);
+  leftShoe.position.set(-hipW, 0.025 * S, 0.02 * S);
+  group.add(leftShoe);
+  const rightShoe = new THREE.Mesh(shoeGeo, shoeMat);
+  rightShoe.position.set(hipW, 0.025 * S, 0.02 * S);
+  group.add(rightShoe);
+
+  // --- Name label ---
+  const nc = document.createElement('canvas');
+  nc.width = 256; nc.height = 48;
+  const nctx = nc.getContext('2d');
+  nctx.font = 'bold 20px sans-serif';
+  nctx.textAlign = 'center';
+  nctx.fillStyle = '#000000';
+  nctx.fillText(agentData?.name || agentId, 129, 27);
+  nctx.fillStyle = '#ffffff';
+  nctx.fillText(agentData?.name || agentId, 128, 26);
+  const nameTex = new THREE.CanvasTexture(nc);
+  nameTex.minFilter = THREE.LinearFilter;
+  const nameSprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({ map: nameTex, transparent: true, depthTest: false })
+  );
+  nameSprite.scale.set(4, 0.75, 1);
+  nameSprite.position.y = 1.9 * S;
+  nameSprite.renderOrder = 998;
+  group.add(nameSprite);
+
+  group.userData = {
+    id: agentId, type: 'agent', data: agentData, nameSprite,
+    leftArm, rightArm, leftLeg, rightLeg,
+    wearsSkirt, isMoving: false,
+  };
+  scene.add(group);
+  agentMeshes.set(agentId, group);
+  return group;
+}
+
+function getAgentScenePosition(agentId, locationId, agents) {
+  const loc = LOCATION_POSITIONS[locationId] || dynamicLocations[locationId];
+  if (!loc) return { x: 0, y: 0, z: 0 };
+
+  const pos = toWorld(loc.x, loc.y);
+  // Offset agents at same location in a circle
+  const agentsHere = Object.entries(agents).filter(([, a]) => a.location === locationId);
+  const myIdx = agentsHere.findIndex(([id]) => id === agentId);
+  const count = agentsHere.length;
+
+  let ox = 0, oz = 0;
+  if (count > 1 && myIdx >= 0) {
+    const angle = (myIdx / count) * Math.PI * 2;
+    const radius = Math.min(2, 0.8 + count * 0.15);
+    ox = Math.cos(angle) * radius;
+    oz = Math.sin(angle) * radius;
+  }
+
+  return { x: pos.x + ox, y: 0, z: pos.z + oz + 3 };
+}
+
+const dynamicLocations = {};
+
+// ============================================================
+// WEBSOCKET & STATE
+// ============================================================
+let simState = {};
+let wsConnected = false;
+let ws = null;
+
+function connectWebSocket() {
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${protocol}//${location.host}/ws/stream`;
+  ws = new WebSocket(wsUrl);
+
+  ws.onopen = () => {
+    wsConnected = true;
+    document.getElementById('loading').classList.add('hidden');
+    document.querySelector('.live-dot').style.background = '#4ecca3';
+    document.querySelector('.live-dot').style.boxShadow = '0 0 8px #4ecca3';
+  };
+
+  ws.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'tick' && msg.state) {
+        handleStateUpdate(msg);
+      }
+    } catch (err) { /* ignore parse errors */ }
+  };
+
+  ws.onclose = () => {
+    wsConnected = false;
+    document.querySelector('.live-dot').style.background = '#e94560';
+    document.querySelector('.live-dot').style.boxShadow = '0 0 8px #e94560';
+    setTimeout(connectWebSocket, 3000);
+  };
+
+  ws.onerror = () => ws.close();
+}
+
+function handleStateUpdate(msg) {
+  simState = msg.state;
+  const agents = simState.agents || {};
+  const locations = simState.locations || {};
+
+  // Update time display
+  document.getElementById('sim-time').textContent = msg.time || '';
+  const weather = simState.weather || simState.clock?.weather || '';
+  const weatherIcons = { sunny: '☀️', clear: '☀️', cloudy: '☁️', rainy: '🌧️', stormy: '⛈️', foggy: '🌫️' };
+  document.getElementById('sim-weather').textContent = weatherIcons[weather] || '';
+  document.getElementById('sim-agents').textContent = `${Object.keys(agents).length} agents`;
+
+  const cost = simState.llm_total_cost ?? simState.cost;
+  if (cost !== undefined) {
+    document.getElementById('sim-cost').textContent = `$${parseFloat(cost).toFixed(4)}`;
+  }
+
+  // Update sky / lighting from simulation time
+  const { hour, phase } = parseSimTime(msg.time || '');
+  updateTimeOfDay(phase, hour);
+
+  // Register dynamic locations
+  for (const [locId, locData] of Object.entries(locations)) {
+    if (!LOCATION_POSITIONS[locId] && !dynamicLocations[locId]) {
+      let h = hash(locId);
+      dynamicLocations[locId] = {
+        x: 0.05 + ((h >>> 0) % 18) / 18 * 0.90,
+        y: 0.05 + ((h >>> 4) % 16) / 16 * 0.90,
+        type: locData.zone === 'residential' ? 'house' : 'shop',
+        label: (locData.name || locId).slice(0, 16),
+      };
+      createBuilding(locId, dynamicLocations[locId]);
+    }
+  }
+
+  // Update building occupancy
+  for (const [locId, bldg] of buildingMeshes) {
+    const occupantCount = Object.values(agents).filter(a => a.location === locId).length;
+    if (bldg.userData.badge) updateBadge(bldg.userData.badge, occupantCount);
+  }
+
+  // Update/create agents
+  const seenAgents = new Set();
+  for (const [agentId, agentData] of Object.entries(agents)) {
+    seenAgents.add(agentId);
+    let mesh = agentMeshes.get(agentId);
+    if (!mesh) {
+      mesh = createAgentMesh(agentId, agentData);
+      const startPos = getAgentScenePosition(agentId, agentData.location, agents);
+      mesh.position.set(startPos.x, startPos.y, startPos.z);
+    }
+    mesh.userData.data = agentData;
+    const targetPos = getAgentScenePosition(agentId, agentData.location, agents);
+    agentTargetPositions.set(agentId, targetPos);
+  }
+
+  // Remove departed agents
+  for (const [agentId, mesh] of agentMeshes) {
+    if (!seenAgents.has(agentId)) {
+      scene.remove(mesh);
+      agentMeshes.delete(agentId);
+      agentTargetPositions.delete(agentId);
+    }
+  }
+
+  // Update info panel if agent selected
+  if (selectedId && agents[selectedId]) updateAgentInfo(selectedId, agents[selectedId]);
+}
+
+// updateLighting removed — replaced by updateTimeOfDay(phase, hour)
+
+// ============================================================
+// CLICK / SELECTION
+// ============================================================
+let selectedId = null;
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let mouseDownPos = new THREE.Vector2();
+let isDragging = false;
+
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  mouseDownPos.set(e.clientX, e.clientY);
+  isDragging = false;
+});
+
+renderer.domElement.addEventListener('pointermove', (e) => {
+  const dx = e.clientX - mouseDownPos.x;
+  const dy = e.clientY - mouseDownPos.y;
+  if (Math.sqrt(dx * dx + dy * dy) > 5) isDragging = true;
+});
+
+renderer.domElement.addEventListener('pointerup', (e) => {
+  if (isDragging) return;
+
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+
+  // Check agents first
+  const agentObjects = [];
+  for (const [, mesh] of agentMeshes) agentObjects.push(...mesh.children);
+  const agentHits = raycaster.intersectObjects(agentObjects, false);
+  if (agentHits.length > 0) {
+    let parent = agentHits[0].object;
+    while (parent.parent && !parent.userData?.id) parent = parent.parent;
+    if (parent.userData?.id && parent.userData.type === 'agent') {
+      selectAgent(parent.userData.id);
+      smoothZoomTo(parent.position, 4);
+      return;
+    }
+  }
+
+  // Check buildings
+  const buildingObjects = [];
+  for (const [, mesh] of buildingMeshes) buildingObjects.push(...mesh.children);
+  const buildingHits = raycaster.intersectObjects(buildingObjects, false);
+  if (buildingHits.length > 0) {
+    let parent = buildingHits[0].object;
+    while (parent.parent && !parent.userData?.id) parent = parent.parent;
+    if (parent.userData?.id) {
+      selectBuilding(parent.userData.id);
+      smoothZoomTo(parent.position, 3);
+      return;
+    }
+  }
+
+  // Click on empty space: deselect
+  closeInfoPanel();
+});
+
+// Double-click zoom
+renderer.domElement.addEventListener('dblclick', (e) => {
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObject(ground, false);
+  if (hits.length > 0) {
+    smoothZoomTo(hits[0].point, camera.zoom < 3 ? 5 : 1);
+  }
+});
+
+function selectAgent(agentId) {
+  selectedId = agentId;
+  const data = simState.agents?.[agentId];
+  if (data) updateAgentInfo(agentId, data);
+  document.getElementById('info-panel').classList.add('visible');
+}
+
+function selectBuilding(buildingId) {
+  selectedId = buildingId;
+  const agents = simState.agents || {};
+  const here = Object.entries(agents).filter(([, a]) => a.location === buildingId);
+  const loc = LOCATION_POSITIONS[buildingId] || dynamicLocations[buildingId];
+  const locInfo = simState.locations?.[buildingId];
+
+  let html = `<h3>${loc?.label || buildingId}</h3>`;
+  html += `<div class="info-section">`;
+  html += `<h4>Location</h4>`;
+  html += `<div class="info-row"><span class="label">Type</span><span class="value">${loc?.type || '?'}</span></div>`;
+  if (locInfo?.description) {
+    html += `<div style="color:#aaa;margin-top:4px;font-size:12px">${locInfo.description}</div>`;
+  }
+  html += `</div>`;
+
+  html += `<div class="info-section"><h4>Occupants (${here.length})</h4>`;
+  if (here.length === 0) html += `<div style="color:#666">Empty</div>`;
+  for (const [id, a] of here) {
+    const idx = getAgentIdx(id);
+    const color = '#' + AGENT_COLORS[idx % AGENT_COLORS.length].toString(16).padStart(6, '0');
+    html += `<div style="padding:3px 0;cursor:pointer;display:flex;align-items:center;gap:6px" onclick="window._selectAgent('${id}')">`;
+    html += `<span style="width:8px;height:8px;border-radius:50%;background:${color};display:inline-block"></span>`;
+    html += `<span>${a.name || id}</span>`;
+    html += `<span style="color:#888;font-size:11px;margin-left:auto">${a.state || ''}</span>`;
+    html += `</div>`;
+  }
+  html += `</div>`;
+
+  document.getElementById('info-content').innerHTML = html;
+  document.getElementById('info-panel').classList.add('visible');
+}
+
+window._selectAgent = (id) => selectAgent(id);
+
+function updateAgentInfo(agentId, data) {
+  const idx = getAgentIdx(agentId);
+  const color = '#' + AGENT_COLORS[idx % AGENT_COLORS.length].toString(16).padStart(6, '0');
+
+  let html = `<h3 style="display:flex;align-items:center;gap:8px">`;
+  html += `<span style="width:12px;height:12px;border-radius:50%;background:${color}"></span>`;
+  html += `${data.name || agentId}</h3>`;
+
+  html += `<div class="info-section">`;
+  html += `<h4>Status</h4>`;
+  html += `<div class="info-row"><span class="label">Location</span><span class="value">${data.location_name || data.location || '?'}</span></div>`;
+  html += `<div class="info-row"><span class="label">State</span><span class="value">${data.state || '?'}</span></div>`;
+  html += `<div class="info-row"><span class="label">Action</span><span class="value">${data.current_action || data.action || '?'}</span></div>`;
+  if (data.mood !== undefined) {
+    html += `<div class="info-row"><span class="label">Mood</span><span class="value">${typeof data.mood === 'number' ? (data.mood * 100).toFixed(0) + '%' : data.mood}</span></div>`;
+  }
+  if (data.age !== undefined) {
+    html += `<div class="info-row"><span class="label">Age</span><span class="value">${data.age}</span></div>`;
+  }
+  if (data.occupation) {
+    html += `<div class="info-row"><span class="label">Job</span><span class="value">${data.occupation}</span></div>`;
+  }
+  html += `</div>`;
+
+  // Needs
+  const needs = data.needs || {};
+  if (Object.keys(needs).length > 0) {
+    html += `<div class="info-section"><h4>Needs</h4>`;
+    for (const [need, val] of Object.entries(needs)) {
+      const pct = typeof val === 'number' ? val * 100 : parseFloat(val) * 100;
+      const barColor = pct > 60 ? '#4ecca3' : pct > 30 ? '#f0c040' : '#e94560';
+      html += `<div style="display:flex;align-items:center;gap:6px;margin:2px 0">`;
+      html += `<span style="width:60px;font-size:11px;color:#aaa">${need}</span>`;
+      html += `<div class="need-bar" style="flex:1"><div class="need-bar-fill" style="width:${pct}%;background:${barColor}"></div></div>`;
+      html += `<span style="font-size:11px;color:#888">${pct.toFixed(0)}%</span>`;
+      html += `</div>`;
+    }
+    html += `</div>`;
+  }
+
+  // Relationships
+  const rels = data.relationships || [];
+  if (rels.length > 0) {
+    html += `<div class="info-section"><h4>Relationships</h4>`;
+    for (const rel of rels.slice(0, 6)) {
+      html += `<div class="info-row"><span class="label">${rel.name || rel.target || '?'}</span>`;
+      html += `<span class="value" style="font-size:11px">${rel.type || ''} ${rel.closeness !== undefined ? `(${(rel.closeness * 100).toFixed(0)}%)` : ''}</span></div>`;
+    }
+    html += `</div>`;
+  }
+
+  // Memories
+  const memories = data.recent_memories || data.memories || [];
+  if (memories.length > 0) {
+    html += `<div class="info-section"><h4>Recent Memories</h4>`;
+    for (const mem of memories.slice(0, 5)) {
+      const text = typeof mem === 'string' ? mem : mem.description || mem.text || JSON.stringify(mem);
+      html += `<div class="memory-item">${text}</div>`;
+    }
+    html += `</div>`;
+  }
+
+  // Daily plan
+  const plan = data.daily_plan || data.plan || [];
+  if (plan.length > 0) {
+    html += `<div class="info-section"><h4>Daily Plan</h4>`;
+    for (const item of plan) {
+      const text = typeof item === 'string' ? item : `${item.time || ''} ${item.activity || item.action || ''}`;
+      html += `<div style="font-size:12px;color:#bbb;padding:2px 0">${text}</div>`;
+    }
+    html += `</div>`;
+  }
+
+  document.getElementById('info-content').innerHTML = html;
+}
+
+// ============================================================
+// CAMERA HELPERS
+// ============================================================
+let cameraAnimating = false;
+let cameraAnimStart = 0;
+let cameraAnimDuration = 800;
+let cameraStartTarget = new THREE.Vector3();
+let cameraEndTarget = new THREE.Vector3();
+let cameraStartZoom = 1;
+let cameraEndZoom = 1;
+
+function smoothZoomTo(targetPos, zoomLevel) {
+  cameraAnimating = true;
+  cameraAnimStart = performance.now();
+  cameraStartTarget.copy(controls.target);
+  cameraEndTarget.set(targetPos.x, 0, targetPos.z);
+  cameraStartZoom = camera.zoom;
+  cameraEndZoom = zoomLevel;
+}
+
+function easeInOut(t) {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+function updateCameraAnimation() {
+  if (!cameraAnimating) return;
+  const elapsed = performance.now() - cameraAnimStart;
+  let t = Math.min(elapsed / cameraAnimDuration, 1);
+  t = easeInOut(t);
+
+  controls.target.lerpVectors(cameraStartTarget, cameraEndTarget, t);
+  camera.zoom = cameraStartZoom + (cameraEndZoom - cameraStartZoom) * t;
+  camera.updateProjectionMatrix();
+
+  if (t >= 1) cameraAnimating = false;
+}
+
+window.resetCamera = () => smoothZoomTo({ x: 0, z: 0 }, 1);
+window.toggleTopDown = () => {
+  const isTopish = camera.position.y > 90;
+  if (isTopish) {
+    camera.position.set(55, 70, 55);
+  } else {
+    camera.position.set(0.1, 100, 0.1);
+  }
+  camera.lookAt(controls.target);
+};
+window.zoomIn = () => {
+  camera.zoom = Math.min(camera.zoom * 1.5, 12);
+  camera.updateProjectionMatrix();
+};
+window.zoomOut = () => {
+  camera.zoom = Math.max(camera.zoom / 1.5, 0.3);
+  camera.updateProjectionMatrix();
+};
+window.closeInfoPanel = () => {
+  selectedId = null;
+  document.getElementById('info-panel').classList.remove('visible');
+};
+
+// ============================================================
+// DETAIL LEVEL BY ZOOM
+// ============================================================
+function updateDetailLevel() {
+  const z = camera.zoom;
+  const showLabels = z > 0.6;
+  const showNames = z > 1.5;
+  const showBadges = z > 0.8;
+
+  for (const [, bldg] of buildingMeshes) {
+    if (bldg.userData.label) bldg.userData.label.visible = showLabels;
+    if (bldg.userData.badge?.sprite) bldg.userData.badge.sprite.visible = showBadges && bldg.userData.badge.sprite.visible;
+  }
+
+  for (const [, mesh] of agentMeshes) {
+    if (mesh.userData.nameSprite) mesh.userData.nameSprite.visible = showNames;
+  }
+}
+
+controls.addEventListener('change', updateDetailLevel);
+
+// ============================================================
+// ANIMATION LOOP
+// ============================================================
+const clock = new THREE.Clock();
+let frameCount = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+  frameCount++;
+
+  controls.update();
+  updateCameraAnimation();
+
+  // Smooth agent movement
+  for (const [agentId, mesh] of agentMeshes) {
+    const target = agentTargetPositions.get(agentId);
+    if (target) {
+      const dx = target.x - mesh.position.x;
+      const dz = target.z - mesh.position.z;
+      const dist0 = Math.sqrt(dx * dx + dz * dz);
+      const speed = 0.03;
+
+      if (dist0 > speed) {
+        let mx = (dx / dist0) * speed;
+        let mz = (dz / dist0) * speed;
+
+        // Exclude buildings the agent is inside or heading to
+        const relevant = obstacles.filter(ob => {
+          const curIn = Math.abs(mesh.position.x - ob.x) < ob.hw && Math.abs(mesh.position.z - ob.z) < ob.hd;
+          const tgtIn = Math.abs(target.x - ob.x) < ob.hw && Math.abs(target.z - ob.z) < ob.hd;
+          return !curIn && !tgtIn;
+        });
+
+        const tryMove = (px, pz) => {
+          for (const ob of relevant) {
+            if (Math.abs(px - ob.x) < ob.hw && Math.abs(pz - ob.z) < ob.hd) return false;
+          }
+          return true;
+        };
+
+        const nx = mesh.position.x + mx;
+        const nz = mesh.position.z + mz;
+        if (tryMove(nx, nz)) {
+          mesh.position.x = nx;
+          mesh.position.z = nz;
+        } else if (tryMove(nx, mesh.position.z)) {
+          mesh.position.x = nx;
+        } else if (tryMove(mesh.position.x, nz)) {
+          mesh.position.z = nz;
+        } else {
+          // Slide perpendicular — try both sides
+          const perpX = -dz / dist0 * speed;
+          const perpZ =  dx / dist0 * speed;
+          const side = (hash(agentId) % 2 === 0) ? 1 : -1;
+          const sx1 = mesh.position.x + perpX * side;
+          const sz1 = mesh.position.z + perpZ * side;
+          const sx2 = mesh.position.x - perpX * side;
+          const sz2 = mesh.position.z - perpZ * side;
+          if (tryMove(sx1, sz1)) {
+            mesh.position.x = sx1;
+            mesh.position.z = sz1;
+          } else if (tryMove(sx2, sz2)) {
+            mesh.position.x = sx2;
+            mesh.position.z = sz2;
+          } else {
+            // Last resort — move directly, don't freeze
+            mesh.position.x += mx;
+            mesh.position.z += mz;
+          }
+        }
+      } else {
+        mesh.position.x = target.x;
+        mesh.position.z = target.z;
+      }
+
+      if (dist0 > 0.05) {
+        mesh.rotation.y = Math.atan2(
+          target.x - mesh.position.x,
+          target.z - mesh.position.z
+        );
+      }
+    }
+
+    // Walking animation — swing limbs when moving, gentle bob when idle
+    const dx2 = target ? target.x - mesh.position.x : 0;
+    const dz2 = target ? target.z - mesh.position.z : 0;
+    const dist = Math.sqrt(dx2 * dx2 + dz2 * dz2);
+    const moving = dist > 0.15;
+    const walkPhase = frameCount * 0.12 + hash(agentId) * 0.5;
+    const swing = moving ? Math.sin(walkPhase) * 0.7 : 0;
+    if (mesh.userData.leftLeg)  mesh.userData.leftLeg.rotation.x  =  swing;
+    if (mesh.userData.rightLeg) mesh.userData.rightLeg.rotation.x = -swing;
+    if (mesh.userData.leftArm)  mesh.userData.leftArm.rotation.x  = -swing * 0.5;
+    if (mesh.userData.rightArm) mesh.userData.rightArm.rotation.x =  swing * 0.5;
+    mesh.position.y = moving
+      ? Math.abs(Math.sin(walkPhase * 2)) * 0.04
+      : Math.sin(frameCount * 0.02 + hash(agentId) * 0.1) * 0.015;
+  }
+
+  // Subtle tree sway
+  if (frameCount % 2 === 0) {
+    scene.traverse((obj) => {
+      if (obj.geometry?.type === 'ConeGeometry' && obj.parent?.parent === scene) {
+        obj.rotation.z = Math.sin(frameCount * 0.01 + obj.position.x) * 0.02;
+      }
+    });
+  }
+
+  // Cloud drift
+  for (const cloud of clouds) {
+    cloud.position.x += cloud.userData.speed;
+    if (cloud.position.x > 70) cloud.position.x = -70;
+  }
+
+  renderer.render(scene, camera);
+}
+
+// ============================================================
+// RESIZE
+// ============================================================
+window.addEventListener('resize', () => {
+  const w = window.innerWidth, h = window.innerHeight;
+  const a = w / h;
+  camera.left = -frustum * a;
+  camera.right = frustum * a;
+  camera.top = frustum;
+  camera.bottom = -frustum;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+});
+
+// ============================================================
+// KEYBOARD
+// ============================================================
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeInfoPanel();
+  if (e.key === 'r' || e.key === 'R') resetCamera();
+  if (e.key === '+' || e.key === '=') zoomIn();
+  if (e.key === '-') zoomOut();
+});
+
+// ============================================================
+// FALLBACK: REST polling if WebSocket isn't available
+// ============================================================
+async function pollFallback() {
+  if (wsConnected) return;
+  try {
+    const resp = await fetch('/api/city');
+    if (resp.ok) {
+      const data = await resp.json();
+      handleStateUpdate({ type: 'tick', state: data, time: data.clock?.display || '' });
+      document.getElementById('loading').classList.add('hidden');
+    }
+  } catch (e) { /* retry */ }
+}
+
+// ============================================================
+// BOOT
+// ============================================================
+connectWebSocket();
+setInterval(pollFallback, 3000);
+animate();
+updateDetailLevel();
+
+// Auto-dismiss loading overlay; show demo agents if no server
+setTimeout(() => {
+  const el = document.getElementById('loading');
+  if (el && !el.classList.contains('hidden')) {
+    document.querySelector('.loading-sub').textContent = 'No server detected — showing static city';
+    setTimeout(() => {
+      el.classList.add('hidden');
+      if (!wsConnected) spawnDemoAgents();
+    }, 1500);
+  }
+}, 4000);
+
+function spawnDemoAgents() {
+  const demoNames = [
+    { id: 'elena',    name: 'Elena',    location: 'house_elena' },
+    { id: 'marcus',   name: 'Marcus',   location: 'cafe' },
+    { id: 'helen',    name: 'Helen',    location: 'park' },
+    { id: 'diana',    name: 'Diana',    location: 'office' },
+    { id: 'kai',      name: 'Kai',      location: 'house_kai' },
+    { id: 'priya',    name: 'Priya',    location: 'grocery' },
+    { id: 'james',    name: 'James',    location: 'gym' },
+    { id: 'rosa',     name: 'Rosa',     location: 'restaurant' },
+    { id: 'yuki',     name: 'Yuki',     location: 'library' },
+    { id: 'frank',    name: 'Frank',    location: 'factory' },
+    { id: 'lila',     name: 'Lila',     location: 'bakery' },
+    { id: 'zoe',      name: 'Zoe',      location: 'town_square' },
+    { id: 'omar',     name: 'Omar',     location: 'bar' },
+    { id: 'nina',     name: 'Nina',     location: 'school' },
+    { id: 'theo',     name: 'Theo',     location: 'hospital' },
+    { id: 'ada',      name: 'Ada',      location: 'house_ada' },
+    { id: 'ben',      name: 'Ben',      location: 'bookshop' },
+    { id: 'carlos',   name: 'Carlos',   location: 'house_carlos' },
+    { id: 'mia',      name: 'Mia',      location: 'florist' },
+    { id: 'dara',     name: 'Dara',     location: 'house_dara' },
+    { id: 'leo',      name: 'Leo',      location: 'pizzeria' },
+    { id: 'sven',     name: 'Sven',     location: 'house_sven' },
+    { id: 'hana',     name: 'Hana',     location: 'sushi_bar' },
+    { id: 'ivan',     name: 'Ivan',     location: 'house_ivan' },
+    { id: 'vera',     name: 'Vera',     location: 'museum' },
+    { id: 'nadia',    name: 'Nadia',    location: 'house_nadia' },
+    { id: 'rami',     name: 'Rami',     location: 'market' },
+    { id: 'petra',    name: 'Petra',    location: 'house_petra' },
+    { id: 'tom',      name: 'Tom',      location: 'police' },
+    { id: 'ling',     name: 'Ling',     location: 'house_ling' },
+    { id: 'jun',      name: 'Jun',      location: 'mall' },
+    { id: 'alice',    name: 'Alice',    location: 'coffeehouse' },
+    { id: 'marco',    name: 'Marco',    location: 'townhall' },
+    { id: 'devon',    name: 'Devon',    location: 'cinema' },
+    { id: 'george',   name: 'George',   location: 'fire_station' },
+    { id: 'sam',      name: 'Sam',      location: 'barbershop' },
+    { id: 'maya',     name: 'Maya',     location: 'pharmacy' },
+    { id: 'felix',    name: 'Felix',    location: 'electronics' },
+    { id: 'sophie',   name: 'Sophie',   location: 'pet_shop' },
+    { id: 'alex',     name: 'Alex',     location: 'laundry' },
+    { id: 'anya',     name: 'Anya',     location: 'park_east' },
+    { id: 'boris',    name: 'Boris',    location: 'apt_midtown' },
+    { id: 'clara',    name: 'Clara',    location: 'apt_heights' },
+    { id: 'dimitri',  name: 'Dimitri',  location: 'apt_plaza' },
+    { id: 'elsa',     name: 'Elsa',     location: 'apt_harbor' },
+    { id: 'farid',    name: 'Farid',    location: 'office_tech' },
+    { id: 'greta',    name: 'Greta',    location: 'office_media' },
+    { id: 'hamid',    name: 'Hamid',    location: 'tower_2' },
+    { id: 'irene',    name: 'Irene',    location: 'factory_2' },
+    { id: 'jake',     name: 'Jake',     location: 'park_south' },
+    { id: 'kira',     name: 'Kira',     location: 'playground' },
+    { id: 'lukas',    name: 'Lukas',    location: 'diner' },
+    { id: 'marta',    name: 'Marta',    location: 'sports_field' },
+    { id: 'nico',     name: 'Nico',     location: 'church' },
+    { id: 'olga',     name: 'Olga',     location: 'apartment_block_1' },
+    { id: 'paolo',    name: 'Paolo',    location: 'apartment_block_2' },
+    { id: 'quinn',    name: 'Quinn',    location: 'apartment_block_3' },
+    { id: 'rita',     name: 'Rita',     location: 'apt_northeast' },
+    { id: 'stefan',   name: 'Stefan',   location: 'apt_northwest' },
+    { id: 'tanya',    name: 'Tanya',    location: 'apt_southeast' },
+    { id: 'ulrich',   name: 'Ulrich',   location: 'apt_southwest' },
+    { id: 'viola',    name: 'Viola',    location: 'cafe' },
+    { id: 'walter',   name: 'Walter',   location: 'grocery' },
+    { id: 'xena',     name: 'Xena',     location: 'bakery' },
+    { id: 'yusuf',    name: 'Yusuf',    location: 'restaurant' },
+    { id: 'zara',     name: 'Zara',     location: 'bar' },
+    { id: 'arnaud',   name: 'Arnaud',   location: 'office' },
+    { id: 'bianca',   name: 'Bianca',   location: 'park' },
+    { id: 'cyril',    name: 'Cyril',    location: 'gym' },
+    { id: 'dina',     name: 'Dina',     location: 'library' },
+    { id: 'emilio',   name: 'Emilio',   location: 'factory' },
+    { id: 'fiona',    name: 'Fiona',    location: 'hospital' },
+    { id: 'gustav',   name: 'Gustav',   location: 'school' },
+    { id: 'hazel',    name: 'Hazel',    location: 'town_square' },
+    { id: 'igor',     name: 'Igor',     location: 'cinema' },
+  ];
+  const demoAgents = {};
+  for (const d of demoNames) {
+    demoAgents[d.id] = { name: d.name, location: d.location, state: 'idle', needs: {} };
+  }
+  handleStateUpdate({
+    type: 'tick', time: 'Day 1, 10:30 (morning)',
+    state: { agents: demoAgents, locations: {}, weather: 'sunny' }
+  });
+  document.getElementById('sim-time').textContent = 'Day 1, 10:30 (morning)';
+  document.getElementById('sim-weather').textContent = '☀️';
+  document.getElementById('sim-agents').textContent = `${demoNames.length} agents (demo)`;
+
+  // Animate demo agents moving between locations
+  const locIds = Object.keys(LOCATION_POSITIONS).filter(k => !k.startsWith('street'));
+  setInterval(() => {
+    if (wsConnected) return;
+    const agents = Object.keys(demoAgents);
+    const moveCount = 3 + Math.floor(Math.random() * 5);
+    for (let i = 0; i < moveCount; i++) {
+      const who = agents[Math.floor(Math.random() * agents.length)];
+      const dest = locIds[Math.floor(Math.random() * locIds.length)];
+      demoAgents[who].location = dest;
+    }
+    handleStateUpdate({
+      type: 'tick', time: 'Day 1, 10:30 (morning)',
+      state: { agents: demoAgents, locations: {}, weather: 'sunny' }
+    });
+  }, 2000);
+}
+
+// Hide zoom hint after a few seconds
+setTimeout(() => {
+  const hint = document.getElementById('zoom-hint');
+  if (hint) hint.style.opacity = '0';
+}, 8000);
+</script>
+</body>
+</html>

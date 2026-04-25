@@ -458,6 +458,10 @@ def create_app() -> FastAPI:
         async def serve_index():
             return FileResponse(web_dir / "index.html")
 
+        @app.get("/3d")
+        async def serve_3d():
+            return FileResponse(web_dir / "3d.html")
+
         app.mount("/static", StaticFiles(directory=str(web_dir)), name="static")
 
     return app
