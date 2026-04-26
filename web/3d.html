@@ -1934,6 +1934,7 @@ function selectAgent(agentId) {
   const data = simState.agents?.[agentId];
   if (data) updateAgentInfo(agentId, data);
   document.getElementById('info-panel').classList.add('visible');
+  if (window.parent !== window) window.parent.postMessage({ type: 'agent-select', agentId }, '*');
 }
 
 function selectBuilding(buildingId) {
@@ -2288,6 +2289,18 @@ async function pollFallback() {
 // ============================================================
 // BOOT
 // ============================================================
+const isEmbedded = window.parent !== window;
+if (isEmbedded) {
+  document.getElementById('status-bar').style.display = 'none';
+  document.getElementById('controls-bar').style.display = 'none';
+  const hint = document.getElementById('zoom-hint');
+  if (hint) hint.style.display = 'none';
+  window.addEventListener('message', (e) => {
+    if (e.data?.type === 'zoom-in')       zoomIn();
+    if (e.data?.type === 'zoom-out')      zoomOut();
+    if (e.data?.type === 'reset-camera')  resetCamera();
+  });
+}
 connectWebSocket();
 setInterval(pollFallback, 3000);
 animate();
