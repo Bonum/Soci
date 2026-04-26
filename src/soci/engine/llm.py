@@ -27,8 +27,8 @@ MODEL_SONNET = "claude-sonnet-4-5-20250929"
 MODEL_HAIKU = "claude-haiku-4-5-20251001"
 
 # Ollama model IDs (popular open-source models)
-MODEL_LLAMA = "llama3.1:8b"
-MODEL_LLAMA_SMALL = "llama3.1:8b"
+MODEL_LLAMA = "llama3.3:latest"
+MODEL_LLAMA_SMALL = "llama3.3:latest"
 MODEL_MISTRAL = "mistral"
 MODEL_QWEN = "qwen2.5"
 MODEL_GEMMA = "gemma2"
@@ -1002,7 +1002,7 @@ def create_llm_client(
         default_model = model or os.environ.get("GEMINI_MODEL", MODEL_GEMINI_FLASH)
         return GeminiClient(default_model=default_model)
     elif provider == PROVIDER_OLLAMA:
-        default_model = model or os.environ.get("OLLAMA_MODEL", MODEL_OLLAMA_SOCI)
+        default_model = model or os.environ.get("OLLAMA_MODEL", MODEL_LLAMA)
         return OllamaClient(base_url=ollama_url, default_model=default_model)
     else:
         raise ValueError(f"Unknown LLM provider: {provider}. Use 'nn', 'claude', 'groq', 'gemini', or 'ollama'.")

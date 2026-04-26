@@ -41,7 +41,7 @@
   .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
   .dot.green { background: #4ecca3; } .dot.yellow { background: #f0c040; } .dot.red { background: #e94560; }
   #main { display: flex; flex-direction: row; height: calc(100vh - 50px); }
-  #viewport-3d { flex: 7; position: relative; min-width: 0; }
+  #viewport-3d { flex: 6; position: relative; min-width: 0; }
   #viewport-3d iframe { width: 100%; height: 100%; border: none; display: block; }
   #canvas-container { display: none; }
   #cityCanvas { display: none; }
@@ -574,6 +574,7 @@ const AGENT_COLORS = [
 const WEATHER_ICONS = {
   sunny:'\u2600\uFE0F', clear:'\u2600\uFE0F', cloudy:'\u2601\uFE0F',
   rainy:'\uD83C\uDF27\uFE0F', stormy:'\u26C8\uFE0F', foggy:'\uD83C\uDF2B\uFE0F',
+  snowy:'🌨️', snow:'🌨️',
 };
 
 const SKY = {
@@ -2733,7 +2734,7 @@ function showDefaultDetail() {
       const mayorBadge = a.is_mayor ? ' \uD83C\uDFDB\uFE0F' : '';
       const ageStr = a.age != null ? ` (${a.age})` : '';
       return `
-        <div class="agent-list-item" onclick="selectedAgentId='${aid}';fetchAgentDetail('${aid}');" style="${isDead ? 'opacity:0.5' : ''}">
+        <div class="agent-list-item" onclick="selectedAgentId='${aid}';selectAgentFromList('${aid}');" style="${isDead ? 'opacity:0.5' : ''}">
           <span class="agent-dot" style="background:${color}"></span>
           <span style="font-size:13px">${gi}</span>
           <div class="agent-info">
@@ -2744,12 +2745,20 @@ function showDefaultDetail() {
     }).join('')}`;
 }
 
+function selectAgentFromList(agentId) {
+  fetchAgentDetail(agentId);
+  send3d('select-agent');
+}
+
 async function fetchAgentDetail(agentId) {
   try {
     const res=await fetch(`${API_BASE}/agents/${agentId}`);
-    if(!res.ok) return;
+    if(!res.ok) throw 0;
     renderAgentDetail(await res.json());
-  } catch(e){}
+  } catch(e){
+    const ag = agents[agentId];
+    if (ag) renderAgentDetail({ ...ag, id: agentId, memories: [], relationships: [], recent_memories: [] });
+  }
 }
 
 function renderAgentDetail(data) {
@@ -3904,7 +3913,28 @@ window.addEventListener('message', (e) => {
   if (e.data?.type === 'agent-select' && e.data.agentId) {
     selectedAgentId = e.data.agentId;
     switchTab('agents');
-    fetchAgentDetail(e.data.agentId);
+    // In demo mode (no server), show inline detail from iframe state
+    const ag = agents[e.data.agentId];
+    if (ag) {
+      renderAgentDetail({ ...ag, id: e.data.agentId, memories: [], relationships: [] });
+    } else {
+      fetchAgentDetail(e.data.agentId);
+    }
+  }
+  if (e.data?.type === 'state-update' && e.data.state) {
+    const s = e.data.state;
+    // Parse time string from iframe
+    const timeMatch = (e.data.time || '').match(/Day\s+(\d+),\s*(\d+:\d+)\s*\((\w+)\)/i);
+    const dayNum = timeMatch ? parseInt(timeMatch[1]) : 1;
+    const timeStr = timeMatch ? timeMatch[2] : '10:30';
+    const tod = timeMatch ? timeMatch[3] : 'morning';
+    processStateData({
+      clock: { day: dayNum, time_str: timeStr, time_of_day: tod, total_ticks: Date.now() },
+      agents: s.agents || {},
+      weather: s.weather || 'sunny',
+      active_conversations: 0,
+      llm_usage: '',
+    });
   }
 });
 
