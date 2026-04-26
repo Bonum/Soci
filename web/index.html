@@ -3226,6 +3226,11 @@ let simPaused = false;
 let simSpeed = 1.0;
 let llmCallProbability = 0.10;
 
+function send3dSpeed(mult) {
+  const iframe = document.getElementById('city3d');
+  if (iframe?.contentWindow) iframe.contentWindow.postMessage({ type: 'set-speed', multiplier: mult }, '*');
+}
+
 async function togglePause() {
   try {
     const endpoint = simPaused ? 'resume' : 'pause';
@@ -3234,8 +3239,13 @@ async function togglePause() {
       const data = await res.json();
       simPaused = data.paused;
       updateControlsUI();
+      send3dSpeed(simPaused ? 0 : simSpeed);
+      return;
     }
   } catch(e) {}
+  simPaused = !simPaused;
+  updateControlsUI();
+  send3dSpeed(simPaused ? 0 : simSpeed);
 }
 
 async function setSpeed(mult) {
@@ -3245,8 +3255,13 @@ async function setSpeed(mult) {
       const data = await res.json();
       simSpeed = data.speed;
       updateControlsUI();
+      send3dSpeed(simSpeed);
+      return;
     }
   } catch(e) {}
+  simSpeed = mult;
+  updateControlsUI();
+  send3dSpeed(mult);
 }
 
 function updateControlsUI() {

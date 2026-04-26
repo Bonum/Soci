@@ -1462,9 +1462,30 @@ for (let i = 0; i < 80; i++) {
 }
 
 // ============================================================
+// TEXTURE HELPERS
+// ============================================================
+function celestialTex(color) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const ctx = c.getContext('2d');
+  const col = '#' + new THREE.Color(color).getHexString();
+  const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0, col);
+  g.addColorStop(0.25, col + 'cc');
+  g.addColorStop(0.6, col + '33');
+  g.addColorStop(1, col + '00');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(c);
+}
+
+// ============================================================
 // STREET LAMPS
 // ============================================================
 const streetLamps = [];
+const lampBulbMat = new THREE.MeshStandardMaterial({ color: 0xffeebb, emissive: 0xffd860, emissiveIntensity: 0, roughness: 0.3 });
+const lampGlowTex = celestialTex(0xffd860);
+
 function createStreetLamp(x, z) {
   const group = new THREE.Group();
   const pole = new THREE.Mesh(
@@ -1472,7 +1493,6 @@ function createStreetLamp(x, z) {
     mat(0x444444, { metalness: 0.4 })
   );
   pole.position.y = 1.75;
-  pole.castShadow = true;
   group.add(pole);
 
   const arm = new THREE.Mesh(
@@ -1483,19 +1503,22 @@ function createStreetLamp(x, z) {
   group.add(arm);
 
   const bulb = new THREE.Mesh(
-    new THREE.SphereGeometry(0.15, 8, 6),
-    new THREE.MeshStandardMaterial({ color: 0xffeebb, emissive: 0xffd860, emissiveIntensity: 0, roughness: 0.3 })
+    new THREE.SphereGeometry(0.12, 6, 4),
+    lampBulbMat.clone()
   );
   bulb.position.set(0.7, 3.3, 0);
   group.add(bulb);
 
-  const light = new THREE.PointLight(0xffd860, 0, 12, 1.5);
-  light.position.set(0.7, 3.2, 0);
-  group.add(light);
+  const glow = new THREE.Sprite(
+    new THREE.SpriteMaterial({ map: lampGlowTex, transparent: true, opacity: 0, depthTest: false })
+  );
+  glow.scale.set(3, 3, 1);
+  glow.position.set(0.7, 3.3, 0);
+  group.add(glow);
 
   group.position.set(x, 0, z);
   scene.add(group);
-  streetLamps.push({ group, light, bulb });
+  streetLamps.push({ group, bulb, glow });
 }
 
 // Place lamps along main roads
@@ -1505,13 +1528,26 @@ for (let i = -6; i <= 6; i++) {
   createStreetLamp(2, i * 10);
   createStreetLamp(-2, i * 10);
 }
-// Along secondary roads
 for (let i = -5; i <= 5; i++) {
   createStreetLamp(i * 12, -16);
   createStreetLamp(i * 12, 15);
   createStreetLamp(i * 12, 28);
   createStreetLamp(-26, i * 12);
   createStreetLamp(28, i * 12);
+}
+
+// A few actual PointLights for night illumination (placed at key intersections)
+const nightLights = [];
+const nightLightPositions = [
+  [0, 6, 0], [0, 6, -14], [0, 6, 14], [-25, 6, 0], [25, 6, 0],
+  [-25, 6, -14], [25, 6, -14], [-25, 6, 14], [25, 6, 14],
+  [0, 6, -35], [0, 6, 35],
+];
+for (const [x, y, z] of nightLightPositions) {
+  const pl = new THREE.PointLight(0xffd860, 0, 25, 1.2);
+  pl.position.set(x, y, z);
+  scene.add(pl);
+  nightLights.push(pl);
 }
 
 // ============================================================
@@ -1538,22 +1574,6 @@ function updateSkyGradient(phase) {
   scene.background = skyTex;
 }
 updateSkyGradient('morning');
-
-// Celestial glow texture helper
-function celestialTex(color) {
-  const c = document.createElement('canvas');
-  c.width = c.height = 128;
-  const ctx = c.getContext('2d');
-  const col = '#' + new THREE.Color(color).getHexString();
-  const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-  g.addColorStop(0, col);
-  g.addColorStop(0.25, col + 'cc');
-  g.addColorStop(0.6, col + '33');
-  g.addColorStop(1, col + '00');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 128, 128);
-  return new THREE.CanvasTexture(c);
-}
 
 // Mountains ring — smooth, distant, ethereal ridges
 const mountainGroup = new THREE.Group();
@@ -1885,8 +1905,12 @@ function updateTimeOfDay(phase, hour) {
   // Street lamps: on at night/evening, off during day
   const lampsOn = isNight || phase === 'evening';
   for (const lamp of streetLamps) {
-    lamp.light.intensity = lampsOn ? 1.8 : 0;
-    lamp.bulb.material.emissiveIntensity = lampsOn ? 1.5 : 0;
+    lamp.bulb.material.emissiveIntensity = lampsOn ? 2.0 : 0;
+    lamp.bulb.material.color.set(lampsOn ? 0xffd860 : 0xffeebb);
+    lamp.glow.material.opacity = lampsOn ? 0.6 : 0;
+  }
+  for (const nl of nightLights) {
+    nl.intensity = lampsOn ? 2.5 : 0;
   }
 
   // Window glow + building transparency at night
@@ -2820,12 +2844,21 @@ if (isEmbedded) {
     if (e.data?.type === 'zoom-in')       zoomIn();
     if (e.data?.type === 'zoom-out')      zoomOut();
     if (e.data?.type === 'reset-camera')  resetCamera();
+    if (e.data?.type === 'set-speed')     setDemoSpeed(e.data.multiplier);
   });
 }
 connectWebSocket();
 setInterval(pollFallback, 3000);
 animate();
 updateDetailLevel();
+
+let demoSpeedMultiplier = 1.0;
+let demoPaused = false;
+function setDemoSpeed(mult) {
+  if (mult === 0) { demoPaused = true; return; }
+  demoPaused = false;
+  demoSpeedMultiplier = mult;
+}
 
 // Auto-dismiss loading overlay; show demo agents if no server
 setTimeout(() => {
@@ -3058,8 +3091,10 @@ function spawnDemoAgents() {
   });
   document.getElementById('sim-agents').textContent = `${Object.keys(demoAgents).length} agents (demo)`;
 
-  setInterval(() => {
-    if (wsConnected) return;
+  function demoTick() {
+    const interval = Math.max(100, 2500 * demoSpeedMultiplier);
+    setTimeout(demoTick, interval);
+    if (wsConnected || demoPaused) return;
 
     demoMinute += 20;
     if (demoMinute >= 1440) { demoMinute -= 1440; demoDay++; }
@@ -3145,7 +3180,8 @@ function spawnDemoAgents() {
       state: { agents: demoAgents, locations: {}, weather: w }
     });
     document.getElementById('sim-agents').textContent = `${agents.length} agents (demo)` + (deadAgents.length > 0 ? ` | ${deadAgents.length} deceased` : '');
-  }, 2500);
+  }
+  setTimeout(demoTick, 2500);
 }
 
 // Hide zoom hint after a few seconds
