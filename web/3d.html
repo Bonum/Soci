@@ -233,7 +233,7 @@ const SKY_PHASES = {
   morning:   { top:'#4a90c8', mid:'#88b8d8', bot:'#c8e0f0' },
   afternoon: { top:'#2878b8', mid:'#60a0d0', bot:'#88c8e8' },
   evening:   { top:'#1a1040', mid:'#884060', bot:'#e07840' },
-  night:     { top:'#060610', mid:'#0a0a18', bot:'#101028' },
+  night:     { top:'#0a0e22', mid:'#101830', bot:'#182040' },
 };
 
 const LOCATION_POSITIONS = {
@@ -1737,12 +1737,12 @@ function updateTimeOfDay(phase, hour) {
 
   // Lighting
   if (isNight) {
-    hemiLight.intensity = 0.12; hemiLight.color.set(0x224466);
-    ambientLight.intensity = 0.08;
-    sunLight.intensity = 0.12; sunLight.color.set(0x4466aa);
-    ground.material.color.set(0x142a14);
-    gridHelper.material.opacity = 0.04;
-    scene.fog = new THREE.FogExp2(0x080818, 0.007);
+    hemiLight.intensity = 0.35; hemiLight.color.set(0x334488);
+    ambientLight.intensity = 0.25;
+    sunLight.intensity = 0.2; sunLight.color.set(0x5577aa);
+    ground.material.color.set(0x1a3a1a);
+    gridHelper.material.opacity = 0.06;
+    scene.fog = new THREE.FogExp2(0x0c0c20, 0.004);
   } else if (phase === 'evening') {
     hemiLight.intensity = 0.35; hemiLight.color.set(0xcc8855);
     ambientLight.intensity = 0.2;
@@ -1772,7 +1772,7 @@ function updateTimeOfDay(phase, hour) {
       if (isNight) {
         o.material.color.set(BLDG_COLORS.windowLit);
         o.material.emissive = new THREE.Color(BLDG_COLORS.windowLit);
-        o.material.emissiveIntensity = 0.5;
+        o.material.emissiveIntensity = 0.8;
       } else {
         o.material.color.set(BLDG_COLORS.window);
         o.material.emissive = new THREE.Color(0x000000);
@@ -1782,7 +1782,8 @@ function updateTimeOfDay(phase, hour) {
   });
 
   const deepNight = phase === 'night';
-  for (const [, bldg] of buildingMeshes) {
+  for (const [id, bldg] of buildingMeshes) {
+    if (id === interiorBuildingId) continue;
     const btype = bldg.userData?.type;
     const isResidential = btype === 'house' || btype === 'apartment';
     if (!isResidential) continue;
@@ -2120,6 +2121,49 @@ function handleStateUpdate(msg) {
 // CLICK / SELECTION
 // ============================================================
 let selectedId = null;
+let interiorBuildingId = null;
+
+function enterInterior(buildingId) {
+  exitInterior();
+  interiorBuildingId = buildingId;
+  const bldg = buildingMeshes.get(buildingId);
+  if (!bldg) return;
+  bldg.traverse(child => {
+    if (child.isMesh && !child.userData?.isWindow && !child.userData?.isDoor) {
+      child.userData._savedOpacity = child.material.opacity;
+      child.userData._savedTransparent = child.material.transparent;
+      child.userData._savedDepthWrite = child.material.depthWrite;
+      child.material.transparent = true;
+      child.material.opacity = 0.12;
+      child.material.depthWrite = false;
+    }
+    if (child.isMesh && child.userData?.isWindow) {
+      child.userData._savedOpacity = child.material.opacity;
+      child.userData._savedTransparent = child.material.transparent;
+      child.material.transparent = true;
+      child.material.opacity = 0.15;
+    }
+  });
+  smoothZoomTo(bldg.position, 8);
+}
+
+function exitInterior() {
+  if (!interiorBuildingId) return;
+  const bldg = buildingMeshes.get(interiorBuildingId);
+  if (bldg) {
+    bldg.traverse(child => {
+      if (child.isMesh && child.userData._savedOpacity !== undefined) {
+        child.material.opacity = child.userData._savedOpacity;
+        child.material.transparent = child.userData._savedTransparent;
+        child.material.depthWrite = child.userData._savedDepthWrite ?? true;
+        delete child.userData._savedOpacity;
+        delete child.userData._savedTransparent;
+        delete child.userData._savedDepthWrite;
+      }
+    });
+  }
+  interiorBuildingId = null;
+}
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 let mouseDownPos = new THREE.Vector2();
@@ -2166,12 +2210,13 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     while (parent.parent && !parent.userData?.id) parent = parent.parent;
     if (parent.userData?.id) {
       selectBuilding(parent.userData.id);
-      smoothZoomTo(parent.position, 3);
+      enterInterior(parent.userData.id);
       return;
     }
   }
 
-  // Click on empty space: deselect
+  // Click on empty space: deselect and exit interior
+  exitInterior();
   closeInfoPanel();
 });
 
@@ -2362,6 +2407,7 @@ window.zoomOut = () => {
 };
 window.closeInfoPanel = () => {
   selectedId = null;
+  exitInterior();
   document.getElementById('info-panel').classList.remove('visible');
 };
 
