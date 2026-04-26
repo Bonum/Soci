@@ -233,7 +233,7 @@ const SKY_PHASES = {
   morning:   { top:'#4a90c8', mid:'#88b8d8', bot:'#c8e0f0' },
   afternoon: { top:'#2878b8', mid:'#60a0d0', bot:'#88c8e8' },
   evening:   { top:'#1a1040', mid:'#884060', bot:'#e07840' },
-  night:     { top:'#0a0e22', mid:'#101830', bot:'#182040' },
+  night:     { top:'#0e1530', mid:'#162040', bot:'#1e2850' },
 };
 
 const LOCATION_POSITIONS = {
@@ -336,6 +336,11 @@ const LOCATION_POSITIONS = {
   pub:           { x: 0.70, y: 0.42, type: 'shop',      label: "The Oak Pub" },
   ice_cream:     { x: 0.30, y: 0.42, type: 'shop',      label: 'Scoop & Joy' },
   taxi_stand:    { x: 0.50, y: 0.42, type: 'shop',      label: 'Taxi Stand' },
+
+  // ── Cemetery ────────────────────────────────────────────────
+  cemetery:      { x: 0.93, y: 0.92, type: 'cemetery',   label: 'Eternal Rest' },
+  kindergarten:  { x: 0.30, y: 0.12, type: 'school',     label: 'Rainbow Kids' },
+  university:    { x: 0.70, y: 0.88, type: 'office',     label: 'Soci University' },
 
   // ── Streets ───────────────────────────────────────────────
   street_main:   { x: 0.50, y: 0.28, type: 'square',    label: 'Main Street' },
@@ -1298,6 +1303,45 @@ function createSquare(id, locData) {
   return group;
 }
 
+function createCemetery(id, locData) {
+  const group = new THREE.Group();
+  const plot = new THREE.Mesh(
+    new THREE.BoxGeometry(8, 0.08, 7),
+    mat(0x3a5a3a, { roughness: 0.95 })
+  );
+  plot.position.y = 0.04;
+  plot.receiveShadow = true;
+  group.add(plot);
+
+  const fence = mat(0x333333);
+  for (let side of [-1, 1]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.8, 7), fence);
+    rail.position.set(side * 4, 0.4, 0);
+    group.add(rail);
+  }
+  for (let side of [-1, 1]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(8, 0.8, 0.06), fence);
+    rail.position.set(0, 0.4, side * 3.5);
+    group.add(rail);
+  }
+
+  const stoneMat = mat(0xaaaaaa);
+  const cemeteryGraves = [];
+  for (let row = 0; row < 2; row++) {
+    for (let col = -2; col <= 2; col++) {
+      const stone = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.7, 0.12), stoneMat);
+      stone.position.set(col * 1.3, 0.43, -1.5 + row * 3);
+      group.add(stone);
+      cemeteryGraves.push(stone);
+    }
+  }
+
+  const label = createLabel(locData.label, group, 3);
+  const badge = createOccupantBadge(group, 2);
+  group.userData = { id, type: 'cemetery', label, badge, locData, graves: cemeteryGraves };
+  return group;
+}
+
 // Building factory dispatch
 function createBuilding(id, locData) {
   const type = locData.type;
@@ -1322,6 +1366,7 @@ function createBuilding(id, locData) {
     case 'mall':      bldg = createMall(id, locData); break;
     case 'townhall':  bldg = createTownHall(id, locData); break;
     case 'market':    bldg = createMarket(id, locData); break;
+    case 'cemetery':  bldg = createCemetery(id, locData); break;
     default:          bldg = createShop(id, locData); break;
   }
   addFurniture(id, bldg, locData);
@@ -1333,7 +1378,7 @@ function createBuilding(id, locData) {
 }
 
 const FOOD_LOCS = new Set(['restaurant','bar','cafe','diner','bakery','sushi_bar','pizzeria','coffeehouse','pub','ice_cream']);
-const DESK_LOCS = new Set(['office','office_tech','office_media','school','library','townhall','post_office','bank','court','daycare']);
+const DESK_LOCS = new Set(['office','office_tech','office_media','school','library','townhall','post_office','bank','court','daycare','kindergarten','university']);
 const SEAT_LOCS = new Set(['cinema','church','museum']);
 const SITTING_LOCS = new Set([...FOOD_LOCS, ...DESK_LOCS, ...SEAT_LOCS]);
 
@@ -1345,34 +1390,34 @@ function addFurniture(id, group, locData) {
   if (FOOD_LOCS.has(id)) {
     for (let i = -1; i <= 1; i++) {
       const table = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.4, 0.7), tableMat);
-      table.position.set(i * 1.6, 0.2, 3.0);
+      table.position.set(i * 1.2, 0.2, 0);
       group.add(table);
       for (let s of [-0.5, 0.5]) {
         const chair = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.25, 0.3), chairMat);
-        chair.position.set(i * 1.6 + s, 0.125, 3.6);
+        chair.position.set(i * 1.2 + s, 0.125, 0.5);
         group.add(chair);
         const back = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.05), chairMat);
-        back.position.set(i * 1.6 + s, 0.35, 3.75);
+        back.position.set(i * 1.2 + s, 0.35, 0.65);
         group.add(back);
       }
     }
   } else if (DESK_LOCS.has(id)) {
     for (let i = -1; i <= 1; i += 2) {
       const desk = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.45, 0.6), deskMat);
-      desk.position.set(i * 1.3, 0.225, 3.0);
+      desk.position.set(i * 1.3, 0.225, 0);
       group.add(desk);
       const ch = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.25, 0.3), chairMat);
-      ch.position.set(i * 1.3, 0.125, 3.5);
+      ch.position.set(i * 1.3, 0.125, 0.5);
       group.add(ch);
     }
   } else if (SEAT_LOCS.has(id)) {
     for (let row = 0; row < 2; row++) {
       for (let col = -1; col <= 1; col++) {
         const seat = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.25, 0.35), chairMat);
-        seat.position.set(col * 0.7, 0.125, 2.5 + row * 0.8);
+        seat.position.set(col * 0.7, 0.125, -0.5 + row * 0.8);
         group.add(seat);
         const sb = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.35, 0.05), chairMat);
-        sb.position.set(col * 0.7, 0.35, 2.5 + row * 0.8 + 0.18);
+        sb.position.set(col * 0.7, 0.35, -0.5 + row * 0.8 + 0.18);
         group.add(sb);
       }
     }
@@ -1386,7 +1431,7 @@ const BLDG_SIZES = {
   house: [4,4], apartment: [6,5], shop: [5,4], office: [6,6], tower: [5,5],
   hospital: [8,6], church: [5,7], school: [7,6], factory: [8,6], cinema: [6,6],
   park: [8,8], sports: [10,8], square: [8,8], police: [6,5], fire: [6,6],
-  museum: [8,7], mall: [9,7], townhall: [8,7], market: [9,7],
+  museum: [8,7], mall: [9,7], townhall: [8,7], market: [9,7], cemetery: [9,8],
 };
 const obstacles = [];
 
@@ -1414,6 +1459,59 @@ for (let i = 0; i < 80; i++) {
     createTree(tx, tz, 0.3 + Math.random() * 0.4);
     treePositions.push({ x: tx, z: tz });
   }
+}
+
+// ============================================================
+// STREET LAMPS
+// ============================================================
+const streetLamps = [];
+function createStreetLamp(x, z) {
+  const group = new THREE.Group();
+  const pole = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.06, 0.08, 3.5, 6),
+    mat(0x444444, { metalness: 0.4 })
+  );
+  pole.position.y = 1.75;
+  pole.castShadow = true;
+  group.add(pole);
+
+  const arm = new THREE.Mesh(
+    new THREE.BoxGeometry(0.8, 0.05, 0.05),
+    mat(0x444444, { metalness: 0.4 })
+  );
+  arm.position.set(0.35, 3.4, 0);
+  group.add(arm);
+
+  const bulb = new THREE.Mesh(
+    new THREE.SphereGeometry(0.15, 8, 6),
+    new THREE.MeshStandardMaterial({ color: 0xffeebb, emissive: 0xffd860, emissiveIntensity: 0, roughness: 0.3 })
+  );
+  bulb.position.set(0.7, 3.3, 0);
+  group.add(bulb);
+
+  const light = new THREE.PointLight(0xffd860, 0, 12, 1.5);
+  light.position.set(0.7, 3.2, 0);
+  group.add(light);
+
+  group.position.set(x, 0, z);
+  scene.add(group);
+  streetLamps.push({ group, light, bulb });
+}
+
+// Place lamps along main roads
+for (let i = -6; i <= 6; i++) {
+  createStreetLamp(i * 10, -5);
+  createStreetLamp(i * 10, -9);
+  createStreetLamp(2, i * 10);
+  createStreetLamp(-2, i * 10);
+}
+// Along secondary roads
+for (let i = -5; i <= 5; i++) {
+  createStreetLamp(i * 12, -16);
+  createStreetLamp(i * 12, 15);
+  createStreetLamp(i * 12, 28);
+  createStreetLamp(-26, i * 12);
+  createStreetLamp(28, i * 12);
 }
 
 // ============================================================
@@ -1524,28 +1622,40 @@ sunSprite.renderOrder = -1;
 scene.add(sunSprite);
 
 // Moon
-const moonSprite = new THREE.Sprite(
-  new THREE.SpriteMaterial({ map: celestialTex(0xccddff), transparent: true, depthTest: false })
+const moonGeo = new THREE.SphereGeometry(4, 32, 32);
+const moonMat = new THREE.MeshBasicMaterial({ color: 0xeeeeff, transparent: true, opacity: 0.95 });
+const moonMesh = new THREE.Mesh(moonGeo, moonMat);
+moonMesh.renderOrder = -1;
+moonMesh.visible = false;
+scene.add(moonMesh);
+const moonGlow = new THREE.Sprite(
+  new THREE.SpriteMaterial({ map: celestialTex(0xaabbee), transparent: true, depthTest: false })
 );
-moonSprite.scale.set(10, 10, 1);
-moonSprite.renderOrder = -1;
-moonSprite.visible = false;
-scene.add(moonSprite);
+moonGlow.scale.set(22, 22, 1);
+moonGlow.renderOrder = -2;
+moonGlow.visible = false;
+scene.add(moonGlow);
 
 // Stars
-const starCount = 250;
+const starCount = 500;
 const starPos = new Float32Array(starCount * 3);
+const starSizes = new Float32Array(starCount);
 for (let i = 0; i < starCount; i++) {
   const th = Math.random() * Math.PI * 2;
-  const ph = Math.random() * Math.PI * 0.45;
-  const r = 95;
+  const ph = Math.random() * Math.PI * 0.5;
+  const r = 90;
   starPos[i*3]   = Math.cos(th) * Math.sin(ph) * r;
-  starPos[i*3+1] = Math.cos(ph) * r + 10;
+  starPos[i*3+1] = Math.cos(ph) * r + 15;
   starPos[i*3+2] = Math.sin(th) * Math.sin(ph) * r;
+  starSizes[i] = 0.6 + Math.random() * 1.2;
 }
 const starGeo = new THREE.BufferGeometry();
 starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
-const starPoints = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.5, transparent: true, opacity: 0.85 }));
+starGeo.setAttribute('size', new THREE.BufferAttribute(starSizes, 1));
+const starPoints = new THREE.Points(starGeo, new THREE.PointsMaterial({
+  color: 0xffffff, size: 1.2, transparent: true, opacity: 0.9,
+  sizeAttenuation: false
+}));
 starPoints.visible = false;
 scene.add(starPoints);
 
@@ -1655,8 +1765,8 @@ function updateWeather(weather) {
     hemiLight.intensity *= (0.6 + wm * 0.4);
   }
 
-  const fairVis = !(precipitating);
-  const fairOp = isSunny ? 0.7 : isCloudy ? 0.95 : 0.5;
+  const fairVis = !isSunny && !(precipitating);
+  const fairOp = isCloudy ? 0.95 : 0.5;
   clouds.forEach(c => {
     c.visible = fairVis || isCloudy;
     if (!isNight) c.children.forEach(p => { p.material.opacity = fairOp; });
@@ -1704,13 +1814,19 @@ function updateCelestials(hour) {
   const mh = ((hour - 19 + 24) % 24);
   if (hour >= 18 || hour <= 6) {
     const ma = (mh / 11) * Math.PI;
-    moonSprite.position.set(-Math.cos(ma) * 65, Math.sin(ma) * 45 + 5, -60);
-    moonSprite.visible = true;
+    const mx = -Math.cos(ma) * 65;
+    const my = Math.sin(ma) * 50 + 8;
+    const mz = -55;
+    moonMesh.position.set(mx, my, mz);
+    moonMesh.visible = true;
+    moonGlow.position.set(mx, my, mz - 1);
+    moonGlow.visible = true;
   } else {
-    moonSprite.visible = false;
+    moonMesh.visible = false;
+    moonGlow.visible = false;
   }
-  starPoints.visible = hour >= 19 || hour <= 5;
-  starPoints.material.opacity = (hour >= 21 || hour <= 4) ? 0.9 : 0.5;
+  starPoints.visible = hour >= 18 || hour <= 5;
+  starPoints.material.opacity = (hour >= 20 || hour <= 4) ? 0.95 : 0.6;
 }
 updateCelestials(10);
 
@@ -1737,12 +1853,12 @@ function updateTimeOfDay(phase, hour) {
 
   // Lighting
   if (isNight) {
-    hemiLight.intensity = 0.35; hemiLight.color.set(0x334488);
-    ambientLight.intensity = 0.25;
-    sunLight.intensity = 0.2; sunLight.color.set(0x5577aa);
-    ground.material.color.set(0x1a3a1a);
-    gridHelper.material.opacity = 0.06;
-    scene.fog = new THREE.FogExp2(0x0c0c20, 0.004);
+    hemiLight.intensity = 0.45; hemiLight.color.set(0x4466aa);
+    ambientLight.intensity = 0.35;
+    sunLight.intensity = 0.25; sunLight.color.set(0x6688bb);
+    ground.material.color.set(0x1e401e);
+    gridHelper.material.opacity = 0.08;
+    scene.fog = new THREE.FogExp2(0x101830, 0.003);
   } else if (phase === 'evening') {
     hemiLight.intensity = 0.35; hemiLight.color.set(0xcc8855);
     ambientLight.intensity = 0.2;
@@ -1764,6 +1880,13 @@ function updateTimeOfDay(phase, hour) {
     ground.material.color.set(PALETTE.ground);
     gridHelper.material.opacity = 0.15;
     scene.fog = new THREE.FogExp2(PALETTE.fog, 0.004);
+  }
+
+  // Street lamps: on at night/evening, off during day
+  const lampsOn = isNight || phase === 'evening';
+  for (const lamp of streetLamps) {
+    lamp.light.intensity = lampsOn ? 1.8 : 0;
+    lamp.bulb.material.emissiveIntensity = lampsOn ? 1.5 : 0;
   }
 
   // Window glow + building transparency at night
@@ -1980,25 +2103,31 @@ function createAgentMesh(agentId, agentData) {
   return group;
 }
 
+const OUTDOOR_LOCS = new Set(['park','park_east','park_south','playground','town_square','sports_field',
+  'street_main','street_west','market','cemetery']);
+
 function getAgentScenePosition(agentId, locationId, agents) {
   const loc = LOCATION_POSITIONS[locationId] || dynamicLocations[locationId];
   if (!loc) return { x: 0, y: 0, z: 0 };
 
   const pos = toWorld(loc.x, loc.y);
-  // Offset agents at same location in a circle
   const agentsHere = Object.entries(agents).filter(([, a]) => a.location === locationId);
   const myIdx = agentsHere.findIndex(([id]) => id === agentId);
   const count = agentsHere.length;
+  const isOutdoor = OUTDOOR_LOCS.has(locationId) || loc.type === 'park' || loc.type === 'square' || loc.type === 'sports';
 
   let ox = 0, oz = 0;
   if (count > 1 && myIdx >= 0) {
     const angle = (myIdx / count) * Math.PI * 2;
-    const radius = Math.min(2, 0.8 + count * 0.15);
+    const radius = isOutdoor ? Math.min(3, 1.0 + count * 0.2) : Math.min(1.5, 0.4 + count * 0.12);
     ox = Math.cos(angle) * radius;
     oz = Math.sin(angle) * radius;
   }
 
-  return { x: pos.x + ox, y: 0, z: pos.z + oz + 3 };
+  if (isOutdoor) {
+    return { x: pos.x + ox, y: 0, z: pos.z + oz };
+  }
+  return { x: pos.x + ox, y: 0, z: pos.z + oz };
 }
 
 const dynamicLocations = {};
@@ -2286,17 +2415,34 @@ function updateAgentInfo(agentId, data) {
   html += `<h4>Status</h4>`;
   html += `<div class="info-row"><span class="label">Location</span><span class="value">${data.location_name || data.location || '?'}</span></div>`;
   html += `<div class="info-row"><span class="label">State</span><span class="value">${data.state || '?'}</span></div>`;
-  html += `<div class="info-row"><span class="label">Action</span><span class="value">${data.current_action || data.action || '?'}</span></div>`;
+  html += `<div class="info-row"><span class="label">Action</span><span class="value">${data.current_action || data.action || data.state || '?'}</span></div>`;
   if (data.mood !== undefined) {
     html += `<div class="info-row"><span class="label">Mood</span><span class="value">${typeof data.mood === 'number' ? (data.mood * 100).toFixed(0) + '%' : data.mood}</span></div>`;
   }
   if (data.age !== undefined) {
     html += `<div class="info-row"><span class="label">Age</span><span class="value">${data.age}</span></div>`;
   }
+  if (data.gender) {
+    html += `<div class="info-row"><span class="label">Gender</span><span class="value">${data.gender}</span></div>`;
+  }
   if (data.occupation) {
-    html += `<div class="info-row"><span class="label">Job</span><span class="value">${data.occupation}</span></div>`;
+    html += `<div class="info-row"><span class="label">Occupation</span><span class="value">${data.occupation}</span></div>`;
+  }
+  if (data.lifePhase) {
+    html += `<div class="info-row"><span class="label">Life Phase</span><span class="value">${data.lifePhase}</span></div>`;
   }
   html += `</div>`;
+
+  // Life Plan
+  const lifePlan = data.plan || [];
+  if (lifePlan.length > 0) {
+    html += `<div class="info-section"><h4>Life Plan</h4>`;
+    for (const item of lifePlan) {
+      const text = typeof item === 'string' ? item : `${item.time || ''} ${item.activity || item.action || ''}`;
+      html += `<div style="font-size:12px;color:#4ecca3;padding:2px 0">&#9679; ${text}</div>`;
+    }
+    html += `</div>`;
+  }
 
   // Needs
   const needs = data.needs || {};
@@ -2325,24 +2471,13 @@ function updateAgentInfo(agentId, data) {
     html += `</div>`;
   }
 
-  // Memories
+  // Long-term Memory
   const memories = data.recent_memories || data.memories || [];
   if (memories.length > 0) {
-    html += `<div class="info-section"><h4>Recent Memories</h4>`;
-    for (const mem of memories.slice(0, 5)) {
+    html += `<div class="info-section"><h4>Long-term Memory</h4>`;
+    for (const mem of memories.slice(-10).reverse()) {
       const text = typeof mem === 'string' ? mem : mem.description || mem.text || JSON.stringify(mem);
       html += `<div class="memory-item">${text}</div>`;
-    }
-    html += `</div>`;
-  }
-
-  // Daily plan
-  const plan = data.daily_plan || data.plan || [];
-  if (plan.length > 0) {
-    html += `<div class="info-section"><h4>Daily Plan</h4>`;
-    for (const item of plan) {
-      const text = typeof item === 'string' ? item : `${item.time || ''} ${item.activity || item.action || ''}`;
-      html += `<div style="font-size:12px;color:#bbb;padding:2px 0">${text}</div>`;
     }
     html += `</div>`;
   }
@@ -2515,6 +2650,12 @@ function animate() {
         );
       }
     }
+
+    // Agent visibility: hide inside buildings unless interior view is active
+    const agentLoc2 = mesh.userData.data?.location || '';
+    const locInfo2 = LOCATION_POSITIONS[agentLoc2] || dynamicLocations[agentLoc2];
+    const isOutdoorLoc = OUTDOOR_LOCS.has(agentLoc2) || locInfo2?.type === 'park' || locInfo2?.type === 'square' || locInfo2?.type === 'sports';
+    mesh.visible = isOutdoorLoc || agentLoc2 === interiorBuildingId;
 
     // Sleeping, sitting, walking, or idle animation
     const agentState = mesh.userData.data?.state || '';
@@ -2699,91 +2840,77 @@ setTimeout(() => {
 }, 4000);
 
 function spawnDemoAgents() {
-  const demoNames = [
-    { id: 'elena',    name: 'Elena',    location: 'house_elena' },
-    { id: 'marcus',   name: 'Marcus',   location: 'cafe' },
-    { id: 'helen',    name: 'Helen',    location: 'park' },
-    { id: 'diana',    name: 'Diana',    location: 'office' },
-    { id: 'kai',      name: 'Kai',      location: 'house_kai' },
-    { id: 'priya',    name: 'Priya',    location: 'grocery' },
-    { id: 'james',    name: 'James',    location: 'gym' },
-    { id: 'rosa',     name: 'Rosa',     location: 'restaurant' },
-    { id: 'yuki',     name: 'Yuki',     location: 'library' },
-    { id: 'frank',    name: 'Frank',    location: 'factory' },
-    { id: 'lila',     name: 'Lila',     location: 'bakery' },
-    { id: 'zoe',      name: 'Zoe',      location: 'town_square' },
-    { id: 'omar',     name: 'Omar',     location: 'bar' },
-    { id: 'nina',     name: 'Nina',     location: 'school' },
-    { id: 'theo',     name: 'Theo',     location: 'hospital' },
-    { id: 'ada',      name: 'Ada',      location: 'house_ada' },
-    { id: 'ben',      name: 'Ben',      location: 'bookshop' },
-    { id: 'carlos',   name: 'Carlos',   location: 'house_carlos' },
-    { id: 'mia',      name: 'Mia',      location: 'florist' },
-    { id: 'dara',     name: 'Dara',     location: 'house_dara' },
-    { id: 'leo',      name: 'Leo',      location: 'pizzeria' },
-    { id: 'sven',     name: 'Sven',     location: 'house_sven' },
-    { id: 'hana',     name: 'Hana',     location: 'sushi_bar' },
-    { id: 'ivan',     name: 'Ivan',     location: 'house_ivan' },
-    { id: 'vera',     name: 'Vera',     location: 'museum' },
-    { id: 'nadia',    name: 'Nadia',    location: 'house_nadia' },
-    { id: 'rami',     name: 'Rami',     location: 'market' },
-    { id: 'petra',    name: 'Petra',    location: 'house_petra' },
-    { id: 'tom',      name: 'Tom',      location: 'police' },
-    { id: 'ling',     name: 'Ling',     location: 'house_ling' },
-    { id: 'jun',      name: 'Jun',      location: 'mall' },
-    { id: 'alice',    name: 'Alice',    location: 'coffeehouse' },
-    { id: 'marco',    name: 'Marco',    location: 'townhall' },
-    { id: 'devon',    name: 'Devon',    location: 'cinema' },
-    { id: 'george',   name: 'George',   location: 'fire_station' },
-    { id: 'sam',      name: 'Sam',      location: 'barbershop' },
-    { id: 'maya',     name: 'Maya',     location: 'pharmacy' },
-    { id: 'felix',    name: 'Felix',    location: 'electronics' },
-    { id: 'sophie',   name: 'Sophie',   location: 'pet_shop' },
-    { id: 'alex',     name: 'Alex',     location: 'laundry' },
-    { id: 'anya',     name: 'Anya',     location: 'park_east' },
-    { id: 'boris',    name: 'Boris',    location: 'apt_midtown' },
-    { id: 'clara',    name: 'Clara',    location: 'apt_heights' },
-    { id: 'dimitri',  name: 'Dimitri',  location: 'apt_plaza' },
-    { id: 'elsa',     name: 'Elsa',     location: 'apt_harbor' },
-    { id: 'farid',    name: 'Farid',    location: 'office_tech' },
-    { id: 'greta',    name: 'Greta',    location: 'office_media' },
-    { id: 'hamid',    name: 'Hamid',    location: 'tower_2' },
-    { id: 'irene',    name: 'Irene',    location: 'factory_2' },
-    { id: 'jake',     name: 'Jake',     location: 'park_south' },
-    { id: 'kira',     name: 'Kira',     location: 'playground' },
-    { id: 'lukas',    name: 'Lukas',    location: 'diner' },
-    { id: 'marta',    name: 'Marta',    location: 'sports_field' },
-    { id: 'nico',     name: 'Nico',     location: 'church' },
-    { id: 'olga',     name: 'Olga',     location: 'apartment_block_1' },
-    { id: 'paolo',    name: 'Paolo',    location: 'apartment_block_2' },
-    { id: 'quinn',    name: 'Quinn',    location: 'apartment_block_3' },
-    { id: 'rita',     name: 'Rita',     location: 'apt_northeast' },
-    { id: 'stefan',   name: 'Stefan',   location: 'apt_northwest' },
-    { id: 'tanya',    name: 'Tanya',    location: 'apt_southeast' },
-    { id: 'ulrich',   name: 'Ulrich',   location: 'apt_southwest' },
-    { id: 'viola',    name: 'Viola',    location: 'cafe' },
-    { id: 'walter',   name: 'Walter',   location: 'grocery' },
-    { id: 'xena',     name: 'Xena',     location: 'bakery' },
-    { id: 'yusuf',    name: 'Yusuf',    location: 'restaurant' },
-    { id: 'zara',     name: 'Zara',     location: 'bar' },
-    { id: 'arnaud',   name: 'Arnaud',   location: 'office' },
-    { id: 'bianca',   name: 'Bianca',   location: 'park' },
-    { id: 'cyril',    name: 'Cyril',    location: 'gym' },
-    { id: 'dina',     name: 'Dina',     location: 'library' },
-    { id: 'emilio',   name: 'Emilio',   location: 'factory' },
-    { id: 'fiona',    name: 'Fiona',    location: 'hospital' },
-    { id: 'gustav',   name: 'Gustav',   location: 'school' },
-    { id: 'hazel',    name: 'Hazel',    location: 'town_square' },
-    { id: 'igor',     name: 'Igor',     location: 'cinema' },
-  ];
+  const NAMES_F = ['Elena','Helen','Diana','Priya','Rosa','Yuki','Lila','Zoe','Nina','Ada','Mia','Dara','Hana','Vera','Nadia','Petra','Ling','Alice','Maya','Sophie','Anya','Clara','Elsa','Greta','Irene','Kira','Marta','Olga','Rita','Tanya','Viola','Xena','Zara','Bianca','Dina','Fiona','Hazel','Jenna','Layla','Sasha','Eva','Chloe','Amber','Ruby','Ivy','Luna','Nora','Aria'];
+  const NAMES_M = ['Marcus','Kai','James','Frank','Omar','Theo','Ben','Carlos','Leo','Sven','Ivan','Rami','Tom','Jun','Marco','Devon','George','Sam','Felix','Alex','Boris','Dimitri','Farid','Hamid','Jake','Lukas','Nico','Paolo','Quinn','Stefan','Ulrich','Walter','Yusuf','Arnaud','Cyril','Emilio','Gustav','Igor','Erik','Hans','Oleg','Rolf','Dante','Hugo','Max','Owen','Noah','Liam'];
+  const OCCUPATIONS = ['Teacher','Engineer','Doctor','Artist','Chef','Writer','Nurse','Lawyer','Merchant','Farmer','Builder','Driver','Scientist','Musician','Guard','Clerk','Designer','Mechanic','Baker','Tailor'];
+
+  const residentialLocs = Object.entries(LOCATION_POSITIONS)
+    .filter(([, v]) => v.type === 'house' || v.type === 'apartment').map(([k]) => k);
+  const publicLocs = Object.keys(LOCATION_POSITIONS).filter(k => !k.startsWith('street') && k !== 'cemetery');
+  const workLocs = Object.keys(LOCATION_POSITIONS).filter(k => {
+    const t = LOCATION_POSITIONS[k]?.type;
+    return t === 'office' || t === 'shop' || t === 'factory' || t === 'tower' || t === 'hospital' || t === 'school';
+  });
+
   const demoAgents = {};
-  for (const d of demoNames) {
-    demoAgents[d.id] = { name: d.name, location: d.location, state: 'idle', needs: {} };
+  const agentHome = {};
+  const agentLife = {};
+  const agentMemories = {};
+  let nextId = 1;
+
+  function makeAgent(name, gender, age, homeLoc) {
+    const id = name.toLowerCase();
+    const occ = age >= 18 ? OCCUPATIONS[hash(id) % OCCUPATIONS.length] : (age >= 6 ? 'Student' : 'Child');
+    const lifePhase = age < 3 ? 'baby' : age < 6 ? 'kindergarten' : age < 18 ? 'school' : age < 23 ? 'university' : age < 65 ? 'working' : 'retired';
+    agentHome[id] = homeLoc;
+    agentLife[id] = { age, gender, partner: null, children: [], lifePhase, occupation: occ, pregnant: false, pregnancyTimer: 0, alive: true };
+    agentMemories[id] = [`Born in Soci City`];
+    demoAgents[id] = {
+      name, location: homeLoc, state: 'idle', gender,
+      age, occupation: occ, lifePhase,
+      needs: { hunger: 0.6 + Math.random() * 0.3, energy: 0.5 + Math.random() * 0.4, social: 0.4 + Math.random() * 0.5, fun: 0.4 + Math.random() * 0.4 },
+      recent_memories: agentMemories[id],
+      relationships: [],
+    };
+    return id;
   }
+
+  // Create 100 agents with diverse ages
+  const allIds = [];
+  for (let i = 0; i < 50; i++) {
+    const fn = NAMES_F[i % NAMES_F.length] + (i >= NAMES_F.length ? String(Math.floor(i/NAMES_F.length)+1) : '');
+    const age = 3 + Math.floor(Math.random() * 80);
+    const home = residentialLocs[i % residentialLocs.length];
+    allIds.push(makeAgent(fn, 'female', age, home));
+  }
+  for (let i = 0; i < 50; i++) {
+    const mn = NAMES_M[i % NAMES_M.length] + (i >= NAMES_M.length ? String(Math.floor(i/NAMES_M.length)+1) : '');
+    const age = 3 + Math.floor(Math.random() * 80);
+    const home = residentialLocs[(i+14) % residentialLocs.length];
+    allIds.push(makeAgent(mn, 'male', age, home));
+  }
+
+  // Pre-marry some adults
+  const singleF = allIds.filter(id => agentLife[id].gender === 'female' && agentLife[id].age >= 20 && !agentLife[id].partner);
+  const singleM = allIds.filter(id => agentLife[id].gender === 'male' && agentLife[id].age >= 20 && !agentLife[id].partner);
+  const marriageCount = Math.min(singleF.length, singleM.length, 15);
+  for (let i = 0; i < marriageCount; i++) {
+    const f = singleF[i], m = singleM[i];
+    agentLife[f].partner = m;
+    agentLife[m].partner = f;
+    agentHome[m] = agentHome[f];
+    demoAgents[f].relationships.push({ name: demoAgents[m].name, type: 'spouse', closeness: 0.85 });
+    demoAgents[m].relationships.push({ name: demoAgents[f].name, type: 'spouse', closeness: 0.85 });
+    agentMemories[f].push(`Married ${demoAgents[m].name}`);
+    agentMemories[m].push(`Married ${demoAgents[f].name}`);
+  }
+
   let demoDay = 1;
-  let demoMinute = 630; // 10:30
+  let demoMinute = 630;
   const DEMO_WEATHER_CYCLE = ['sunny','sunny','sunny','cloudy','cloudy','rainy','stormy','rainy','cloudy','sunny','sunny','snowy','cloudy','sunny','foggy','sunny'];
   let demoWIdx = 0;
+  let tickCount = 0;
+  const deadAgents = [];
 
   function demoTimeStr() {
     const hh = Math.floor(demoMinute / 60);
@@ -2792,21 +2919,144 @@ function spawnDemoAgents() {
     return `Day ${demoDay}, ${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')} (${phase})`;
   }
 
-  const agentHome = {};
-  for (const d of demoNames) {
-    agentHome[d.id] = d.location;
+  function getLifePlan(id) {
+    const l = agentLife[id];
+    if (!l) return [];
+    const plan = [];
+    plan.push(l.age < 3 ? 'Baby at home' : l.age < 6 ? 'Kindergarten (3-5)' : l.age < 18 ? 'School (6-18)' : l.age < 23 ? 'University (18-23)' : l.age < 65 ? `Working as ${l.occupation}` : 'Retired');
+    if (l.age >= 18 && !l.partner) plan.push('Looking for a partner');
+    if (l.partner) plan.push(`Married to ${demoAgents[l.partner]?.name || l.partner}`);
+    if (l.pregnant) plan.push('Expecting a baby!');
+    if (l.children.length > 0) plan.push(`${l.children.length} child(ren)`);
+    if (l.age >= 65) plan.push('Enjoying retirement');
+    return plan;
   }
 
-  const residentialLocs = Object.entries(LOCATION_POSITIONS)
-    .filter(([, v]) => v.type === 'house' || v.type === 'apartment')
-    .map(([k]) => k);
-  const publicLocs = Object.keys(LOCATION_POSITIONS).filter(k => !k.startsWith('street'));
+  function lifeCycleTick(hh) {
+    const aliveIds = allIds.filter(id => agentLife[id]?.alive);
+    tickCount++;
+
+    // Age all agents every 72 ticks (~1 sim-day ≈ 72 ticks of 20min → 1 year per ~3 real-min cycles)
+    if (tickCount % 6 === 0) {
+      for (const id of aliveIds) {
+        agentLife[id].age++;
+        demoAgents[id].age = agentLife[id].age;
+        const a = agentLife[id].age;
+        if (a === 3) { agentLife[id].lifePhase = 'kindergarten'; agentLife[id].occupation = 'Child'; }
+        if (a === 6) { agentLife[id].lifePhase = 'school'; agentLife[id].occupation = 'Student'; agentMemories[id].push('Started school'); }
+        if (a === 18) { agentLife[id].lifePhase = 'university'; agentLife[id].occupation = 'Student'; agentMemories[id].push('Graduated high school'); }
+        if (a === 23) { agentLife[id].lifePhase = 'working'; agentLife[id].occupation = OCCUPATIONS[hash(id) % OCCUPATIONS.length]; agentMemories[id].push(`Started career as ${agentLife[id].occupation}`); }
+        if (a === 65) { agentLife[id].lifePhase = 'retired'; agentMemories[id].push('Retired'); }
+        demoAgents[id].occupation = agentLife[id].occupation;
+        demoAgents[id].lifePhase = agentLife[id].lifePhase;
+      }
+    }
+
+    // Marriage: every 4 ticks, try to match single adults
+    if (tickCount % 4 === 0) {
+      const sf = aliveIds.filter(id => agentLife[id].gender === 'female' && agentLife[id].age >= 18 && !agentLife[id].partner);
+      const sm = aliveIds.filter(id => agentLife[id].gender === 'male' && agentLife[id].age >= 18 && !agentLife[id].partner);
+      if (sf.length > 0 && sm.length > 0 && Math.random() < 0.3) {
+        const f = sf[Math.floor(Math.random() * sf.length)];
+        const m = sm[Math.floor(Math.random() * sm.length)];
+        agentLife[f].partner = m;
+        agentLife[m].partner = f;
+        agentHome[m] = agentHome[f];
+        demoAgents[f].relationships.push({ name: demoAgents[m].name, type: 'spouse', closeness: 0.8 + Math.random() * 0.2 });
+        demoAgents[m].relationships.push({ name: demoAgents[f].name, type: 'spouse', closeness: 0.8 + Math.random() * 0.2 });
+        agentMemories[f].push(`Married ${demoAgents[m].name} (Day ${demoDay})`);
+        agentMemories[m].push(`Married ${demoAgents[f].name} (Day ${demoDay})`);
+      }
+    }
+
+    // Divorce: rare
+    if (tickCount % 8 === 0 && Math.random() < 0.05) {
+      const married = aliveIds.filter(id => agentLife[id].partner);
+      if (married.length > 0) {
+        const who = married[Math.floor(Math.random() * married.length)];
+        const ex = agentLife[who].partner;
+        if (ex && agentLife[ex]) {
+          agentLife[who].partner = null;
+          agentLife[ex].partner = null;
+          agentMemories[who].push(`Divorced ${demoAgents[ex]?.name} (Day ${demoDay})`);
+          agentMemories[ex].push(`Divorced ${demoAgents[who]?.name} (Day ${demoDay})`);
+          const newHome = residentialLocs[Math.floor(Math.random() * residentialLocs.length)];
+          agentHome[ex] = newHome;
+        }
+      }
+    }
+
+    // Pregnancy & birth
+    for (const id of aliveIds) {
+      const l = agentLife[id];
+      if (l.gender === 'female' && l.partner && l.age >= 18 && l.age <= 42 && !l.pregnant && l.children.length < 4) {
+        if (Math.random() < 0.008) {
+          l.pregnant = true;
+          l.pregnancyTimer = 9;
+          agentMemories[id].push(`Became pregnant (Day ${demoDay})`);
+        }
+      }
+      if (l.pregnant) {
+        l.pregnancyTimer--;
+        if (l.pregnancyTimer <= 0) {
+          l.pregnant = false;
+          const babyGender = Math.random() < 0.5 ? 'female' : 'male';
+          const namePool = babyGender === 'female' ? NAMES_F : NAMES_M;
+          const babyName = namePool[Math.floor(Math.random() * namePool.length)] + String(nextId++);
+          const babyId = makeAgent(babyName, babyGender, 0, agentHome[id]);
+          allIds.push(babyId);
+          l.children.push(babyId);
+          if (l.partner && agentLife[l.partner]) agentLife[l.partner].children.push(babyId);
+          agentMemories[id].push(`Gave birth to ${babyName} (Day ${demoDay})`);
+          if (l.partner) agentMemories[l.partner].push(`Baby ${babyName} was born (Day ${demoDay})`);
+        }
+      }
+    }
+
+    // Illness & death: agents 70+ have increasing chance
+    if (tickCount % 5 === 0) {
+      for (const id of aliveIds) {
+        const a = agentLife[id].age;
+        if (a >= 70) {
+          const deathChance = (a - 65) * 0.004;
+          if (Math.random() < deathChance) {
+            if (demoAgents[id].state !== 'hospitalized') {
+              demoAgents[id].location = 'hospital';
+              demoAgents[id].state = 'hospitalized';
+              agentMemories[id].push(`Hospitalized with serious illness (Day ${demoDay})`);
+            } else {
+              agentLife[id].alive = false;
+              demoAgents[id].location = 'cemetery';
+              demoAgents[id].state = 'deceased';
+              deadAgents.push({ id, name: demoAgents[id].name, age: a, day: demoDay });
+              agentMemories[id].push(`Passed away at age ${a} (Day ${demoDay})`);
+              if (agentLife[id].partner) {
+                const p = agentLife[id].partner;
+                agentLife[p].partner = null;
+                agentMemories[p].push(`${demoAgents[id].name} passed away (Day ${demoDay})`);
+              }
+              // Remove from active after a few ticks
+              setTimeout(() => { delete demoAgents[id]; }, 12000);
+            }
+          }
+        }
+      }
+    }
+
+    // Update memories in agent data
+    for (const id of allIds) {
+      if (demoAgents[id]) {
+        demoAgents[id].recent_memories = (agentMemories[id] || []).slice(-8);
+        demoAgents[id].plan = getLifePlan(id);
+      }
+    }
+  }
 
   handleStateUpdate({
     type: 'tick', time: demoTimeStr(),
     state: { agents: demoAgents, locations: {}, weather: DEMO_WEATHER_CYCLE[0] }
   });
-  document.getElementById('sim-agents').textContent = `${demoNames.length} agents (demo)`;
+  document.getElementById('sim-agents').textContent = `${Object.keys(demoAgents).length} agents (demo)`;
 
   setInterval(() => {
     if (wsConnected) return;
@@ -2823,10 +3073,21 @@ function spawnDemoAgents() {
     const isNightTime = hh >= 22 || hh < 6;
     const isLateEvening = hh >= 20 && hh < 22;
 
-    const agents = Object.keys(demoAgents);
+    const agents = Object.keys(demoAgents).filter(id => agentLife[id]?.alive);
+
+    // Life cycle events
+    lifeCycleTick(hh);
+
+    // Location-based on age/lifePhase
+    for (const who of agents) {
+      const l = agentLife[who];
+      if (!l || !l.alive) continue;
+      if (l.age < 3) { demoAgents[who].location = agentHome[who]; continue; }
+    }
 
     if (isNightTime) {
       for (const who of agents) {
+        if (!agentLife[who]?.alive || demoAgents[who].state === 'deceased') continue;
         const home = agentHome[who] || residentialLocs[hash(who) % residentialLocs.length];
         demoAgents[who].location = home;
         demoAgents[who].state = 'sleeping';
@@ -2835,38 +3096,47 @@ function spawnDemoAgents() {
       const goHomeCount = Math.floor(agents.length * 0.6);
       for (let i = 0; i < goHomeCount; i++) {
         const who = agents[Math.floor(Math.random() * agents.length)];
+        if (!agentLife[who]?.alive) continue;
         const home = agentHome[who] || residentialLocs[hash(who) % residentialLocs.length];
         demoAgents[who].location = home;
         demoAgents[who].state = 'resting';
-      }
-      const moveCount = 2 + Math.floor(Math.random() * 3);
-      for (let i = 0; i < moveCount; i++) {
-        const who = agents[Math.floor(Math.random() * agents.length)];
-        if (demoAgents[who].state !== 'resting') {
-          demoAgents[who].location = publicLocs[Math.floor(Math.random() * publicLocs.length)];
-          demoAgents[who].state = 'idle';
-        }
       }
     } else if (badW) {
       const stayInCount = Math.floor(agents.length * 0.7);
       for (let i = 0; i < stayInCount; i++) {
         const who = agents[Math.floor(Math.random() * agents.length)];
+        if (!agentLife[who]?.alive) continue;
         const home = agentHome[who] || residentialLocs[hash(who) % residentialLocs.length];
         demoAgents[who].location = home;
         demoAgents[who].state = 'sheltering';
       }
-      const moveCount = 1 + Math.floor(Math.random() * 2);
-      for (let i = 0; i < moveCount; i++) {
-        const who = agents[Math.floor(Math.random() * agents.length)];
-        demoAgents[who].location = publicLocs[Math.floor(Math.random() * publicLocs.length)];
-        demoAgents[who].state = 'idle';
-      }
     } else {
-      const moveCount = 3 + Math.floor(Math.random() * 5);
-      for (let i = 0; i < moveCount; i++) {
-        const who = agents[Math.floor(Math.random() * agents.length)];
-        demoAgents[who].location = publicLocs[Math.floor(Math.random() * publicLocs.length)];
-        demoAgents[who].state = 'idle';
+      // Daytime: agents go to age-appropriate locations
+      for (const who of agents) {
+        const l = agentLife[who];
+        if (!l || !l.alive) continue;
+        if (Math.random() > 0.15) continue;
+        if (l.age >= 3 && l.age < 6) {
+          demoAgents[who].location = 'kindergarten';
+          demoAgents[who].state = 'playing';
+        } else if (l.age >= 6 && l.age < 18) {
+          demoAgents[who].location = hh >= 8 && hh < 15 ? 'school' : publicLocs[Math.floor(Math.random() * publicLocs.length)];
+          demoAgents[who].state = hh >= 8 && hh < 15 ? 'studying' : 'idle';
+        } else if (l.age >= 18 && l.age < 23) {
+          demoAgents[who].location = hh >= 9 && hh < 16 ? 'university' : publicLocs[Math.floor(Math.random() * publicLocs.length)];
+          demoAgents[who].state = hh >= 9 && hh < 16 ? 'studying' : 'idle';
+        } else if (l.age >= 23 && l.age < 65) {
+          if (hh >= 9 && hh < 17) {
+            demoAgents[who].location = workLocs[hash(who) % workLocs.length];
+            demoAgents[who].state = 'working';
+          } else {
+            demoAgents[who].location = publicLocs[Math.floor(Math.random() * publicLocs.length)];
+            demoAgents[who].state = 'idle';
+          }
+        } else {
+          demoAgents[who].location = publicLocs[Math.floor(Math.random() * publicLocs.length)];
+          demoAgents[who].state = 'idle';
+        }
       }
     }
 
@@ -2874,6 +3144,7 @@ function spawnDemoAgents() {
       type: 'tick', time: demoTimeStr(),
       state: { agents: demoAgents, locations: {}, weather: w }
     });
+    document.getElementById('sim-agents').textContent = `${agents.length} agents (demo)` + (deadAgents.length > 0 ? ` | ${deadAgents.length} deceased` : '');
   }, 2500);
 }
 

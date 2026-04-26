@@ -41,15 +41,24 @@
   .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
   .dot.green { background: #4ecca3; } .dot.yellow { background: #f0c040; } .dot.red { background: #e94560; }
   #main { display: flex; flex-direction: row; height: calc(100vh - 50px); }
-  #viewport-3d { flex: 6; position: relative; min-width: 0; }
+  #viewport-3d { flex: 1; position: relative; min-width: 0; }
   #viewport-3d iframe { width: 100%; height: 100%; border: none; display: block; }
   #canvas-container { display: none; }
   #cityCanvas { display: none; }
 
-  /* RIGHT DATA PANEL (1/8 of screen) */
+  /* RESIZE HANDLE */
+  #sidebar-resizer {
+    width: 5px; cursor: col-resize; background: #0f3460;
+    flex-shrink: 0; transition: background 0.2s;
+  }
+  #sidebar-resizer:hover, #sidebar-resizer.active { background: #4ecca3; }
+
+  /* RIGHT DATA PANEL (resizable) */
   #sidebar {
-    flex: 1; background: #16213e; border-left: 2px solid #0f3460;
-    display: flex; flex-direction: column; overflow: hidden; min-width: 0;
+    width: 320px; min-width: 200px; max-width: 600px;
+    background: #16213e; border-left: 2px solid #0f3460;
+    display: flex; flex-direction: column; overflow: hidden;
+    flex-shrink: 0;
   }
   .sidebar-tabs {
     display: flex; border-bottom: 2px solid #0f3460; flex-shrink: 0;
@@ -298,6 +307,7 @@
     <div id="toast-container"></div>
     <div id="llm-popup"><div class="llm-pop-title">SWITCH LLM</div></div>
   </div>
+  <div id="sidebar-resizer"></div>
   <div id="sidebar">
     <div class="sidebar-tabs">
       <div class="sidebar-tab active" data-tab="agents" onclick="switchTab('agents')">Agents</div>
@@ -452,6 +462,34 @@
 </div>
 
 <script>
+// ============================================================
+// SIDEBAR RESIZER
+// ============================================================
+(function() {
+  const resizer = document.getElementById('sidebar-resizer');
+  const sidebar = document.getElementById('sidebar');
+  let isResizing = false;
+  resizer.addEventListener('mousedown', (e) => {
+    isResizing = true;
+    resizer.classList.add('active');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+    const newWidth = window.innerWidth - e.clientX;
+    sidebar.style.width = Math.max(200, Math.min(600, newWidth)) + 'px';
+  });
+  document.addEventListener('mouseup', () => {
+    if (!isResizing) return;
+    isResizing = false;
+    resizer.classList.remove('active');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+})();
+
 // ============================================================
 // CONFIG
 // ============================================================
