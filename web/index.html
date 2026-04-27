@@ -293,6 +293,9 @@
       <button class="ctrl-btn" onclick="send3d('zoom-in')" title="Zoom In (scroll in 3D view)">＋</button>
       <button class="ctrl-btn" onclick="send3d('zoom-out')" title="Zoom Out (scroll in 3D view)">－</button>
       <button class="ctrl-btn" onclick="send3d('reset-camera')" title="Reset 3D camera">Fit</button>
+      <span style="color:#1a3a6e;margin:0 4px">│</span>
+      <button class="ctrl-btn" id="btn-fp-main" onclick="send3d('toggle-fp')" title="First-person view">&#128065; FP</button>
+      <button class="ctrl-btn" id="btn-join-main" onclick="send3d('show-join')" title="Join as player">JOIN</button>
     </span>
     <span id="api-calls">API: 0</span>
     <span id="cost">$0.00</span>
@@ -301,7 +304,7 @@
 </div>
 <div id="main">
   <div id="viewport-3d">
-    <iframe id="city3d" allow="autoplay"></iframe>
+    <iframe id="city3d" allow="autoplay; pointer-lock; xr-spatial-tracking; fullscreen"></iframe>
     <script>document.getElementById('city3d').src = location.protocol === 'file:' ? '3d.html' : '/3d';</script>
     <div id="tooltip" style="z-index:200"></div>
     <div id="toast-container"></div>
@@ -3249,19 +3252,12 @@ async function togglePause() {
 }
 
 async function setSpeed(mult) {
-  try {
-    const res = await fetch(`${API_BASE}/controls/speed?multiplier=${mult}`, { method: 'POST' });
-    if (res.ok) {
-      const data = await res.json();
-      simSpeed = data.speed;
-      updateControlsUI();
-      send3dSpeed(simSpeed);
-      return;
-    }
-  } catch(e) {}
   simSpeed = mult;
   updateControlsUI();
   send3dSpeed(mult);
+  try {
+    await fetch(`${API_BASE}/controls/speed?multiplier=${mult}`, { method: 'POST' });
+  } catch(e) {}
 }
 
 function updateControlsUI() {
