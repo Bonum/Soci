@@ -683,48 +683,101 @@ function updateBadge(badge, count) {
 function createHouse(id, locData) {
   const group = new THREE.Group();
   const h = hash(id);
+  const variant = h % 4;
   const w = 3 + (h % 2), d = 3 + ((h >> 2) % 2), wallH = 2.5 + (h % 3) * 0.3;
   const wallColor = BLDG_COLORS.house[h % BLDG_COLORS.house.length];
   const roofColor = BLDG_COLORS.roof[h % BLDG_COLORS.roof.length];
+  const trimColor = ((wallColor & 0xfefefe) >> 1) + 0x404040;
 
-  // Walls
   const walls = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), mat(wallColor));
   walls.position.y = wallH / 2;
-  walls.castShadow = true;
-  walls.receiveShadow = true;
+  walls.castShadow = true; walls.receiveShadow = true;
   addEdges(walls, 0x000000, 0.08);
   group.add(walls);
 
-  // Roof
-  const roofH = 1.5;
-  const roofGeo = new THREE.ConeGeometry(Math.max(w, d) * 0.75, roofH, 4);
-  roofGeo.rotateY(Math.PI / 4);
-  const roof = new THREE.Mesh(roofGeo, mat(roofColor));
-  roof.position.y = wallH + roofH / 2;
-  roof.castShadow = true;
-  group.add(roof);
+  const roofH = 1.5 + (variant === 2 ? 0.5 : 0);
+  if (variant === 1) {
+    const roofGeo = new THREE.BufferGeometry();
+    const hw = w / 2 + 0.25, hd = d / 2 + 0.25, rh = roofH;
+    const v = new Float32Array([
+      -hw,wallH,-hd, hw,wallH,-hd, 0,wallH+rh,-hd,
+      -hw,wallH,hd,  hw,wallH,hd,  0,wallH+rh,hd,
+      -hw,wallH,-hd, -hw,wallH,hd, 0,wallH+rh,-hd, 0,wallH+rh,hd,
+       hw,wallH,-hd,  hw,wallH,hd, 0,wallH+rh,-hd, 0,wallH+rh,hd,
+    ]);
+    roofGeo.setAttribute('position', new THREE.BufferAttribute(v, 3));
+    roofGeo.setIndex([0,1,2, 3,5,4, 2,3,0, 2,5,3, 1,4,5, 1,5,2]);
+    roofGeo.computeVertexNormals();
+    const roof = new THREE.Mesh(roofGeo, mat(roofColor));
+    roof.castShadow = true; group.add(roof);
+  } else {
+    const roofGeo = new THREE.ConeGeometry(Math.max(w, d) * 0.75, roofH, 4);
+    roofGeo.rotateY(Math.PI / 4);
+    const roof = new THREE.Mesh(roofGeo, mat(roofColor));
+    roof.position.y = wallH + roofH / 2;
+    roof.castShadow = true; group.add(roof);
+  }
 
-  // Door
-  const door = new THREE.Mesh(
-    new THREE.BoxGeometry(0.6, 1.2, 0.1),
-    mat(BLDG_COLORS.door)
-  );
+  if (variant !== 3) {
+    const chimW = 0.35, chimH = 1.2 + (h % 3) * 0.3;
+    const chimney = new THREE.Mesh(new THREE.BoxGeometry(chimW, chimH, chimW), mat(0x884422));
+    chimney.position.set(w * 0.25, wallH + roofH * 0.5 + chimH / 2, -d * 0.2);
+    chimney.castShadow = true; group.add(chimney);
+    const chimCap = new THREE.Mesh(new THREE.BoxGeometry(chimW + 0.1, 0.08, chimW + 0.1), mat(0x666666));
+    chimCap.position.set(w * 0.25, wallH + roofH * 0.5 + chimH + 0.04, -d * 0.2);
+    group.add(chimCap);
+  }
+
+  const porchW = w * 0.6, porchD = 0.8;
+  const porchRoof = new THREE.Mesh(new THREE.BoxGeometry(porchW + 0.3, 0.08, porchD + 0.3), mat(roofColor));
+  porchRoof.position.set(0, wallH * 0.78, d / 2 + porchD / 2 + 0.1);
+  porchRoof.castShadow = true; group.add(porchRoof);
+  for (let s of [-1, 1]) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, wallH * 0.78, 6), mat(0xf0f0f0));
+    post.position.set(s * porchW / 2, wallH * 0.39, d / 2 + porchD);
+    group.add(post);
+  }
+  const step = new THREE.Mesh(new THREE.BoxGeometry(porchW, 0.12, porchD), mat(0xc8b8a0));
+  step.position.set(0, 0.06, d / 2 + porchD / 2 + 0.1);
+  step.receiveShadow = true; group.add(step);
+
+  const door = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.2, 0.1), mat(BLDG_COLORS.door));
   door.position.set(0, 0.6, d / 2 + 0.05);
-  door.userData.isDoor = true;
-  group.add(door);
+  door.userData.isDoor = true; group.add(door);
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.04, 6, 4), mat(0xccaa44, { metalness: 0.6 }));
+  knob.position.set(0.2, 0.55, d / 2 + 0.11); group.add(knob);
 
-  // Windows
   const winMat = mat(isNight ? BLDG_COLORS.windowLit : BLDG_COLORS.window,
     isNight ? { emissive: BLDG_COLORS.windowLit, emissiveIntensity: 0.5 } : {});
   for (let side of [-1, 1]) {
     const win = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.5, 0.1), winMat);
     win.position.set(side * (w / 2 + 0.05), wallH * 0.6, 0);
     win.rotation.y = Math.PI / 2;
-    win.userData.isWindow = true;
-    group.add(win);
+    win.userData.isWindow = true; group.add(win);
+    for (let sh of [-0.35, 0.35]) {
+      const shutter = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.55, 0.06), mat(trimColor));
+      shutter.position.set(side * (w / 2 + 0.07), wallH * 0.6, sh);
+      group.add(shutter);
+    }
+  }
+  const frontWin = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.1), winMat);
+  frontWin.position.set(w * 0.28, wallH * 0.6, d / 2 + 0.05);
+  frontWin.userData.isWindow = true; group.add(frontWin);
+
+  if (variant === 3) {
+    const bayW = 1.2, bayD = 0.6, bayH = wallH * 0.7;
+    const bay = new THREE.Mesh(new THREE.BoxGeometry(bayW, bayH, bayD), mat(wallColor));
+    bay.position.set(-w * 0.3, bayH / 2, d / 2 + bayD / 2);
+    bay.castShadow = true; group.add(bay);
+    const bayRoof = new THREE.Mesh(new THREE.BoxGeometry(bayW + 0.15, 0.08, bayD + 0.15), mat(roofColor));
+    bayRoof.position.set(-w * 0.3, bayH + 0.04, d / 2 + bayD / 2); group.add(bayRoof);
+    for (let bx of [-0.35, 0, 0.35]) {
+      const bw = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.4, 0.06), winMat);
+      bw.position.set(-w * 0.3 + bx, bayH * 0.6, d / 2 + bayD + 0.03);
+      bw.userData.isWindow = true; group.add(bw);
+    }
   }
 
-  // Bed
   const bed = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.15, 0.7), mat(0x8b6040));
   bed.position.set(0.6, 0.08, 0); bed.userData.isFurniture = true; group.add(bed);
   const mattress = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.1, 0.6), mat(0xe8e0d0));
@@ -732,8 +785,8 @@ function createHouse(id, locData) {
   const pillow = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.08, 0.35), mat(0xf0f0f0));
   pillow.position.set(1.1, 0.24, 0); pillow.userData.isFurniture = true; group.add(pillow);
 
-  const label = createLabel(locData.label, group, wallH + roofH + 1);
-  const badge = createOccupantBadge(group, wallH + roofH);
+  const label = createLabel(locData.label, group, wallH + roofH + 1.5);
+  const badge = createOccupantBadge(group, wallH + roofH + 0.5);
   group.userData = { id, type: 'house', label, badge, locData };
   return group;
 }
@@ -741,47 +794,90 @@ function createHouse(id, locData) {
 function createApartment(id, locData) {
   const group = new THREE.Group();
   const h = hash(id);
+  const variant = h % 3;
   const w = 5, d = 4, wallH = 7 + (h % 4);
   const wallColor = BLDG_COLORS.apartment[h % BLDG_COLORS.apartment.length];
+  const accentColor = wallColor - 0x181818;
 
   const walls = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), mat(wallColor));
   walls.position.y = wallH / 2;
-  walls.castShadow = true;
-  walls.receiveShadow = true;
-  addEdges(walls);
-  group.add(walls);
+  walls.castShadow = true; walls.receiveShadow = true;
+  addEdges(walls); group.add(walls);
 
-  // Flat roof cap
-  const roofCap = new THREE.Mesh(
-    new THREE.BoxGeometry(w + 0.3, 0.3, d + 0.3),
-    mat(wallColor - 0x202020)
-  );
-  roofCap.position.y = wallH;
-  group.add(roofCap);
+  if (variant === 1 && wallH >= 9) {
+    const setW = w - 1, setD = d - 0.5, setH = 2.5;
+    const upper = new THREE.Mesh(new THREE.BoxGeometry(setW, setH, setD), mat(wallColor + 0x080808));
+    upper.position.y = wallH + setH / 2; upper.castShadow = true; addEdges(upper); group.add(upper);
+    const upperCap = new THREE.Mesh(new THREE.BoxGeometry(setW + 0.2, 0.2, setD + 0.2), mat(accentColor));
+    upperCap.position.y = wallH + setH; group.add(upperCap);
+  }
 
-  // Window grid
+  const corniceMat = mat(accentColor);
+  const roofCap = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 0.35, d + 0.4), corniceMat);
+  roofCap.position.y = wallH; group.add(roofCap);
+  const midCornice = new THREE.Mesh(new THREE.BoxGeometry(w + 0.15, 0.12, d + 0.15), corniceMat);
+  midCornice.position.y = wallH * 0.5; group.add(midCornice);
+  const baseCornice = new THREE.Mesh(new THREE.BoxGeometry(w + 0.2, 0.2, d + 0.2), corniceMat);
+  baseCornice.position.y = 0.1; group.add(baseCornice);
+
+  const entranceW = 2.5, entranceD = 1.2;
+  const canopy = new THREE.Mesh(new THREE.BoxGeometry(entranceW, 0.1, entranceD), mat(accentColor - 0x101010));
+  canopy.position.set(0, 2.8, d / 2 + entranceD / 2); canopy.castShadow = true; group.add(canopy);
+  const eDoor = new THREE.Mesh(new THREE.BoxGeometry(1.4, 2.2, 0.1), mat(0x3a3a5a));
+  eDoor.position.set(0, 1.1, d / 2 + 0.05); eDoor.userData.isDoor = true; group.add(eDoor);
+  const eGlass = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.5, 0.06),
+    mat(BLDG_COLORS.window, { transparent: true, opacity: 0.5, roughness: 0.2 }));
+  eGlass.position.set(0, 1.3, d / 2 + 0.08); eGlass.userData.isWindow = true; group.add(eGlass);
+
   const winMat = mat(isNight ? BLDG_COLORS.windowLit : BLDG_COLORS.window,
     isNight ? { emissive: BLDG_COLORS.windowLit, emissiveIntensity: 0.4 } : {});
   const floors = Math.floor(wallH / 2);
+  const balconyFloors = variant === 0 ? [1, 3] : variant === 2 ? [0, 2, 4] : [2];
   for (let f = 0; f < floors; f++) {
+    const fy = 1.5 + f * 2;
     for (let wx = -1; wx <= 1; wx++) {
-      const win = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.6, 0.1), winMat);
-      win.position.set(wx * 1.4, 1.5 + f * 2, d / 2 + 0.05);
-      win.userData.isWindow = true;
-      group.add(win);
+      const win = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.7, 0.1), winMat);
+      win.position.set(wx * 1.4, fy, d / 2 + 0.05);
+      win.userData.isWindow = true; group.add(win);
+      const sill = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.06, 0.12), corniceMat);
+      sill.position.set(wx * 1.4, fy - 0.38, d / 2 + 0.08); group.add(sill);
+    }
+    if (balconyFloors.includes(f) && f > 0) {
+      const balcW = w * 0.85, balcD = 0.7;
+      const balcFloor = new THREE.Mesh(new THREE.BoxGeometry(balcW, 0.1, balcD), mat(0xa0a0a0));
+      balcFloor.position.set(0, fy - 0.45, d / 2 + balcD / 2 + 0.05); group.add(balcFloor);
+      const railMat = mat(0x444444, { metalness: 0.3 });
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(balcW, 0.04, 0.04), railMat);
+      rail.position.set(0, fy - 0.05, d / 2 + balcD + 0.05); group.add(rail);
+      for (let rx = -balcW / 2 + 0.15; rx <= balcW / 2; rx += 0.3) {
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.35, 0.02), railMat);
+        bar.position.set(rx, fy - 0.25, d / 2 + balcD + 0.05); group.add(bar);
+      }
+    }
+    for (let side of [-1, 1]) {
+      const sWin = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.6, 0.45), winMat);
+      sWin.position.set(side * (w / 2 + 0.05), fy, 0);
+      sWin.userData.isWindow = true; group.add(sWin);
     }
   }
 
-  // Beds inside
+  if (variant === 2) {
+    for (let rx = -1.5; rx <= 1.5; rx += 3) {
+      const roofBox = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.6, 0.8), mat(0x888888));
+      roofBox.position.set(rx, wallH + 0.6, 0); group.add(roofBox);
+    }
+  }
+
   for (let bx = -1; bx <= 1; bx += 2) {
     const bed = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.12, 0.5), mat(0x8b6040));
     bed.position.set(bx * 1.2, 0.06, 0); bed.userData.isFurniture = true; group.add(bed);
-    const matt = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.08, 0.45), mat(0xe0d8c8));
-    matt.position.set(bx * 1.2, 0.14, 0); matt.userData.isFurniture = true; group.add(matt);
+    const mattObj = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.08, 0.45), mat(0xe0d8c8));
+    mattObj.position.set(bx * 1.2, 0.14, 0); mattObj.userData.isFurniture = true; group.add(mattObj);
   }
 
-  const label = createLabel(locData.label, group, wallH + 2);
-  const badge = createOccupantBadge(group, wallH + 1);
+  const totalH = variant === 1 && wallH >= 9 ? wallH + 2.5 : wallH;
+  const label = createLabel(locData.label, group, totalH + 2);
+  const badge = createOccupantBadge(group, totalH + 1);
   group.userData = { id, type: 'apartment', label, badge, locData };
   return group;
 }
@@ -830,28 +926,58 @@ function createShop(id, locData) {
 
 function createOffice(id, locData) {
   const group = new THREE.Group();
-  const w = 5, d = 5, wallH = 5;
+  const w = 5, d = 5, wallH = 6;
+  const frameMat = mat(0x555565, { metalness: 0.4, roughness: 0.3 });
 
-  const walls = new THREE.Mesh(
-    new THREE.BoxGeometry(w, wallH, d),
-    mat(BLDG_COLORS.office, { roughness: 0.4, metalness: 0.2 })
+  const core = new THREE.Mesh(
+    new THREE.BoxGeometry(w - 0.3, wallH, d - 0.3),
+    mat(0x404050, { roughness: 0.4, metalness: 0.2 })
   );
-  walls.position.y = wallH / 2;
-  walls.castShadow = true;
-  walls.receiveShadow = true;
-  addEdges(walls);
-  group.add(walls);
+  core.position.y = wallH / 2; core.castShadow = true; core.receiveShadow = true;
+  group.add(core);
 
-  // Glass windows
-  const winMat = mat(BLDG_COLORS.window, { roughness: 0.2, metalness: 0.3, opacity: 0.7, transparent: true });
-  for (let f = 0; f < 2; f++) {
-    for (let side of [1, -1]) {
-      const win = new THREE.Mesh(new THREE.BoxGeometry(w * 0.35, 1.2, 0.1), winMat);
-      win.position.set(side * (w * 0.2), 1.5 + f * 2, d / 2 + 0.05);
-      win.userData.isWindow = true;
-      group.add(win);
+  const glassMat = mat(BLDG_COLORS.window, { roughness: 0.1, metalness: 0.4, opacity: 0.55, transparent: true });
+  for (let face = 0; face < 4; face++) {
+    const fw = face % 2 === 0 ? w : d;
+    const fd = face % 2 === 0 ? d : w;
+    const faceGroup = new THREE.Group();
+    const floors = 3;
+    for (let f = 0; f < floors; f++) {
+      const fy = 0.8 + f * 1.8;
+      const band = new THREE.Mesh(new THREE.BoxGeometry(fw + 0.05, 0.08, 0.08), frameMat);
+      band.position.set(0, fy - 0.15, fd / 2 + 0.02); faceGroup.add(band);
+      for (let gx = -1; gx <= 1; gx++) {
+        const pane = new THREE.Mesh(new THREE.BoxGeometry(fw * 0.28, 1.4, 0.06), glassMat);
+        pane.position.set(gx * (fw * 0.3), fy + 0.55, fd / 2 + 0.04);
+        pane.userData.isWindow = true; faceGroup.add(pane);
+      }
+      for (let mx = -1.5; mx <= 1.5; mx++) {
+        const mullion = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.5, 0.06), frameMat);
+        mullion.position.set(mx * (fw * 0.2), fy + 0.55, fd / 2 + 0.05); faceGroup.add(mullion);
+      }
     }
+    const topBand = new THREE.Mesh(new THREE.BoxGeometry(fw + 0.05, 0.08, 0.08), frameMat);
+    topBand.position.set(0, wallH - 0.1, fd / 2 + 0.02); faceGroup.add(topBand);
+    faceGroup.rotation.y = (face * Math.PI) / 2;
+    group.add(faceGroup);
   }
+
+  const roofCap = new THREE.Mesh(new THREE.BoxGeometry(w + 0.3, 0.25, d + 0.3), frameMat);
+  roofCap.position.y = wallH; group.add(roofCap);
+  const parapet = new THREE.Mesh(new THREE.BoxGeometry(w + 0.35, 0.5, d + 0.35),
+    mat(0x555565, { metalness: 0.3 }));
+  parapet.position.y = wallH + 0.25;
+  const parapetInner = new THREE.Mesh(new THREE.BoxGeometry(w - 0.1, 0.6, d - 0.1), mat(0x555565));
+  parapetInner.position.y = wallH + 0.25;
+  const parapetCSG = parapet; group.add(parapetCSG);
+
+  const lobbyW = 2, lobbyH = 2.5, lobbyD = 1;
+  const lobby = new THREE.Mesh(new THREE.BoxGeometry(lobbyW, lobbyH, lobbyD),
+    mat(0x88aacc, { transparent: true, opacity: 0.4, roughness: 0.1, metalness: 0.3 }));
+  lobby.position.set(0, lobbyH / 2, d / 2 + lobbyD / 2);
+  lobby.userData.isWindow = true; group.add(lobby);
+  const lobbyFrame = new THREE.Mesh(new THREE.BoxGeometry(lobbyW + 0.15, 0.1, lobbyD + 0.15), frameMat);
+  lobbyFrame.position.set(0, lobbyH, d / 2 + lobbyD / 2); group.add(lobbyFrame);
 
   const label = createLabel(locData.label, group, wallH + 2);
   const badge = createOccupantBadge(group, wallH + 1);
@@ -862,71 +988,138 @@ function createOffice(id, locData) {
 function createTower(id, locData) {
   const group = new THREE.Group();
   const w = 4.5, d = 4.5, wallH = 14;
+  const towerMat = mat(BLDG_COLORS.tower, { roughness: 0.25, metalness: 0.35 });
+  const frameMat = mat(0x445566, { metalness: 0.5, roughness: 0.3 });
+  const glassMat = mat(BLDG_COLORS.window, { roughness: 0.1, metalness: 0.5, opacity: 0.5, transparent: true });
 
-  // Base wider section
-  const base = new THREE.Mesh(
-    new THREE.BoxGeometry(w + 1, 3, d + 1),
-    mat(BLDG_COLORS.tower - 0x101010)
-  );
-  base.position.y = 1.5;
-  base.castShadow = true;
-  base.receiveShadow = true;
-  addEdges(base);
-  group.add(base);
+  const base = new THREE.Mesh(new THREE.BoxGeometry(w + 1.5, 3.5, d + 1.5), mat(BLDG_COLORS.tower - 0x101010));
+  base.position.y = 1.75; base.castShadow = true; base.receiveShadow = true;
+  addEdges(base); group.add(base);
+  const baseLobby = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.8, 0.8),
+    mat(0x88bbdd, { transparent: true, opacity: 0.4, roughness: 0.1 }));
+  baseLobby.position.set(0, 1.4, (d + 1.5) / 2 + 0.3);
+  baseLobby.userData.isWindow = true; group.add(baseLobby);
 
-  // Tower body
-  const body = new THREE.Mesh(
-    new THREE.BoxGeometry(w, wallH, d),
-    mat(BLDG_COLORS.tower, { roughness: 0.3, metalness: 0.3 })
-  );
-  body.position.y = wallH / 2;
-  body.castShadow = true;
-  body.receiveShadow = true;
-  addEdges(body);
-  group.add(body);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(w, wallH - 3, d), towerMat);
+  body.position.y = 3.5 + (wallH - 3) / 2; body.castShadow = true; body.receiveShadow = true;
+  addEdges(body); group.add(body);
 
-  // Glass strips
-  const glassMat = mat(BLDG_COLORS.window, { roughness: 0.15, metalness: 0.4, opacity: 0.6, transparent: true });
-  for (let f = 0; f < 6; f++) {
-    const strip = new THREE.Mesh(new THREE.BoxGeometry(w * 0.8, 0.8, 0.1), glassMat);
-    strip.position.set(0, 2 + f * 2, d / 2 + 0.05);
-    strip.userData.isWindow = true;
-    group.add(strip);
+  for (let face = 0; face < 4; face++) {
+    const fw = w, fd = d;
+    const faceGrp = new THREE.Group();
+    for (let f = 0; f < 5; f++) {
+      const fy = 4.5 + f * 2;
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(fw * 0.85, 1.3, 0.08), glassMat);
+      strip.position.set(0, fy, fd / 2 + 0.04);
+      strip.userData.isWindow = true; faceGrp.add(strip);
+      for (let mx = -1; mx <= 1; mx++) {
+        const mull = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.4, 0.06), frameMat);
+        mull.position.set(mx * (fw * 0.28), fy, fd / 2 + 0.05); faceGrp.add(mull);
+      }
+      const hBar = new THREE.Mesh(new THREE.BoxGeometry(fw * 0.88, 0.06, 0.06), frameMat);
+      hBar.position.set(0, fy + 0.65, fd / 2 + 0.05); faceGrp.add(hBar);
+    }
+    faceGrp.rotation.y = (face * Math.PI) / 2;
+    group.add(faceGrp);
   }
 
-  // Antenna
-  const antenna = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.08, 0.08, 3, 6),
-    mat(0x888888, { metalness: 0.5 })
-  );
-  antenna.position.y = wallH + 1.5;
-  group.add(antenna);
+  const deckY = wallH - 0.5;
+  const deckW = w + 1.2, deckD = d + 1.2;
+  const deckFloor = new THREE.Mesh(new THREE.BoxGeometry(deckW, 0.2, deckD), frameMat);
+  deckFloor.position.y = deckY; group.add(deckFloor);
+  const railMat = mat(0x888888, { metalness: 0.4 });
+  for (let side of [-1, 1]) {
+    const railH = new THREE.Mesh(new THREE.BoxGeometry(deckW, 0.06, 0.06), railMat);
+    railH.position.set(0, deckY + 0.8, side * deckD / 2); group.add(railH);
+    const railS = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, deckD), railMat);
+    railS.position.set(side * deckW / 2, deckY + 0.8, 0); group.add(railS);
+    for (let i = -3; i <= 3; i++) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.8, 0.04), railMat);
+      post.position.set(i * 0.8, deckY + 0.4, side * deckD / 2); group.add(post);
+    }
+  }
 
-  const label = createLabel(locData.label, group, wallH + 4);
-  const badge = createOccupantBadge(group, wallH + 3);
+  const crownH = 3;
+  const crownW = w * 0.7, crownD = d * 0.7;
+  const crown = new THREE.Mesh(new THREE.BoxGeometry(crownW, crownH, crownD), towerMat);
+  crown.position.y = wallH + crownH / 2; crown.castShadow = true;
+  addEdges(crown); group.add(crown);
+  for (let face = 0; face < 4; face++) {
+    const cfGrp = new THREE.Group();
+    const cg = new THREE.Mesh(new THREE.BoxGeometry(crownW * 0.7, crownH * 0.7, 0.06), glassMat);
+    cg.position.set(0, wallH + crownH / 2, crownD / 2 + 0.03);
+    cg.userData.isWindow = true; cfGrp.add(cg);
+    cfGrp.rotation.y = (face * Math.PI) / 2;
+    group.add(cfGrp);
+  }
+
+  const spireH = 4;
+  const spire = new THREE.Mesh(new THREE.ConeGeometry(0.4, spireH, 8), mat(0x888899, { metalness: 0.6 }));
+  spire.position.y = wallH + crownH + spireH / 2; group.add(spire);
+  const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 6),
+    mat(0xff4444, { emissive: 0xff2222, emissiveIntensity: 0.6 }));
+  beacon.position.y = wallH + crownH + spireH + 0.15; group.add(beacon);
+
+  const label = createLabel(locData.label, group, wallH + crownH + spireH + 2);
+  const badge = createOccupantBadge(group, wallH + crownH + spireH + 1);
   group.userData = { id, type: 'tower', label, badge, locData };
   return group;
 }
 
 function createHospital(id, locData) {
   const group = new THREE.Group();
-  const w = 7, d = 5, wallH = 4;
+  const w = 7, d = 5, wallH = 5;
 
   const walls = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), mat(BLDG_COLORS.hospital));
-  walls.position.y = wallH / 2;
-  walls.castShadow = true;
-  walls.receiveShadow = true;
-  addEdges(walls);
-  group.add(walls);
+  walls.position.y = wallH / 2; walls.castShadow = true; walls.receiveShadow = true;
+  addEdges(walls); group.add(walls);
 
-  // Red cross
+  const wingW = 3, wingD = 3, wingH = 3.5;
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(wingW, wingH, wingD), mat(0xe8e8e8));
+  wing.position.set(-w / 2 + wingW / 2 - 0.5, wingH / 2, -d / 2 - wingD / 2 + 0.5);
+  wing.castShadow = true; wing.receiveShadow = true; addEdges(wing); group.add(wing);
+
+  const winMat = mat(isNight ? BLDG_COLORS.windowLit : BLDG_COLORS.window,
+    isNight ? { emissive: BLDG_COLORS.windowLit, emissiveIntensity: 0.3 } : {});
+  for (let f = 0; f < 2; f++) {
+    for (let wx = -2; wx <= 2; wx++) {
+      const win = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.6, 0.1), winMat);
+      win.position.set(wx * 1.2, 1.5 + f * 2, d / 2 + 0.05);
+      win.userData.isWindow = true; group.add(win);
+    }
+  }
+
   const crossMat = mat(0xcc2222);
   const crossH = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.4, 0.1), crossMat);
-  crossH.position.set(0, wallH * 0.7, d / 2 + 0.06);
-  group.add(crossH);
+  crossH.position.set(0, wallH - 0.5, d / 2 + 0.06); group.add(crossH);
   const crossV = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.5, 0.1), crossMat);
-  crossV.position.set(0, wallH * 0.7, d / 2 + 0.06);
-  group.add(crossV);
+  crossV.position.set(0, wallH - 0.5, d / 2 + 0.06); group.add(crossV);
+
+  const canopyW = 4, canopyD = 2.5;
+  const canopy = new THREE.Mesh(new THREE.BoxGeometry(canopyW, 0.12, canopyD), mat(0xdddddd));
+  canopy.position.set(0, 3, d / 2 + canopyD / 2); canopy.castShadow = true; group.add(canopy);
+  for (let s of [-1, 1]) {
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 3, 6), mat(0x888888));
+    pole.position.set(s * (canopyW / 2 - 0.3), 1.5, d / 2 + canopyD - 0.3); group.add(pole);
+  }
+  const emergSign = new THREE.Mesh(new THREE.BoxGeometry(2, 0.4, 0.08),
+    mat(0xcc2222, { emissive: 0xaa1111, emissiveIntensity: 0.5 }));
+  emergSign.position.set(0, 3.3, d / 2 + canopyD / 2); group.add(emergSign);
+
+  const roofCap = new THREE.Mesh(new THREE.BoxGeometry(w + 0.3, 0.25, d + 0.3), mat(0xcccccc));
+  roofCap.position.y = wallH; group.add(roofCap);
+  const heliR = 1.5;
+  const heliPad = new THREE.Mesh(new THREE.CylinderGeometry(heliR, heliR, 0.05, 16), mat(0xaaaaaa));
+  heliPad.position.set(w / 4, wallH + 0.15, 0); group.add(heliPad);
+  const heliCircle = new THREE.Mesh(
+    new THREE.RingGeometry(heliR - 0.15, heliR, 16),
+    mat(0xeeee22, { side: THREE.DoubleSide }));
+  heliCircle.rotation.x = -Math.PI / 2;
+  heliCircle.position.set(w / 4, wallH + 0.2, 0); group.add(heliCircle);
+  const hBar = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.04, 0.15), mat(0xeeee22));
+  hBar.position.set(w / 4, wallH + 0.2, 0); group.add(hBar);
+  const hBar2 = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.04, 1.2), mat(0xeeee22));
+  hBar2.position.set(w / 4, wallH + 0.2, 0); group.add(hBar2);
 
   const label = createLabel(locData.label, group, wallH + 2);
   const badge = createOccupantBadge(group, wallH + 1);
@@ -936,52 +1129,80 @@ function createHospital(id, locData) {
 
 function createChurch(id, locData) {
   const group = new THREE.Group();
-  const w = 4, d = 6, wallH = 4;
+  const w = 4, d = 6, wallH = 4.5;
+  const stoneMat = mat(BLDG_COLORS.church);
 
-  const walls = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), mat(BLDG_COLORS.church));
-  walls.position.y = wallH / 2;
-  walls.castShadow = true;
-  walls.receiveShadow = true;
-  addEdges(walls);
-  group.add(walls);
+  const walls = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), stoneMat);
+  walls.position.y = wallH / 2; walls.castShadow = true; walls.receiveShadow = true;
+  addEdges(walls); group.add(walls);
 
-  // Roof
   const roofGeo = new THREE.BufferGeometry();
-  const hw = w / 2 + 0.2, hd = d / 2 + 0.2;
-  const rh = 2;
-  const verts = new Float32Array([
-    -hw, wallH, -hd,  hw, wallH, -hd,  0, wallH + rh, -hd,
-    -hw, wallH,  hd,  hw, wallH,  hd,  0, wallH + rh,  hd,
-    -hw, wallH, -hd,  -hw, wallH,  hd,  0, wallH + rh, -hd,  0, wallH + rh,  hd,
-     hw, wallH, -hd,   hw, wallH,  hd,  0, wallH + rh, -hd,  0, wallH + rh,  hd,
+  const hw = w / 2 + 0.2, hd = d / 2 + 0.2, rh = 2.2;
+  const v = new Float32Array([
+    -hw,wallH,-hd, hw,wallH,-hd, 0,wallH+rh,-hd,
+    -hw,wallH,hd,  hw,wallH,hd,  0,wallH+rh,hd,
+    -hw,wallH,-hd, -hw,wallH,hd, 0,wallH+rh,-hd, 0,wallH+rh,hd,
+     hw,wallH,-hd,  hw,wallH,hd, 0,wallH+rh,-hd, 0,wallH+rh,hd,
   ]);
-  const idx = [0,1,2, 3,5,4, 2,3,0, 2,5,3, 1,4,5, 1,5,2];
-  roofGeo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
-  roofGeo.setIndex(idx);
+  roofGeo.setAttribute('position', new THREE.BufferAttribute(v, 3));
+  roofGeo.setIndex([0,1,2, 3,5,4, 2,3,0, 2,5,3, 1,4,5, 1,5,2]);
   roofGeo.computeVertexNormals();
   const roof = new THREE.Mesh(roofGeo, mat(BLDG_COLORS.roof[0]));
-  roof.castShadow = true;
-  group.add(roof);
+  roof.castShadow = true; group.add(roof);
 
-  // Steeple
-  const steeple = new THREE.Mesh(
-    new THREE.ConeGeometry(0.8, 4, 4),
-    mat(BLDG_COLORS.roof[1])
-  );
-  steeple.position.set(0, wallH + rh + 2, -d / 2 + 1);
-  steeple.castShadow = true;
-  group.add(steeple);
+  for (let bz = -1.5; bz <= 1.5; bz += 1.5) {
+    for (let side of [-1, 1]) {
+      const buttress = new THREE.Mesh(new THREE.BoxGeometry(0.3, wallH * 0.8, 0.5), stoneMat);
+      buttress.position.set(side * (w / 2 + 0.15), wallH * 0.4, bz);
+      buttress.castShadow = true; group.add(buttress);
+      const buttTop = new THREE.Mesh(new THREE.ConeGeometry(0.25, 0.6, 4), stoneMat);
+      buttTop.position.set(side * (w / 2 + 0.15), wallH * 0.8 + 0.3, bz);
+      buttTop.rotation.y = Math.PI / 4; group.add(buttTop);
+    }
+  }
 
-  // Steeple base
-  const stBase = new THREE.Mesh(
-    new THREE.BoxGeometry(1.6, 2, 1.6),
-    mat(BLDG_COLORS.church)
-  );
-  stBase.position.set(0, wallH + 1, -d / 2 + 1);
-  group.add(stBase);
+  const roseR = 0.7;
+  const roseFrame = new THREE.Mesh(new THREE.TorusGeometry(roseR, 0.06, 8, 16),
+    mat(0x888878, { metalness: 0.3 }));
+  roseFrame.position.set(0, wallH * 0.7, d / 2 + 0.06); group.add(roseFrame);
+  const roseGlass = new THREE.Mesh(new THREE.CircleGeometry(roseR - 0.05, 16),
+    mat(0x4466aa, { transparent: true, opacity: 0.6, emissive: 0x223355, emissiveIntensity: 0.2, side: THREE.DoubleSide }));
+  roseGlass.position.set(0, wallH * 0.7, d / 2 + 0.07);
+  roseGlass.userData.isWindow = true; group.add(roseGlass);
+  for (let i = 0; i < 8; i++) {
+    const ang = (i / 8) * Math.PI * 2;
+    const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.03, roseR * 1.6, 0.03), mat(0x888878));
+    spoke.position.set(0, wallH * 0.7, d / 2 + 0.065);
+    spoke.rotation.z = ang; group.add(spoke);
+  }
 
-  const label = createLabel(locData.label, group, wallH + rh + 5);
-  const badge = createOccupantBadge(group, wallH + rh + 4);
+  const doorW = 1.2, doorH = 2;
+  const doorArch = new THREE.Mesh(new THREE.BoxGeometry(doorW, doorH, 0.15), mat(BLDG_COLORS.door));
+  doorArch.position.set(0, doorH / 2, d / 2 + 0.05); doorArch.userData.isDoor = true; group.add(doorArch);
+  const archTop = new THREE.Mesh(new THREE.CylinderGeometry(doorW / 2, doorW / 2, 0.15, 12, 1, false, 0, Math.PI),
+    mat(BLDG_COLORS.door));
+  archTop.rotation.x = Math.PI / 2; archTop.rotation.z = Math.PI;
+  archTop.position.set(0, doorH, d / 2 + 0.05); group.add(archTop);
+
+  const stBase = new THREE.Mesh(new THREE.BoxGeometry(1.8, 2.5, 1.8), stoneMat);
+  stBase.position.set(0, wallH + 1.25, -d / 2 + 1);
+  stBase.castShadow = true; group.add(stBase);
+  for (let corner of [[-0.7,-0.7],[0.7,-0.7],[-0.7,0.7],[0.7,0.7]]) {
+    const pin = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.8, 4), mat(BLDG_COLORS.roof[1]));
+    pin.position.set(corner[0], wallH + 2.9, -d / 2 + 1 + corner[1]);
+    pin.rotation.y = Math.PI / 4; group.add(pin);
+  }
+  const steeple = new THREE.Mesh(new THREE.ConeGeometry(0.7, 4.5, 4), mat(BLDG_COLORS.roof[1]));
+  steeple.position.set(0, wallH + rh + 2.5, -d / 2 + 1);
+  steeple.rotation.y = Math.PI / 4;
+  steeple.castShadow = true; group.add(steeple);
+  const crossBar1 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.8, 0.06), mat(0xccaa44, { metalness: 0.5 }));
+  crossBar1.position.set(0, wallH + rh + 5.1, -d / 2 + 1); group.add(crossBar1);
+  const crossBar2 = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.06, 0.06), mat(0xccaa44, { metalness: 0.5 }));
+  crossBar2.position.set(0, wallH + rh + 5.2, -d / 2 + 1); group.add(crossBar2);
+
+  const label = createLabel(locData.label, group, wallH + rh + 6);
+  const badge = createOccupantBadge(group, wallH + rh + 5);
   group.userData = { id, type: 'church', label, badge, locData };
   return group;
 }
@@ -991,32 +1212,60 @@ function createSchool(id, locData) {
   const w = 6, d = 5, wallH = 3.5;
 
   const walls = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), mat(BLDG_COLORS.school));
-  walls.position.y = wallH / 2;
-  walls.castShadow = true;
-  walls.receiveShadow = true;
-  addEdges(walls);
-  group.add(walls);
+  walls.position.y = wallH / 2; walls.castShadow = true; walls.receiveShadow = true;
+  addEdges(walls); group.add(walls);
 
-  // Windows
-  const winMat = mat(BLDG_COLORS.window);
+  const entW = 2, entH = wallH + 1.5, entD = 0.6;
+  const entrance = new THREE.Mesh(new THREE.BoxGeometry(entW, entH, entD), mat(BLDG_COLORS.school - 0x101010));
+  entrance.position.set(0, entH / 2, d / 2 + entD / 2 - 0.1);
+  entrance.castShadow = true; group.add(entrance);
+  const pediment = new THREE.Mesh(new THREE.ConeGeometry(entW * 0.6, 1, 3), mat(BLDG_COLORS.school - 0x101010));
+  pediment.position.set(0, entH + 0.3, d / 2 + entD / 2 - 0.1);
+  pediment.scale.z = 0.3; pediment.rotation.y = Math.PI / 6; group.add(pediment);
+
+  const door = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2, 0.1), mat(BLDG_COLORS.door));
+  door.position.set(0, 1, d / 2 + entD - 0.05); door.userData.isDoor = true; group.add(door);
+
+  const clockR = 0.4;
+  const clockFace = new THREE.Mesh(new THREE.CircleGeometry(clockR, 16),
+    mat(0xf8f8f0, { side: THREE.DoubleSide }));
+  clockFace.position.set(0, entH - 0.5, d / 2 + entD + 0.01); group.add(clockFace);
+  const clockRim = new THREE.Mesh(new THREE.TorusGeometry(clockR, 0.04, 8, 16), mat(0x444444));
+  clockRim.position.set(0, entH - 0.5, d / 2 + entD + 0.01); group.add(clockRim);
+  const hourHand = new THREE.Mesh(new THREE.BoxGeometry(0.04, clockR * 0.5, 0.02), mat(0x222222));
+  hourHand.position.set(0, entH - 0.5 + clockR * 0.2, d / 2 + entD + 0.02); group.add(hourHand);
+  const minHand = new THREE.Mesh(new THREE.BoxGeometry(0.03, clockR * 0.7, 0.02), mat(0x222222));
+  minHand.position.set(clockR * 0.15, entH - 0.5, d / 2 + entD + 0.02);
+  minHand.rotation.z = -Math.PI / 3; group.add(minHand);
+
+  const winMat = mat(isNight ? BLDG_COLORS.windowLit : BLDG_COLORS.window,
+    isNight ? { emissive: BLDG_COLORS.windowLit, emissiveIntensity: 0.3 } : {});
   for (let i = -2; i <= 2; i++) {
+    if (Math.abs(i) < 1) continue;
     const win = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.8, 0.1), winMat);
     win.position.set(i * 1.1, wallH * 0.6, d / 2 + 0.05);
-    win.userData.isWindow = true;
-    group.add(win);
+    win.userData.isWindow = true; group.add(win);
+    const sill = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.06, 0.12), mat(0xaa6848));
+    sill.position.set(i * 1.1, wallH * 0.6 - 0.43, d / 2 + 0.08); group.add(sill);
+  }
+  for (let side of [-1, 1]) {
+    for (let sz = -1; sz <= 1; sz++) {
+      const sWin = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.7, 0.5), winMat);
+      sWin.position.set(side * (w / 2 + 0.05), wallH * 0.6, sz * 1.3);
+      sWin.userData.isWindow = true; group.add(sWin);
+    }
   }
 
-  // Flag pole
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 3, 6), mat(0x888888));
-  pole.position.set(w / 2 - 0.5, wallH + 1.5, -d / 2 + 0.5);
-  group.add(pole);
-
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 4, 6), mat(0x888888));
+  pole.position.set(w / 2 + 0.8, 2, d / 2 - 1); group.add(pole);
   const flag = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.6), mat(0xcc3333, { side: THREE.DoubleSide }));
-  flag.position.set(w / 2 - 0.5 + 0.5, wallH + 2.5, -d / 2 + 0.5);
-  group.add(flag);
+  flag.position.set(w / 2 + 0.8 + 0.5, 3.5, d / 2 - 1); group.add(flag);
 
-  const label = createLabel(locData.label, group, wallH + 4);
-  const badge = createOccupantBadge(group, wallH + 3);
+  const roofCap = new THREE.Mesh(new THREE.BoxGeometry(w + 0.3, 0.2, d + 0.3), mat(BLDG_COLORS.school - 0x151515));
+  roofCap.position.y = wallH; group.add(roofCap);
+
+  const label = createLabel(locData.label, group, entH + 2);
+  const badge = createOccupantBadge(group, entH + 1);
   group.userData = { id, type: 'school', label, badge, locData };
   return group;
 }
@@ -1024,42 +1273,66 @@ function createSchool(id, locData) {
 function createFactory(id, locData) {
   const group = new THREE.Group();
   const w = 7, d = 5, wallH = 4.5;
+  const factMat = mat(BLDG_COLORS.factory);
+  const metalMat = mat(0x666666, { metalness: 0.4, roughness: 0.4 });
 
-  const walls = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), mat(BLDG_COLORS.factory));
-  walls.position.y = wallH / 2;
-  walls.castShadow = true;
-  walls.receiveShadow = true;
-  addEdges(walls);
-  group.add(walls);
+  const walls = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), factMat);
+  walls.position.y = wallH / 2; walls.castShadow = true; walls.receiveShadow = true;
+  addEdges(walls); group.add(walls);
 
-  // Chimney
-  const chimney = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.5, 0.6, 4, 8),
-    mat(0x555555)
-  );
-  chimney.position.set(w / 2 - 1, wallH + 2, -d / 2 + 1);
-  chimney.castShadow = true;
-  group.add(chimney);
+  const sawTeeth = 3, toothW = w / sawTeeth, toothH = 1.2;
+  for (let i = 0; i < sawTeeth; i++) {
+    const tx = -w / 2 + toothW / 2 + i * toothW;
+    const geo = new THREE.BufferGeometry();
+    const hw = toothW / 2, hd = d / 2;
+    const v = new Float32Array([
+      -hw, wallH, -hd, hw, wallH, -hd, hw, wallH, hd, -hw, wallH, hd,
+      -hw, wallH + toothH, -hd, hw, wallH + toothH, -hd,
+      -hw, wallH + toothH, hd, hw, wallH, hd,
+    ]);
+    geo.setAttribute('position', new THREE.BufferAttribute(v, 3));
+    geo.setIndex([0,1,5,0,5,4, 3,6,4,3,4,0, 1,2,7,1,7,5, 4,5,7,4,7,6, 3,2,1,3,1,0]);
+    geo.computeVertexNormals();
+    const tooth = new THREE.Mesh(geo, metalMat);
+    tooth.position.x = tx; tooth.castShadow = true; group.add(tooth);
+    const skylight = new THREE.Mesh(new THREE.PlaneGeometry(toothW * 0.6, d * 0.6),
+      mat(0x88bbdd, { transparent: true, opacity: 0.4, side: THREE.DoubleSide }));
+    skylight.position.set(tx, wallH + toothH * 0.5 + 0.01, 0);
+    skylight.rotation.x = -Math.PI / 2 + 0.3;
+    skylight.userData.isWindow = true; group.add(skylight);
+  }
 
-  // Second chimney
-  const chimney2 = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.4, 0.5, 3, 8),
-    mat(0x555555)
-  );
-  chimney2.position.set(w / 2 - 2.5, wallH + 1.5, -d / 2 + 1);
-  chimney2.castShadow = true;
-  group.add(chimney2);
+  const chimney = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.65, 5, 8), mat(0x555555));
+  chimney.position.set(w / 2 - 1, wallH + 2.5, -d / 2 + 1);
+  chimney.castShadow = true; group.add(chimney);
+  const chimRing1 = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.06, 6, 12), metalMat);
+  chimRing1.position.set(w / 2 - 1, wallH + 4.5, -d / 2 + 1);
+  chimRing1.rotation.x = Math.PI / 2; group.add(chimRing1);
+  const chimney2 = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.5, 4, 8), mat(0x555555));
+  chimney2.position.set(w / 2 - 2.8, wallH + 2, -d / 2 + 1);
+  chimney2.castShadow = true; group.add(chimney2);
 
-  // Sawtooth roof detail
-  const roofCap = new THREE.Mesh(
-    new THREE.BoxGeometry(w + 0.2, 0.3, d + 0.2),
-    mat(0x555555)
-  );
-  roofCap.position.y = wallH;
-  group.add(roofCap);
+  const dockW = 3, dockD = 1.5;
+  const dockFloor = new THREE.Mesh(new THREE.BoxGeometry(dockW, 0.8, dockD), mat(0x606060));
+  dockFloor.position.set(-w / 4, 0.4, d / 2 + dockD / 2); group.add(dockFloor);
+  const dockRoof = new THREE.Mesh(new THREE.BoxGeometry(dockW + 0.5, 0.1, dockD + 0.5), metalMat);
+  dockRoof.position.set(-w / 4, 3.5, d / 2 + dockD / 2); dockRoof.castShadow = true; group.add(dockRoof);
+  for (let s of [-1, 1]) {
+    const dPole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 3, 6), metalMat);
+    dPole.position.set(-w / 4 + s * dockW / 2, 2, d / 2 + dockD); group.add(dPole);
+  }
+  const rollDoor = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.8, 0.1), mat(0x888888, { metalness: 0.3 }));
+  rollDoor.position.set(-w / 4, 2.2, d / 2 + 0.05); rollDoor.userData.isDoor = true; group.add(rollDoor);
 
-  const label = createLabel(locData.label, group, wallH + 5);
-  const badge = createOccupantBadge(group, wallH + 4);
+  const pipeMat = mat(0x999900, { metalness: 0.3 });
+  const pipe1 = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, wallH + 1, 8), pipeMat);
+  pipe1.position.set(-w / 2 + 0.3, wallH / 2, -d / 2 + 0.3); group.add(pipe1);
+  const pipe2 = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 3, 8), pipeMat);
+  pipe2.rotation.z = Math.PI / 2;
+  pipe2.position.set(-w / 2 + 1.8, wallH * 0.7, -d / 2 + 0.3); group.add(pipe2);
+
+  const label = createLabel(locData.label, group, wallH + toothH + 5);
+  const badge = createOccupantBadge(group, wallH + toothH + 4);
   group.userData = { id, type: 'factory', label, badge, locData };
   return group;
 }
@@ -1069,65 +1342,122 @@ function createCinema(id, locData) {
   const w = 5.5, d = 5, wallH = 5;
 
   const walls = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), mat(BLDG_COLORS.cinema));
-  walls.position.y = wallH / 2;
-  walls.castShadow = true;
-  walls.receiveShadow = true;
-  addEdges(walls);
-  group.add(walls);
+  walls.position.y = wallH / 2; walls.castShadow = true; walls.receiveShadow = true;
+  addEdges(walls); group.add(walls);
 
-  // Marquee
-  const marquee = new THREE.Mesh(
-    new THREE.BoxGeometry(w + 1, 0.8, 0.5),
-    mat(0xddcc44, { emissive: 0x887722, emissiveIntensity: 0.3 })
-  );
-  marquee.position.set(0, wallH * 0.8, d / 2 + 0.3);
-  group.add(marquee);
+  const facadeH = 2;
+  const facade = new THREE.Mesh(new THREE.BoxGeometry(w + 0.8, facadeH, 0.3), mat(0x6b2040));
+  facade.position.set(0, wallH + facadeH / 2, d / 2); facade.castShadow = true; group.add(facade);
 
-  const label = createLabel(locData.label, group, wallH + 2);
-  const badge = createOccupantBadge(group, wallH + 1);
+  const marquee = new THREE.Mesh(new THREE.BoxGeometry(w + 1.2, 1, 1),
+    mat(0xddcc44, { emissive: 0xaa8833, emissiveIntensity: 0.4 }));
+  marquee.position.set(0, wallH * 0.75, d / 2 + 0.5); group.add(marquee);
+  const marqueeBottom = new THREE.Mesh(new THREE.BoxGeometry(w + 1.3, 0.08, 1.1),
+    mat(0xccbb33, { emissive: 0x887722, emissiveIntensity: 0.3 }));
+  marqueeBottom.position.set(0, wallH * 0.75 - 0.5, d / 2 + 0.5); group.add(marqueeBottom);
+
+  const bulbMat = mat(0xffee88, { emissive: 0xffdd44, emissiveIntensity: 0.6 });
+  for (let bx = -w / 2 - 0.3; bx <= w / 2 + 0.3; bx += 0.5) {
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.06, 4, 4), bulbMat);
+    bulb.position.set(bx, wallH * 0.75 + 0.52, d / 2 + 1.02); group.add(bulb);
+    const bulb2 = new THREE.Mesh(new THREE.SphereGeometry(0.06, 4, 4), bulbMat);
+    bulb2.position.set(bx, wallH * 0.75 - 0.52, d / 2 + 1.02); group.add(bulb2);
+  }
+
+  const doors = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.5, 0.1), mat(0x4a2030));
+  doors.position.set(0, 1.25, d / 2 + 0.06); doors.userData.isDoor = true; group.add(doors);
+  for (let dx of [-0.5, 0.5]) {
+    const dGlass = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.8, 0.06),
+      mat(BLDG_COLORS.window, { transparent: true, opacity: 0.4 }));
+    dGlass.position.set(dx, 1.4, d / 2 + 0.09); dGlass.userData.isWindow = true; group.add(dGlass);
+  }
+
+  const boothW = 1, boothH = 2.2, boothD = 1;
+  const booth = new THREE.Mesh(new THREE.BoxGeometry(boothW, boothH, boothD), mat(0x8b3050));
+  booth.position.set(w / 2 + boothW / 2 + 0.3, boothH / 2, d / 2 - 0.5);
+  booth.castShadow = true; group.add(booth);
+  const boothWin = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.5, 0.6),
+    mat(BLDG_COLORS.window, { transparent: true, opacity: 0.5 }));
+  boothWin.position.set(w / 2 + 0.3, boothH * 0.6, d / 2 - 0.5);
+  boothWin.userData.isWindow = true; group.add(boothWin);
+  const boothRoof = new THREE.Mesh(new THREE.BoxGeometry(boothW + 0.2, 0.1, boothD + 0.2), mat(0x6b2040));
+  boothRoof.position.set(w / 2 + boothW / 2 + 0.3, boothH + 0.05, d / 2 - 0.5); group.add(boothRoof);
+
+  const label = createLabel(locData.label, group, wallH + facadeH + 2);
+  const badge = createOccupantBadge(group, wallH + facadeH + 1);
   group.userData = { id, type: 'cinema', label, badge, locData };
   return group;
 }
 
 function createPark(id, locData) {
   const group = new THREE.Group();
+  const benchMat = mat(0x8b6040);
 
-  // Park ground
-  const parkGround = new THREE.Mesh(
-    new THREE.BoxGeometry(8, 0.1, 6),
-    mat(BLDG_COLORS.park)
-  );
-  parkGround.position.y = 0.05;
-  parkGround.receiveShadow = true;
-  group.add(parkGround);
+  const parkGround = new THREE.Mesh(new THREE.BoxGeometry(8, 0.1, 6), mat(BLDG_COLORS.park));
+  parkGround.position.y = 0.05; parkGround.receiveShadow = true; group.add(parkGround);
 
-  // Path
-  const path = new THREE.Mesh(
-    new THREE.BoxGeometry(1, 0.12, 6),
-    mat(0xccbbaa)
-  );
-  path.position.y = 0.06;
-  group.add(path);
+  const pathMat = mat(0xccbbaa);
+  const mainPath = new THREE.Mesh(new THREE.BoxGeometry(1, 0.12, 6), pathMat);
+  mainPath.position.y = 0.06; group.add(mainPath);
+  const crossPath = new THREE.Mesh(new THREE.BoxGeometry(8, 0.12, 0.8), pathMat);
+  crossPath.position.y = 0.06; group.add(crossPath);
 
-  // Trees
-  for (let i = 0; i < 5; i++) {
-    const tx = (Math.random() - 0.5) * 6;
-    const tz = (Math.random() - 0.5) * 4;
-    if (Math.abs(tx) > 1) {
-      const t = createTree(0, 0, 0.35 + Math.random() * 0.25);
-      t.position.set(tx, 0, tz);
-      scene.remove(t);
-      group.add(t);
+  const gazR = 1.2, gazH = 2.8, gazPoles = 6;
+  const gazebo = new THREE.Group();
+  const gazFloor = new THREE.Mesh(new THREE.CylinderGeometry(gazR + 0.1, gazR + 0.1, 0.12, gazPoles), mat(0xc0b090));
+  gazFloor.position.y = 0.2; gazebo.add(gazFloor);
+  for (let i = 0; i < gazPoles; i++) {
+    const ang = (i / gazPoles) * Math.PI * 2;
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, gazH, 6), mat(0xf0f0f0));
+    pole.position.set(Math.cos(ang) * gazR, gazH / 2 + 0.2, Math.sin(ang) * gazR);
+    gazebo.add(pole);
+  }
+  const gazRoof = new THREE.Mesh(new THREE.ConeGeometry(gazR + 0.4, 1.2, gazPoles), mat(0x885540));
+  gazRoof.position.y = gazH + 0.8; gazRoof.castShadow = true; gazebo.add(gazRoof);
+  const gazRail = new THREE.Mesh(new THREE.TorusGeometry(gazR, 0.04, 4, gazPoles), mat(0xf0f0f0));
+  gazRail.rotation.x = Math.PI / 2; gazRail.position.y = 0.7; gazebo.add(gazRail);
+  gazebo.position.set(-2.5, 0, 0); group.add(gazebo);
+
+  const flowerColors = [0xff6688, 0xffaa44, 0xcc66cc, 0xff4444, 0xffdd44];
+  for (let fb = 0; fb < 2; fb++) {
+    const fbz = fb === 0 ? -2 : 2;
+    const bed = new THREE.Mesh(new THREE.BoxGeometry(2, 0.15, 0.8), mat(0x3a6a2a));
+    bed.position.set(2.5, 0.12, fbz); group.add(bed);
+    const border = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.2, 0.9), mat(0x8b7050));
+    border.position.set(2.5, 0.06, fbz); group.add(border);
+    for (let fx = 0; fx < 6; fx++) {
+      const fc = flowerColors[(fb * 6 + fx) % flowerColors.length];
+      const flower = new THREE.Mesh(new THREE.SphereGeometry(0.08, 4, 4), mat(fc));
+      flower.position.set(2.5 + (fx - 2.5) * 0.35, 0.28, fbz + (Math.random() - 0.5) * 0.4);
+      group.add(flower);
+      const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.12, 4), mat(0x2a6a2a));
+      stem.position.set(flower.position.x, 0.2, flower.position.z); group.add(stem);
     }
   }
 
-  // Bench
-  const benchSeat = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.1, 0.5), mat(0x8b6040));
-  benchSeat.position.set(2, 0.5, 0);
-  group.add(benchSeat);
-  const benchBack = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.6, 0.08), mat(0x8b6040));
-  benchBack.position.set(2, 0.7, -0.22);
-  group.add(benchBack);
+  for (let i = 0; i < 5; i++) {
+    const tx = (Math.random() - 0.5) * 6;
+    const tz = (Math.random() - 0.5) * 4;
+    if (Math.abs(tx) > 1 && Math.abs(tx + 2.5) > 1.5) {
+      const t = createTree(0, 0, 0.35 + Math.random() * 0.25);
+      t.position.set(tx, 0, tz);
+      scene.remove(t); group.add(t);
+    }
+  }
+
+  for (let bPos of [[1.5, 1.2], [1.5, -1.2]]) {
+    const bGroup = new THREE.Group();
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.08, 0.45), benchMat);
+    seat.position.y = 0.45; bGroup.add(seat);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.5, 0.06), benchMat);
+    back.position.set(0, 0.65, -0.2); bGroup.add(back);
+    for (let lx of [-0.6, 0.6]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.45, 0.35), mat(0x444444));
+      leg.position.set(lx, 0.22, 0); bGroup.add(leg);
+    }
+    bGroup.position.set(bPos[0], 0, bPos[1]);
+    group.add(bGroup);
+  }
 
   const label = createLabel(locData.label, group, 5);
   const badge = createOccupantBadge(group, 4);
@@ -1174,19 +1504,50 @@ function createSportsField(id, locData) {
 function createPolice(id, locData) {
   const group = new THREE.Group();
   const w = 5, d = 4, wallH = 3.5;
-  const walls = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), mat(BLDG_COLORS.police));
+  const policeMat = mat(BLDG_COLORS.police);
+
+  const walls = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), policeMat);
   walls.position.y = wallH / 2; walls.castShadow = true; walls.receiveShadow = true;
   addEdges(walls); group.add(walls);
+
   const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 0.25, d + 0.4), mat(0x2a4a6a));
   roof.position.y = wallH; group.add(roof);
-  const stripe = new THREE.Mesh(new THREE.BoxGeometry(w + 0.1, 0.6, 0.1), mat(0x4488cc));
-  stripe.position.set(0, wallH * 0.85, d / 2 + 0.06); group.add(stripe);
-  const door = new THREE.Mesh(new THREE.BoxGeometry(1, 2, 0.1), mat(0x2a3a5a));
-  door.position.set(0, 1, d / 2 + 0.06); group.add(door);
-  for (let sx of [-1.5, 1.5]) {
-    const win = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.1), mat(BLDG_COLORS.window, { roughness: 0.3 }));
+  const parapet = new THREE.Mesh(new THREE.BoxGeometry(w + 0.5, 0.4, 0.15), mat(0x2a4a6a));
+  parapet.position.set(0, wallH + 0.2, d / 2 + 0.1); group.add(parapet);
+
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(w + 0.1, 0.5, 0.1), mat(0x4488cc));
+  stripe.position.set(0, wallH * 0.88, d / 2 + 0.06); group.add(stripe);
+  const lowerStripe = new THREE.Mesh(new THREE.BoxGeometry(w + 0.1, 0.15, 0.1), mat(0x4488cc));
+  lowerStripe.position.set(0, 0.5, d / 2 + 0.06); group.add(lowerStripe);
+
+  const entW = 1.8;
+  const canopy = new THREE.Mesh(new THREE.BoxGeometry(entW + 1, 0.1, 1.2), mat(0x2a4a6a));
+  canopy.position.set(0, 2.5, d / 2 + 0.6); canopy.castShadow = true; group.add(canopy);
+  const door = new THREE.Mesh(new THREE.BoxGeometry(entW, 2.2, 0.1), mat(0x2a3a5a));
+  door.position.set(0, 1.1, d / 2 + 0.06); door.userData.isDoor = true; group.add(door);
+  const dGlass = new THREE.Mesh(new THREE.BoxGeometry(entW * 0.7, 1.5, 0.06),
+    mat(BLDG_COLORS.window, { transparent: true, opacity: 0.4 }));
+  dGlass.position.set(0, 1.3, d / 2 + 0.09); dGlass.userData.isWindow = true; group.add(dGlass);
+
+  for (let sx of [-1.8, 1.8]) {
+    const win = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.8, 0.1), mat(BLDG_COLORS.window, { roughness: 0.3 }));
     win.position.set(sx, wallH * 0.6, d / 2 + 0.06); win.userData.isWindow = true; group.add(win);
+    const bars = new THREE.Group();
+    for (let bx = -0.25; bx <= 0.25; bx += 0.12) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.8, 0.02), mat(0x444444));
+      bar.position.set(bx, 0, 0.06); bars.add(bar);
+    }
+    bars.position.set(sx, wallH * 0.6, d / 2 + 0.06); group.add(bars);
   }
+
+  const badgeR = 0.5;
+  const shield = new THREE.Mesh(new THREE.CircleGeometry(badgeR, 6),
+    mat(0xccaa44, { metalness: 0.5, side: THREE.DoubleSide }));
+  shield.position.set(0, wallH * 0.65, d / 2 + 0.12); group.add(shield);
+  const star = new THREE.Mesh(new THREE.CircleGeometry(badgeR * 0.5, 5),
+    mat(0x4488cc, { side: THREE.DoubleSide }));
+  star.position.set(0, wallH * 0.65, d / 2 + 0.13); group.add(star);
+
   const label = createLabel(locData.label, group, wallH + 2);
   const badge = createOccupantBadge(group, wallH + 1);
   group.userData = { id, type: 'police', label, badge, locData };
@@ -1216,25 +1577,73 @@ function createFireStation(id, locData) {
 
 function createMuseum(id, locData) {
   const group = new THREE.Group();
-  const w = 6, d = 5, wallH = 4;
-  const walls = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), mat(BLDG_COLORS.museum));
+  const w = 6, d = 5, wallH = 4.5;
+  const museumMat = mat(BLDG_COLORS.museum);
+  const colMat = mat(0xd8c898);
+
+  const walls = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), museumMat);
   walls.position.y = wallH / 2; walls.castShadow = true; walls.receiveShadow = true;
   addEdges(walls); group.add(walls);
-  const pediment = new THREE.Mesh(
-    new THREE.ConeGeometry(w * 0.55, 2, 3),
-    mat(BLDG_COLORS.museum)
-  );
-  pediment.rotation.set(0, Math.PI / 6, 0);
-  pediment.scale.set(1, 1, 0.4);
-  pediment.position.set(0, wallH + 0.8, 0); pediment.castShadow = true; group.add(pediment);
-  for (let cx = -2; cx <= 2; cx += 1.3) {
-    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.25, wallH, 8), mat(0xd0c090));
-    col.position.set(cx, wallH / 2, d / 2 + 0.4); col.castShadow = true; group.add(col);
+
+  const porticoD = 1.5, porticoH = wallH + 0.5;
+  const porticoRoof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.8, 0.25, porticoD + 0.3), museumMat);
+  porticoRoof.position.set(0, porticoH, d / 2 + porticoD / 2); porticoRoof.castShadow = true; group.add(porticoRoof);
+
+  const pedGeo = new THREE.BufferGeometry();
+  const pw = w / 2 + 0.4, ph = 1.8;
+  const pv = new Float32Array([
+    -pw, porticoH + 0.25, d / 2,  pw, porticoH + 0.25, d / 2,  0, porticoH + 0.25 + ph, d / 2,
+    -pw, porticoH + 0.25, d / 2 + porticoD + 0.3,  pw, porticoH + 0.25, d / 2 + porticoD + 0.3,  0, porticoH + 0.25 + ph, d / 2 + porticoD + 0.3,
+  ]);
+  pedGeo.setAttribute('position', new THREE.BufferAttribute(pv, 3));
+  pedGeo.setIndex([0,1,2, 3,5,4, 0,2,5,0,5,3, 1,4,5,1,5,2]);
+  pedGeo.computeVertexNormals();
+  const pediment = new THREE.Mesh(pedGeo, museumMat);
+  pediment.castShadow = true; group.add(pediment);
+
+  const cols = 5;
+  for (let i = 0; i < cols; i++) {
+    const cx = (i - (cols - 1) / 2) * (w / (cols - 1));
+    const col = new THREE.Group();
+    const colBase = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.3, 0.5), colMat);
+    colBase.position.y = 0.5; col.add(colBase);
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, porticoH - 0.8, 12), colMat);
+    shaft.position.y = porticoH / 2 + 0.2; col.add(shaft);
+    const capital = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.25, 0.5), colMat);
+    capital.position.y = porticoH - 0.15; col.add(capital);
+    col.position.set(cx, 0, d / 2 + porticoD - 0.2);
+    col.castShadow = true; group.add(col);
   }
-  const steps = new THREE.Mesh(new THREE.BoxGeometry(w + 1, 0.3, 1.5), mat(0xc8c0a0));
-  steps.position.set(0, 0.15, d / 2 + 1); steps.receiveShadow = true; group.add(steps);
-  const label = createLabel(locData.label, group, wallH + 4);
-  const badge = createOccupantBadge(group, wallH + 3);
+
+  for (let s = 0; s < 3; s++) {
+    const stepW = w + 1.5 - s * 0.3, stepD = 0.5;
+    const step = new THREE.Mesh(new THREE.BoxGeometry(stepW, 0.2, stepD), mat(0xc8c0a0));
+    step.position.set(0, 0.1 + s * 0.2, d / 2 + porticoD + 0.5 - s * 0.3);
+    step.receiveShadow = true; group.add(step);
+  }
+
+  const door = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2.5, 0.1), mat(BLDG_COLORS.door));
+  door.position.set(0, 1.55, d / 2 + 0.05); door.userData.isDoor = true; group.add(door);
+
+  const winMat = mat(isNight ? BLDG_COLORS.windowLit : BLDG_COLORS.window,
+    isNight ? { emissive: BLDG_COLORS.windowLit, emissiveIntensity: 0.3 } : {});
+  for (let side of [-1, 1]) {
+    for (let sz = -1; sz <= 1; sz++) {
+      const sWin = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.2, 0.6), winMat);
+      sWin.position.set(side * (w / 2 + 0.05), wallH * 0.55, sz * 1.3);
+      sWin.userData.isWindow = true; group.add(sWin);
+    }
+  }
+
+  const roofCap = new THREE.Mesh(new THREE.BoxGeometry(w + 0.3, 0.2, d + 0.3), mat(0xc0b890));
+  roofCap.position.y = wallH; group.add(roofCap);
+  const domeR = 1.2;
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(domeR, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2),
+    mat(0xa8b8a0, { metalness: 0.2 }));
+  dome.position.y = wallH + 0.2; dome.castShadow = true; group.add(dome);
+
+  const label = createLabel(locData.label, group, porticoH + ph + 2);
+  const badge = createOccupantBadge(group, porticoH + ph + 1);
   group.userData = { id, type: 'museum', label, badge, locData };
   return group;
 }
@@ -1244,22 +1653,63 @@ function createMall(id, locData) {
   const h = hash(id);
   const w = 8, d = 6, wallH = 5;
   const clr = Array.isArray(BLDG_COLORS.mall) ? BLDG_COLORS.mall[h % BLDG_COLORS.mall.length] : BLDG_COLORS.mall;
+  const frameMat = mat(0x666666, { metalness: 0.3 });
+
   const walls = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), mat(clr));
   walls.position.y = wallH / 2; walls.castShadow = true; walls.receiveShadow = true;
   addEdges(walls); group.add(walls);
-  const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.5, 0.3, d + 0.5), mat(0x808080));
+
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.5, 0.3, d + 0.5), frameMat);
   roof.position.y = wallH; group.add(roof);
-  const glass = new THREE.Mesh(
-    new THREE.BoxGeometry(w * 0.8, wallH * 0.6, 0.1),
-    mat(BLDG_COLORS.window, { roughness: 0.2, metalness: 0.2, transparent: true, opacity: 0.7 })
-  );
-  glass.position.set(0, wallH * 0.4, d / 2 + 0.06); glass.userData.isWindow = true; group.add(glass);
-  for (let sx of [-2.5, 0, 2.5]) {
-    const awning = new THREE.Mesh(new THREE.BoxGeometry(2, 0.08, 1.2), mat(0xcc8844, { roughness: 0.6 }));
-    awning.position.set(sx, wallH * 0.7, d / 2 + 0.6); awning.castShadow = true; group.add(awning);
+
+  const atriumW = 3, atriumH = 2.5, atriumD = 2;
+  const atriumGlass = mat(0x88ccee, { transparent: true, opacity: 0.35, roughness: 0.1, metalness: 0.3 });
+  const atrium = new THREE.Mesh(new THREE.BoxGeometry(atriumW, atriumH, atriumD), atriumGlass);
+  atrium.position.set(0, wallH + atriumH / 2, 0);
+  atrium.userData.isWindow = true; group.add(atrium);
+  const atriumFrame = new THREE.Mesh(new THREE.BoxGeometry(atriumW + 0.1, 0.08, atriumD + 0.1), frameMat);
+  atriumFrame.position.set(0, wallH + atriumH, 0); group.add(atriumFrame);
+  for (let mx of [-1, 0, 1]) {
+    const mull = new THREE.Mesh(new THREE.BoxGeometry(0.05, atriumH, 0.05), frameMat);
+    mull.position.set(mx * (atriumW / 3), wallH + atriumH / 2, atriumD / 2 + 0.02); group.add(mull);
+    const mullB = mull.clone();
+    mullB.position.z = -atriumD / 2 - 0.02; group.add(mullB);
   }
-  const label = createLabel(locData.label, group, wallH + 2);
-  const badge = createOccupantBadge(group, wallH + 1);
+
+  const glassMat = mat(BLDG_COLORS.window, { roughness: 0.15, metalness: 0.2, transparent: true, opacity: 0.6 });
+  const glass = new THREE.Mesh(new THREE.BoxGeometry(w * 0.85, wallH * 0.55, 0.08), glassMat);
+  glass.position.set(0, wallH * 0.4, d / 2 + 0.05); glass.userData.isWindow = true; group.add(glass);
+  for (let mx = -3; mx <= 3; mx++) {
+    const mull = new THREE.Mesh(new THREE.BoxGeometry(0.05, wallH * 0.6, 0.05), frameMat);
+    mull.position.set(mx * (w * 0.12), wallH * 0.4, d / 2 + 0.06); group.add(mull);
+  }
+
+  const entrW = 3, entrH = 3;
+  const canopy = new THREE.Mesh(new THREE.BoxGeometry(entrW + 1, 0.1, 2), frameMat);
+  canopy.position.set(0, entrH, d / 2 + 1); canopy.castShadow = true; group.add(canopy);
+  const doors = new THREE.Mesh(new THREE.BoxGeometry(entrW, entrH, 0.1), mat(0x3a3a4a));
+  doors.position.set(0, entrH / 2, d / 2 + 0.05); doors.userData.isDoor = true; group.add(doors);
+  for (let dx of [-0.8, 0, 0.8]) {
+    const dGlass = new THREE.Mesh(new THREE.BoxGeometry(0.6, entrH * 0.7, 0.06), glassMat);
+    dGlass.position.set(dx, entrH * 0.45, d / 2 + 0.08);
+    dGlass.userData.isWindow = true; group.add(dGlass);
+  }
+
+  for (let sx of [-2.8, 2.8]) {
+    const awning = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.08, 1), mat(0xcc8844, { roughness: 0.6 }));
+    awning.position.set(sx, wallH * 0.65, d / 2 + 0.5); awning.castShadow = true; group.add(awning);
+  }
+
+  for (let side of [-1, 1]) {
+    for (let sz = -1; sz <= 1; sz++) {
+      const sWin = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.2, 0.8), glassMat);
+      sWin.position.set(side * (w / 2 + 0.04), wallH * 0.5, sz * 1.5);
+      sWin.userData.isWindow = true; group.add(sWin);
+    }
+  }
+
+  const label = createLabel(locData.label, group, wallH + atriumH + 2);
+  const badge = createOccupantBadge(group, wallH + atriumH + 1);
   group.userData = { id, type: 'mall', label, badge, locData };
   return group;
 }
@@ -1318,37 +1768,66 @@ function createMarket(id, locData) {
 
 function createSquare(id, locData) {
   const group = new THREE.Group();
+  const stoneMat = mat(0x999988);
 
-  const plaza = new THREE.Mesh(
-    new THREE.BoxGeometry(7, 0.1, 7),
-    mat(BLDG_COLORS.square)
-  );
-  plaza.position.y = 0.05;
-  plaza.receiveShadow = true;
-  group.add(plaza);
+  const plaza = new THREE.Mesh(new THREE.BoxGeometry(7, 0.1, 7), mat(BLDG_COLORS.square));
+  plaza.position.y = 0.05; plaza.receiveShadow = true; group.add(plaza);
+  for (let ring = 0; ring < 2; ring++) {
+    const r = 2.5 + ring * 1.2;
+    const border = new THREE.Mesh(new THREE.TorusGeometry(r, 0.06, 4, 24), mat(0x888878));
+    border.rotation.x = Math.PI / 2; border.position.y = 0.12; group.add(border);
+  }
 
-  // Fountain
-  const basin = new THREE.Mesh(
-    new THREE.CylinderGeometry(1.2, 1.4, 0.5, 12),
-    mat(0x999988)
-  );
-  basin.position.y = 0.25;
-  group.add(basin);
-  const waterTop = new THREE.Mesh(
-    new THREE.CylinderGeometry(1.1, 1.1, 0.05, 12),
-    mat(PALETTE.water, { roughness: 0.2, metalness: 0.1 })
-  );
-  waterTop.position.y = 0.48;
-  group.add(waterTop);
-  const spout = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.1, 0.15, 1, 8),
-    mat(0x888888)
-  );
-  spout.position.y = 1;
-  group.add(spout);
+  const basinOuter = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.7, 0.6, 16), stoneMat);
+  basinOuter.position.y = 0.3; group.add(basinOuter);
+  const basinInner = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 0.3, 16), mat(0x5588aa, { roughness: 0.2 }));
+  basinInner.position.y = 0.45; group.add(basinInner);
+  const waterTop = new THREE.Mesh(new THREE.CylinderGeometry(1.25, 1.25, 0.05, 16),
+    mat(PALETTE.water, { roughness: 0.15, metalness: 0.15 }));
+  waterTop.position.y = 0.55; group.add(waterTop);
 
-  const label = createLabel(locData.label, group, 4);
-  const badge = createOccupantBadge(group, 3);
+  const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.35, 1.5, 8), stoneMat);
+  pedestal.position.y = 1.3; group.add(pedestal);
+  const upperBasin = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.5, 0.25, 12), stoneMat);
+  upperBasin.position.y = 2.15; group.add(upperBasin);
+  const upperWater = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.04, 12),
+    mat(PALETTE.water, { roughness: 0.15, metalness: 0.15 }));
+  upperWater.position.y = 2.3; group.add(upperWater);
+  const finial = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 6), stoneMat);
+  finial.position.y = 2.55; group.add(finial);
+
+  const benchMat = mat(0x8b6040);
+  for (let i = 0; i < 4; i++) {
+    const ang = (i / 4) * Math.PI * 2 + Math.PI / 4;
+    const br = 2.8;
+    const bGroup = new THREE.Group();
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.08, 0.45), benchMat);
+    seat.position.y = 0.45; bGroup.add(seat);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.5, 0.06), benchMat);
+    back.position.set(0, 0.65, -0.2); bGroup.add(back);
+    for (let lx of [-0.6, 0.6]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.45, 0.4), mat(0x444444));
+      leg.position.set(lx, 0.22, 0); bGroup.add(leg);
+    }
+    bGroup.position.set(Math.cos(ang) * br, 0, Math.sin(ang) * br);
+    bGroup.rotation.y = -ang + Math.PI / 2;
+    group.add(bGroup);
+  }
+
+  for (let i = 0; i < 4; i++) {
+    const ang = (i / 4) * Math.PI * 2;
+    const lamp = new THREE.Group();
+    const lPole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 2.5, 6), mat(0x444444));
+    lPole.position.y = 1.25; lamp.add(lPole);
+    const lTop = new THREE.Mesh(new THREE.SphereGeometry(0.1, 6, 4),
+      mat(0xffeedd, { emissive: 0xffd860, emissiveIntensity: isNight ? 0.6 : 0 }));
+    lTop.position.y = 2.5; lamp.add(lTop);
+    lamp.position.set(Math.cos(ang) * 2, 0, Math.sin(ang) * 2);
+    group.add(lamp);
+  }
+
+  const label = createLabel(locData.label, group, 5);
+  const badge = createOccupantBadge(group, 4);
   group.userData = { id, type: 'square', label, badge, locData };
   return group;
 }
