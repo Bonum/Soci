@@ -96,11 +96,21 @@ class Database:
             await self._db.close()
 
     async def save_snapshot(self, name: str, tick: int, day: int, state: dict) -> int:
-        """Save a full simulation state snapshot."""
+        """Save a simulation state snapshot, replacing any existing one with the same name."""
         assert self._db is not None
+        state_json = json.dumps(state)
+        await self._db.execute(
+            "DELETE FROM snapshots WHERE name = ?", (name,)
+        )
         cursor = await self._db.execute(
             "INSERT INTO snapshots (name, tick, day, state_json) VALUES (?, ?, ?, ?)",
-            (name, tick, day, json.dumps(state)),
+            (name, tick, day, state_json),
+        )
+        await self._db.execute(
+            "DELETE FROM event_log WHERE id NOT IN (SELECT id FROM event_log ORDER BY id DESC LIMIT 500)"
+        )
+        await self._db.execute(
+            "DELETE FROM conversations WHERE id NOT IN (SELECT id FROM conversations ORDER BY id DESC LIMIT 200)"
         )
         await self._db.commit()
         return cursor.lastrowid

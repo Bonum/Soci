@@ -83,6 +83,38 @@
     font-size: 12px; color: #bbb;
   }
 
+  #agent-list-panel {
+    position: fixed; left: 16px; top: 60px;
+    width: 250px; max-height: calc(100vh - 80px);
+    background: rgba(10,10,18,0.88);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    color: #e0e0e8; font-size: 12px;
+    padding: 12px; overflow-y: auto;
+    z-index: 100; display: none;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  }
+  #agent-list-panel.visible { display: block; }
+  #agent-list-panel .close-btn {
+    position: absolute; top: 8px; right: 10px;
+    cursor: pointer; color: #888; font-size: 16px;
+    background: none; border: none;
+  }
+  #agent-list-panel .close-btn:hover { color: #fff; }
+  .sort-btns { display: flex; gap: 4px; margin: 6px 0; flex-wrap: wrap; }
+  .sort-btn {
+    padding: 3px 8px; border-radius: 4px; font-size: 10px;
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1);
+    color: #aaa; cursor: pointer;
+  }
+  .sort-btn:hover, .sort-btn.active { background: rgba(78,204,163,0.2); color: #4ecca3; border-color: #4ecca3; }
+  .agent-list-entry {
+    display: flex; align-items: center; gap: 6px;
+    padding: 3px 4px; cursor: pointer; border-radius: 4px;
+  }
+  .agent-list-entry:hover { background: rgba(255,255,255,0.06); }
+
   #zoom-hint {
     position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
     color: rgba(255,255,255,0.4); font-size: 12px;
@@ -134,6 +166,41 @@
     backdrop-filter: blur(8px);
   }
   #player-hud .phud-name { color: #4ecca3; font-size: 14px; font-weight: 500; margin-bottom: 6px; }
+  #npc-chat {
+    display:none; position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+    width:500px; max-width:90vw; background:rgba(10,12,20,0.92); border:1px solid rgba(78,204,163,0.3);
+    border-radius:12px; z-index:200; font-family:inherit; backdrop-filter:blur(8px);
+  }
+  #npc-chat .chat-header {
+    display:flex; align-items:center; justify-content:space-between; padding:10px 14px;
+    border-bottom:1px solid rgba(255,255,255,0.08);
+  }
+  #npc-chat .chat-header .chat-name { color:#4ecca3; font-size:14px; font-weight:500; }
+  #npc-chat .chat-header .chat-close { background:none; border:none; color:#888; cursor:pointer; font-size:18px; }
+  #npc-chat .chat-header .chat-close:hover { color:#fff; }
+  #npc-chat .chat-messages {
+    max-height:200px; overflow-y:auto; padding:10px 14px; font-size:13px; line-height:1.5;
+  }
+  #npc-chat .chat-messages .msg { margin:6px 0; }
+  #npc-chat .chat-messages .msg-player { color:#88bbff; }
+  #npc-chat .chat-messages .msg-npc { color:#e8d8b8; }
+  #npc-chat .chat-messages .msg-system { color:#888; font-style:italic; font-size:12px; }
+  #npc-chat .chat-input {
+    display:flex; align-items:center; gap:6px; padding:8px 14px;
+    border-top:1px solid rgba(255,255,255,0.08);
+  }
+  #npc-chat .chat-input input {
+    flex:1; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12);
+    color:#fff; padding:8px 10px; border-radius:6px; font-size:13px; outline:none;
+  }
+  #npc-chat .chat-input input:focus { border-color:rgba(78,204,163,0.4); }
+  #npc-chat .chat-input button {
+    background:rgba(78,204,163,0.15); border:1px solid rgba(78,204,163,0.3); color:#4ecca3;
+    padding:8px 12px; border-radius:6px; cursor:pointer; font-size:13px;
+  }
+  #npc-chat .chat-input button:hover { background:rgba(78,204,163,0.25); }
+  #npc-chat .chat-input .mic-btn { font-size:16px; padding:6px 10px; }
+  #npc-chat .chat-input .mic-btn.recording { color:#e94560; border-color:rgba(233,69,96,0.5); background:rgba(233,69,96,0.15); }
 
   #loading {
     position: fixed; inset: 0;
@@ -175,6 +242,18 @@
   <div id="info-content"></div>
 </div>
 
+<div id="agent-list-panel">
+  <button class="close-btn" onclick="document.getElementById('agent-list-panel').classList.remove('visible')">&times;</button>
+  <h3 style="font-size:14px;margin:0 0 4px;color:#fff">Population</h3>
+  <div class="sort-btns">
+    <button class="sort-btn active" onclick="setAgentSort('name')">Name</button>
+    <button class="sort-btn" onclick="setAgentSort('age')">Age</button>
+    <button class="sort-btn" onclick="setAgentSort('age-desc')">Age ↓</button>
+    <button class="sort-btn" onclick="setAgentSort('location')">Location</button>
+  </div>
+  <div id="agent-list-content"></div>
+</div>
+
 <div id="zoom-hint">Scroll to zoom &middot; Drag to orbit &middot; Right-drag to pan &middot; Click to inspect</div>
 
 <div id="controls-bar">
@@ -185,12 +264,13 @@
   <button class="ctrl-btn" id="btn-fp" onclick="window._toggleFP()" title="First-person view">&#128065;</button>
   <button class="ctrl-btn" id="btn-vr" style="display:none" title="Enter VR">VR</button>
   <button class="ctrl-btn" id="btn-join" onclick="window._showJoin()" title="Join as player">JOIN</button>
+  <button class="ctrl-btn" onclick="toggleAgentList()" title="Agent list">&#128101;</button>
 </div>
 <div id="fp-crosshair" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:50">
   <svg width="24" height="24"><circle cx="12" cy="12" r="3" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="1"/><line x1="12" y1="4" x2="12" y2="8" stroke="rgba(255,255,255,0.4)" stroke-width="1"/><line x1="12" y1="16" x2="12" y2="20" stroke="rgba(255,255,255,0.4)" stroke-width="1"/><line x1="4" y1="12" x2="8" y2="12" stroke="rgba(255,255,255,0.4)" stroke-width="1"/><line x1="16" y1="12" x2="20" y2="12" stroke="rgba(255,255,255,0.4)" stroke-width="1"/></svg>
 </div>
 <div id="fp-hint" style="display:none;position:fixed;bottom:60px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.7);color:#fff;padding:8px 16px;border-radius:8px;font-size:13px;z-index:50;text-align:center">
-  WASD — move &middot; Mouse — look &middot; ESC — exit &middot; E — interact
+  WASD — move &middot; Mouse — look &middot; E — talk to NPC &middot; ESC — exit
 </div>
 <div id="fp-click-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:250;cursor:pointer;display:none;align-items:center;justify-content:center">
   <div style="text-align:center;color:#fff">
@@ -216,6 +296,19 @@
 <div id="player-hud">
   <div class="phud-name" id="phud-name"></div>
   <div id="phud-stats"></div>
+</div>
+
+<div id="npc-chat">
+  <div class="chat-header">
+    <span class="chat-name" id="chat-npc-name">NPC</span>
+    <button class="chat-close" onclick="endNpcChat()">&times;</button>
+  </div>
+  <div class="chat-messages" id="chat-messages"></div>
+  <div class="chat-input">
+    <input type="text" id="chat-text" placeholder="Type or press mic..." autocomplete="off">
+    <button class="mic-btn" id="chat-mic" onclick="toggleMic()" title="Speech input">&#127908;</button>
+    <button onclick="sendChatMessage()">Send</button>
+  </div>
 </div>
 
 <script type="importmap">
@@ -565,7 +658,7 @@ createRoad(52, -HALF * 1.1, 52, HALF * 1.1, 2);            // far east
 // ============================================================
 function mat(color, opts = {}) {
   return new THREE.MeshStandardMaterial({
-    color, roughness: opts.roughness ?? 0.85,
+    color: color ?? 0x888888, roughness: opts.roughness ?? 0.85,
     metalness: opts.metalness ?? 0.05,
     flatShading: true, ...opts
   });
@@ -2714,6 +2807,7 @@ const dynamicLocations = {};
 let simState = {};
 let wsConnected = false;
 let ws = null;
+let isDemoMode = false;
 const isEmbedded = window.parent !== window;
 
 function connectWebSocket() {
@@ -2741,7 +2835,7 @@ function connectWebSocket() {
     wsConnected = false;
     document.querySelector('.live-dot').style.background = '#e94560';
     document.querySelector('.live-dot').style.boxShadow = '0 0 8px #e94560';
-    setTimeout(connectWebSocket, 3000);
+    if (!isDemoMode) setTimeout(connectWebSocket, 3000);
   };
 
   ws.onerror = () => ws.close();
@@ -3012,6 +3106,10 @@ function updateAgentInfo(agentId, data) {
   if (data.lifePhase && !isDead) {
     html += `<div class="info-row"><span class="label">Life Phase</span><span class="value">${data.lifePhase}</span></div>`;
   }
+  const parents = data.parents || [];
+  if (parents.length > 0) {
+    html += `<div class="info-row"><span class="label">Parents</span><span class="value">${parents.join(', ')}</span></div>`;
+  }
   html += `</div>`;
 
   // Life Plan
@@ -3127,6 +3225,43 @@ window.closeInfoPanel = () => {
   document.getElementById('info-panel').classList.remove('visible');
 };
 
+let agentSortMode = 'name';
+function setAgentSort(mode) {
+  agentSortMode = mode;
+  document.querySelectorAll('#agent-list-panel .sort-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector(`.sort-btn[onclick="setAgentSort('${mode}')"]`)?.classList.add('active');
+  renderAgentListPanel();
+}
+function toggleAgentList() {
+  const panel = document.getElementById('agent-list-panel');
+  panel.classList.toggle('visible');
+  if (panel.classList.contains('visible')) renderAgentListPanel();
+}
+function renderAgentListPanel() {
+  const agents = simState.agents || {};
+  let entries = Object.entries(agents).filter(([,a]) => a.state !== 'deceased');
+  switch (agentSortMode) {
+    case 'age': entries.sort((a,b) => (a[1].age ?? 0) - (b[1].age ?? 0)); break;
+    case 'age-desc': entries.sort((a,b) => (b[1].age ?? 0) - (a[1].age ?? 0)); break;
+    case 'location': entries.sort((a,b) => (a[1].location||'').localeCompare(b[1].location||'')); break;
+    default: entries.sort((a,b) => (a[1].name||'').localeCompare(b[1].name||''));
+  }
+  const deadCount = Object.values(agents).filter(a => a.state === 'deceased').length;
+  let html = `<div style="color:#888;font-size:11px;margin-bottom:6px">${entries.length} alive${deadCount > 0 ? `, ${deadCount} deceased` : ''}</div>`;
+  for (const [id, a] of entries) {
+    const idx = getAgentIdx(id);
+    const color = '#' + AGENT_COLORS[idx % AGENT_COLORS.length].toString(16).padStart(6, '0');
+    const gi = (a.age != null && a.age < 6) ? '👶' : (a.age < 18) ? '🧒' : a.gender === 'female' ? '👩' : a.gender === 'male' ? '👨' : '🧑';
+    html += `<div class="agent-list-entry" onclick="selectAgent('${id}')">`;
+    html += `<span style="width:6px;height:6px;border-radius:50%;background:${color};flex-shrink:0"></span>`;
+    html += `<span>${gi}</span>`;
+    html += `<span style="color:${color};flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.name||id}</span>`;
+    html += `<span style="color:#888;font-size:10px">${a.age ?? '?'}</span>`;
+    html += `</div>`;
+  }
+  document.getElementById('agent-list-content').innerHTML = html;
+}
+
 // ============================================================
 // DETAIL LEVEL BY ZOOM
 // ============================================================
@@ -3170,6 +3305,7 @@ function animate() {
 
   // Smooth agent movement
   for (const [agentId, mesh] of agentMeshes) {
+    if (mesh.userData.chatFrozen) continue;
     const target = agentTargetPositions.get(agentId);
     if (target) {
       const dx = target.x - mesh.position.x;
@@ -3250,8 +3386,9 @@ function animate() {
     const moving = dist > 0.15;
     const atLocation = dist < 0.3;
     const isSitting = !moving && atLocation && SITTING_LOCS.has(agentLoc);
+    const isLyingDown = isSleeping && atLocation;
 
-    if (isSleeping) {
+    if (isLyingDown) {
       mesh.rotation.x = 0;
       mesh.rotation.z = Math.PI / 2;
       mesh.position.y = 0.30;
@@ -3261,6 +3398,7 @@ function animate() {
       if (mesh.userData.rightArm) mesh.userData.rightArm.rotation.x = 0.3;
     } else if (isSitting) {
       mesh.rotation.x = 0;
+      mesh.rotation.z = 0;
       mesh.position.y = 0.0;
       if (mesh.userData.leftLeg)  mesh.userData.leftLeg.rotation.x  = -Math.PI / 2;
       if (mesh.userData.rightLeg) mesh.userData.rightLeg.rotation.x = -Math.PI / 2;
@@ -3268,6 +3406,7 @@ function animate() {
       if (mesh.userData.rightArm) mesh.userData.rightArm.rotation.x = -0.3;
     } else {
       mesh.rotation.x = 0;
+      mesh.rotation.z = 0;
       const walkPhase = frameCount * 0.12 + hash(agentId) * 0.5;
       const swing = moving ? Math.sin(walkPhase) * 0.7 : 0;
       if (mesh.userData.leftLeg)  mesh.userData.leftLeg.rotation.x  =  swing;
@@ -3410,6 +3549,7 @@ function enterFPMode() {
 }
 
 function exitFPMode() {
+  if (chatTargetId) endNpcChat();
   fpMode = false;
   fpControls.unlock();
   controls.enabled = true;
@@ -3445,8 +3585,15 @@ function updateFPMovement() {
 }
 
 // FP interaction: E key to interact with nearest agent/building
+let chatTargetId = null;
+let chatMessages = [];
+let speechRecognition = null;
+let isRecording = false;
+
 function fpInteract() {
   if (!fpMode) return;
+  if (chatTargetId) { endNpcChat(); return; }
+
   const ray = new THREE.Raycaster();
   ray.setFromCamera(new THREE.Vector2(0, 0), fpCamera);
   ray.far = 10;
@@ -3458,7 +3605,7 @@ function fpInteract() {
     let p = hits[0].object;
     while (p.parent && !p.userData?.id) p = p.parent;
     if (p.userData?.id && p.userData.type === 'agent') {
-      selectAgent(p.userData.id);
+      startNpcChat(p.userData.id);
       return;
     }
   }
@@ -3474,6 +3621,127 @@ function fpInteract() {
       enterInterior(p.userData.id);
     }
   }
+}
+
+function startNpcChat(agentId) {
+  chatTargetId = agentId;
+  chatMessages = [];
+  const data = demoAgents[agentId] || agentMeshes.get(agentId)?.userData?.data || {};
+  const name = data.name || agentId;
+  document.getElementById('chat-npc-name').textContent = name;
+  document.getElementById('chat-messages').innerHTML = '';
+  document.getElementById('chat-text').value = '';
+  document.getElementById('npc-chat').style.display = 'block';
+  fpControls.unlock();
+  addChatMsg('system', `${name} stops and turns to face you.`);
+  setTimeout(() => document.getElementById('chat-text').focus(), 100);
+}
+
+function endNpcChat() {
+  if (isRecording) toggleMic();
+  chatTargetId = null;
+  chatMessages = [];
+  document.getElementById('npc-chat').style.display = 'none';
+  if (fpMode) {
+    const overlay = document.getElementById('fp-click-overlay');
+    overlay.style.display = 'flex';
+    overlay.onclick = () => { overlay.style.display = 'none'; fpControls.lock(); };
+  }
+}
+
+function addChatMsg(type, text) {
+  chatMessages.push({ type, text });
+  const div = document.getElementById('chat-messages');
+  const cls = type === 'player' ? 'msg-player' : type === 'npc' ? 'msg-npc' : 'msg-system';
+  const label = type === 'player' ? 'You' : type === 'npc' ? (demoAgents[chatTargetId]?.name || chatTargetId) : '';
+  div.innerHTML += `<div class="msg ${cls}">${label ? `<b>${label}:</b> ` : ''}${text}</div>`;
+  div.scrollTop = div.scrollHeight;
+}
+
+const NPC_GREETINGS = ['Hello!', 'Hi there!', 'Hey!', 'Good to see you!', 'What brings you here?'];
+const NPC_RESPONSES = [
+  "That's interesting!", "I see what you mean.", "Tell me more!",
+  "I was just thinking about that.", "Hmm, let me think...",
+  "What a lovely day it is!", "I've been busy lately.",
+  "Have you met everyone in town?", "The weather is nice today.",
+  "I enjoy living in this city.", "Things have been going well.",
+  "I appreciate you stopping by!", "That's a good point.",
+];
+
+function generateNpcResponse(playerMsg) {
+  const agent = demoAgents[chatTargetId];
+  if (!agent) return NPC_RESPONSES[Math.floor(Math.random() * NPC_RESPONSES.length)];
+
+  const lower = (playerMsg || '').toLowerCase();
+  if (lower.includes('name') || lower.includes('who are you'))
+    return `I'm ${agent.name}. Nice to meet you!`;
+  if (lower.includes('age') || lower.includes('old'))
+    return `I'm ${agent.age} years old.`;
+  if (lower.includes('job') || lower.includes('work') || lower.includes('occupation'))
+    return `I work as a ${agent.occupation || 'citizen'}.`;
+  if (lower.includes('how are') || lower.includes('feeling'))
+    return agent.mood > 0.6 ? "I'm doing great, thanks!" : "I've been better, honestly.";
+  if (lower.includes('bye') || lower.includes('goodbye') || lower.includes('see you'))
+    return "Goodbye! See you around!";
+  if (lower.includes('hello') || lower.includes('hi'))
+    return NPC_GREETINGS[Math.floor(Math.random() * NPC_GREETINGS.length)];
+
+  return NPC_RESPONSES[Math.floor(Math.random() * NPC_RESPONSES.length)];
+}
+
+function sendChatMessage() {
+  const input = document.getElementById('chat-text');
+  const text = input.value.trim();
+  if (!text || !chatTargetId) return;
+  input.value = '';
+  addChatMsg('player', text);
+  if (chatMessages.length === 1) {
+    addChatMsg('npc', NPC_GREETINGS[Math.floor(Math.random() * NPC_GREETINGS.length)]);
+  }
+  setTimeout(() => addChatMsg('npc', generateNpcResponse(text)), 400 + Math.random() * 600);
+}
+
+document.getElementById('chat-text').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); sendChatMessage(); }
+  e.stopPropagation();
+});
+document.getElementById('chat-text').addEventListener('keyup', (e) => e.stopPropagation());
+
+function toggleMic() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) { addChatMsg('system', 'Speech recognition not supported in this browser.'); return; }
+
+  const btn = document.getElementById('chat-mic');
+  if (isRecording) {
+    isRecording = false;
+    btn.classList.remove('recording');
+    if (speechRecognition) { speechRecognition.stop(); speechRecognition = null; }
+    return;
+  }
+
+  isRecording = true;
+  btn.classList.add('recording');
+  speechRecognition = new SpeechRecognition();
+  speechRecognition.continuous = false;
+  speechRecognition.interimResults = true;
+  speechRecognition.lang = navigator.language || 'en-US';
+
+  const input = document.getElementById('chat-text');
+  speechRecognition.onresult = (ev) => {
+    let transcript = '';
+    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      transcript += ev.results[i][0].transcript;
+    }
+    input.value = transcript;
+    if (ev.results[ev.results.length - 1].isFinal) {
+      sendChatMessage();
+      isRecording = false;
+      btn.classList.remove('recording');
+    }
+  };
+  speechRecognition.onerror = () => { isRecording = false; btn.classList.remove('recording'); };
+  speechRecognition.onend = () => { isRecording = false; btn.classList.remove('recording'); };
+  speechRecognition.start();
 }
 
 // WebXR support
@@ -3498,7 +3766,15 @@ if (navigator.xr) {
 function updateNPCFacing() {
   if (!fpMode) return;
   const pp = fpCamera.position;
-  for (const [, mesh] of agentMeshes) {
+  for (const [id, mesh] of agentMeshes) {
+    if (id === chatTargetId) {
+      const dx = pp.x - mesh.position.x;
+      const dz = pp.z - mesh.position.z;
+      mesh.rotation.y = Math.atan2(dx, dz);
+      mesh.userData.chatFrozen = true;
+      continue;
+    }
+    if (mesh.userData.chatFrozen) { mesh.userData.chatFrozen = false; }
     const dx = pp.x - mesh.position.x;
     const dz = pp.z - mesh.position.z;
     const dist = Math.sqrt(dx * dx + dz * dz);
@@ -3575,7 +3851,7 @@ function updatePlayerPosition() {
 // KEYBOARD
 // ============================================================
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { if (fpMode) { exitFPMode(); return; } closeInfoPanel(); }
+  if (e.key === 'Escape') { if (chatTargetId) { endNpcChat(); return; } if (fpMode) { exitFPMode(); return; } closeInfoPanel(); }
   if (fpMode) {
     if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp')    fpMoveState.forward = true;
     if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown')  fpMoveState.backward = true;
@@ -3599,12 +3875,14 @@ document.addEventListener('keyup', (e) => {
 // FALLBACK: REST polling if WebSocket isn't available
 // ============================================================
 async function pollFallback() {
-  if (wsConnected) return;
+  if (wsConnected || isDemoMode) return;
   try {
     const resp = await fetch('/api/city');
     if (resp.ok) {
       const data = await resp.json();
-      handleStateUpdate({ type: 'tick', state: data, time: data.clock?.display || '' });
+      const clk = data.clock || {};
+      const timeStr = clk.day ? `Day ${clk.day}, ${clk.time_str || '??:??'} (${(clk.time_of_day || 'morning').replace(/^./, c => c.toUpperCase())})` : '';
+      handleStateUpdate({ type: 'tick', state: data, time: timeStr });
       document.getElementById('loading').classList.add('hidden');
     }
   } catch (e) { /* retry */ }
@@ -3646,7 +3924,7 @@ setTimeout(() => {
     document.querySelector('.loading-sub').textContent = 'No server detected — showing static city';
     setTimeout(() => {
       el.classList.add('hidden');
-      if (!wsConnected) spawnDemoAgents();
+      if (!wsConnected) { isDemoMode = true; spawnDemoAgents(); }
     }, 1500);
   }
 }, 4000);
@@ -3659,6 +3937,8 @@ function spawnDemoAgents() {
   const residentialLocs = Object.entries(LOCATION_POSITIONS)
     .filter(([, v]) => v.type === 'house' || v.type === 'apartment').map(([k]) => k);
   const publicLocs = Object.keys(LOCATION_POSITIONS).filter(k => !k.startsWith('street') && k !== 'cemetery');
+  const ADULT_ONLY_TYPES = new Set(['office', 'factory', 'tower', 'hospital']);
+  const childSafeLocs = publicLocs.filter(k => !ADULT_ONLY_TYPES.has(LOCATION_POSITIONS[k]?.type));
   const workLocs = Object.keys(LOCATION_POSITIONS).filter(k => {
     const t = LOCATION_POSITIONS[k]?.type;
     return t === 'office' || t === 'shop' || t === 'factory' || t === 'tower' || t === 'hospital' || t === 'school';
@@ -3675,11 +3955,11 @@ function spawnDemoAgents() {
     const occ = age >= 18 ? OCCUPATIONS[hash(id) % OCCUPATIONS.length] : (age >= 6 ? 'Student' : 'Child');
     const lifePhase = age < 3 ? 'baby' : age < 6 ? 'kindergarten' : age < 18 ? 'school' : age < 23 ? 'university' : age < 65 ? 'working' : 'retired';
     agentHome[id] = homeLoc;
-    agentLife[id] = { age, gender, partner: null, children: [], lifePhase, occupation: occ, pregnant: false, pregnancyTimer: 0, alive: true };
+    agentLife[id] = { age, gender, partner: null, children: [], parents: [], lifePhase, occupation: occ, pregnant: false, pregnancyTimer: 0, alive: true };
     agentMemories[id] = [`Born in Soci City`];
     demoAgents[id] = {
       name, location: homeLoc, state: 'idle', gender,
-      age, occupation: occ, lifePhase,
+      age, occupation: occ, lifePhase, parents: [],
       needs: { hunger: 0.6 + Math.random() * 0.3, energy: 0.5 + Math.random() * 0.4, social: 0.4 + Math.random() * 0.5, fun: 0.4 + Math.random() * 0.4 },
       recent_memories: agentMemories[id],
       relationships: [],
@@ -3835,11 +4115,13 @@ function spawnDemoAgents() {
       }
     }
 
-    // Pregnancy & birth
+    // Pregnancy & birth (cap population at 120 alive)
+    const aliveCount = aliveIds.length;
+    const canBirth = aliveCount < 120;
     for (const id of aliveIds) {
       const l = agentLife[id];
-      if (l.gender === 'female' && l.partner && l.age >= 18 && l.age <= 42 && !l.pregnant && l.children.length < 4) {
-        if (Math.random() < 0.008) {
+      if (canBirth && l.gender === 'female' && l.partner && l.age >= 18 && l.age <= 42 && !l.pregnant && l.children.length < 3) {
+        if (Math.random() < 0.003) {
           l.pregnant = true;
           l.pregnancyTimer = 9;
           agentMemories[id].push(`Became pregnant (Day ${demoDay})`);
@@ -3855,6 +4137,8 @@ function spawnDemoAgents() {
           const babyId = makeAgent(babyName, babyGender, 0, agentHome[id]);
           allIds.push(babyId);
           l.children.push(babyId);
+          agentLife[babyId].parents = [id, l.partner].filter(Boolean);
+          demoAgents[babyId].parents = agentLife[babyId].parents.map(p => demoAgents[p]?.name || p);
           if (l.partner && agentLife[l.partner]) agentLife[l.partner].children.push(babyId);
           agentMemories[id].push(`Gave birth to ${babyName} (Day ${demoDay})`);
           if (l.partner) agentMemories[l.partner].push(`Baby ${babyName} was born (Day ${demoDay})`);
@@ -3974,10 +4258,10 @@ function spawnDemoAgents() {
           demoAgents[who].location = 'kindergarten';
           demoAgents[who].state = 'playing';
         } else if (l.age >= 6 && l.age < 18) {
-          demoAgents[who].location = hh >= 8 && hh < 15 ? 'school' : publicLocs[Math.floor(Math.random() * publicLocs.length)];
+          demoAgents[who].location = hh >= 8 && hh < 15 ? 'school' : childSafeLocs[Math.floor(Math.random() * childSafeLocs.length)];
           demoAgents[who].state = hh >= 8 && hh < 15 ? 'studying' : 'idle';
         } else if (l.age >= 18 && l.age < 23) {
-          demoAgents[who].location = hh >= 9 && hh < 16 ? 'university' : publicLocs[Math.floor(Math.random() * publicLocs.length)];
+          demoAgents[who].location = hh >= 9 && hh < 16 ? 'university' : childSafeLocs[Math.floor(Math.random() * childSafeLocs.length)];
           demoAgents[who].state = hh >= 9 && hh < 16 ? 'studying' : 'idle';
         } else if (l.age >= 23 && l.age < 65) {
           if (hh >= 9 && hh < 17) {

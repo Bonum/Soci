@@ -62,7 +62,7 @@ class SimClock:
 
     @property
     def datetime_str(self) -> str:
-        return f"Day {self.day}, {self.time_str}"
+        return f"Day {self.day}, {self.time_str} ({self.time_of_day.value.capitalize()})"
 
     def to_dict(self) -> dict:
         return {

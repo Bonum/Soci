@@ -304,7 +304,7 @@
 </div>
 <div id="main">
   <div id="viewport-3d">
-    <iframe id="city3d" allow="autoplay; pointer-lock; xr-spatial-tracking; fullscreen"></iframe>
+    <iframe id="city3d" allow="autoplay; pointerlock; xr-spatial-tracking; fullscreen"></iframe>
     <script>document.getElementById('city3d').src = location.protocol === 'file:' ? '3d.html' : '/3d';</script>
     <div id="tooltip" style="z-index:200"></div>
     <div id="toast-container"></div>
@@ -3971,19 +3971,7 @@ window.addEventListener('message', (e) => {
     }
   }
   if (e.data?.type === 'state-update' && e.data.state) {
-    const s = e.data.state;
-    // Parse time string from iframe
-    const timeMatch = (e.data.time || '').match(/Day\s+(\d+),\s*(\d+:\d+)\s*\((\w+)\)/i);
-    const dayNum = timeMatch ? parseInt(timeMatch[1]) : 1;
-    const timeStr = timeMatch ? timeMatch[2] : '10:30';
-    const tod = timeMatch ? timeMatch[3] : 'morning';
-    processStateData({
-      clock: { day: dayNum, time_str: timeStr, time_of_day: tod, total_ticks: Date.now() },
-      agents: s.agents || {},
-      weather: s.weather || 'sunny',
-      active_conversations: 0,
-      llm_usage: '',
-    });
+    processStateData(e.data.state);
   }
 });
 
