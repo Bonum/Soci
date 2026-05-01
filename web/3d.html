@@ -3301,7 +3301,10 @@ const _interactRay = new THREE.Raycaster();
 _interactRay.far = 15;
 function updateInteractPrompt() {
   const prompt = document.getElementById('fp-interact-prompt');
-  if (chatTargetId || !fpControls.isLocked) { prompt.style.display = 'none'; return; }
+  if (chatTargetId) { prompt.style.display = 'none'; return; }
+  if (!fpControls.isLocked) { prompt.style.display = 'none'; return; }
+
+  // Try raycaster first
   _interactRay.setFromCamera(new THREE.Vector2(0, 0), fpCamera);
   const objs = [];
   for (const [, m] of agentMeshes) objs.push(m);
@@ -3315,6 +3318,21 @@ function updateInteractPrompt() {
       prompt.style.display = 'block';
       return;
     }
+  }
+
+  // Fallback: proximity check
+  let best = null, bestDist = 6;
+  const cam = fpCamera.position;
+  for (const [id, m] of agentMeshes) {
+    if (id === 'player') continue;
+    const d = cam.distanceTo(m.position);
+    if (d < bestDist) { bestDist = d; best = m; }
+  }
+  if (best) {
+    const name = best.userData.data?.name || best.userData.id;
+    prompt.innerHTML = `Press <b>E</b> to talk to <b>${name}</b>`;
+    prompt.style.display = 'block';
+    return;
   }
   prompt.style.display = 'none';
 }
@@ -3621,6 +3639,17 @@ let chatMessages = [];
 let speechRecognition = null;
 let isRecording = false;
 
+function findNearestAgent() {
+  let best = null, bestDist = 6;
+  const cam = fpCamera.position;
+  for (const [id, m] of agentMeshes) {
+    if (id === 'player') continue;
+    const d = cam.distanceTo(m.position);
+    if (d < bestDist) { bestDist = d; best = id; }
+  }
+  return best;
+}
+
 function fpInteract() {
   if (!fpMode) return;
   if (chatTargetId) { endNpcChat(); return; }
@@ -3640,6 +3669,10 @@ function fpInteract() {
       return;
     }
   }
+
+  // Fallback: nearest agent within 6 units
+  const nearest = findNearestAgent();
+  if (nearest) { startNpcChat(nearest); return; }
 
   const bldgObjs = [];
   for (const [, m] of buildingMeshes) bldgObjs.push(m);
