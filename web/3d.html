@@ -272,6 +272,9 @@
 <div id="fp-hint" style="display:none;position:fixed;bottom:60px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.7);color:#fff;padding:8px 16px;border-radius:8px;font-size:13px;z-index:50;text-align:center">
   WASD — move &middot; Mouse — look &middot; E — talk to NPC &middot; ESC — exit
 </div>
+<div id="fp-interact-prompt" style="display:none;position:fixed;top:55%;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.75);color:#4ecca3;padding:8px 18px;border-radius:8px;font-size:14px;z-index:55;pointer-events:none;border:1px solid rgba(78,204,163,0.3)">
+  Press <b>E</b> to talk
+</div>
 <div id="fp-click-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:250;cursor:pointer;display:none;align-items:center;justify-content:center">
   <div style="text-align:center;color:#fff">
     <div style="font-size:48px;margin-bottom:16px">&#128065;</div>
@@ -3294,6 +3297,28 @@ controls.addEventListener('change', updateDetailLevel);
 const clock = new THREE.Clock();
 let frameCount = 0;
 
+const _interactRay = new THREE.Raycaster();
+_interactRay.far = 10;
+function updateInteractPrompt() {
+  const prompt = document.getElementById('fp-interact-prompt');
+  if (chatTargetId || !fpControls.isLocked) { prompt.style.display = 'none'; return; }
+  _interactRay.setFromCamera(new THREE.Vector2(0, 0), fpCamera);
+  const objs = [];
+  for (const [, m] of agentMeshes) objs.push(m);
+  const hits = _interactRay.intersectObjects(objs, true);
+  if (hits.length > 0) {
+    let p = hits[0].object;
+    while (p.parent && !p.userData?.id) p = p.parent;
+    if (p.userData?.id && p.userData.type === 'agent') {
+      const name = p.userData.data?.name || p.userData.id;
+      prompt.innerHTML = `Press <b>E</b> to talk to <b>${name}</b>`;
+      prompt.style.display = 'block';
+      return;
+    }
+  }
+  prompt.style.display = 'none';
+}
+
 renderer.setAnimationLoop(animate);
 function animate() {
   const dt = clock.getDelta();
@@ -3303,6 +3328,7 @@ function animate() {
     updateFPMovement();
     updateNPCFacing();
     updatePlayerPosition();
+    if (frameCount % 10 === 0) updateInteractPrompt();
   } else {
     controls.update();
     updateCameraAnimation();
@@ -3531,7 +3557,7 @@ fpControls.addEventListener('lock', () => {
 });
 fpControls.addEventListener('unlock', () => {
   document.getElementById('fp-crosshair').style.display = 'none';
-  if (fpMode) {
+  if (fpMode && !chatTargetId) {
     document.getElementById('fp-click-overlay').style.display = 'flex';
   }
 });
@@ -3636,16 +3662,25 @@ function startNpcChat(agentId) {
   document.getElementById('chat-npc-name').textContent = name;
   document.getElementById('chat-messages').innerHTML = '';
   document.getElementById('chat-text').value = '';
+  document.getElementById('fp-interact-prompt').style.display = 'none';
+  document.getElementById('fp-click-overlay').style.display = 'none';
   document.getElementById('npc-chat').style.display = 'block';
   fpControls.unlock();
+  const mesh = agentMeshes.get(agentId);
+  if (mesh) mesh.userData.chatFrozen = true;
   addChatMsg('system', `${name} stops and turns to face you.`);
   setTimeout(() => document.getElementById('chat-text').focus(), 100);
 }
 
 function endNpcChat() {
   if (isRecording) toggleMic();
+  const prevTarget = chatTargetId;
   chatTargetId = null;
   chatMessages = [];
+  if (prevTarget) {
+    const mesh = agentMeshes.get(prevTarget);
+    if (mesh) mesh.userData.chatFrozen = false;
+  }
   document.getElementById('npc-chat').style.display = 'none';
   if (fpMode) {
     const overlay = document.getElementById('fp-click-overlay');
