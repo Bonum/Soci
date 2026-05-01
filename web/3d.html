@@ -3298,7 +3298,7 @@ const clock = new THREE.Clock();
 let frameCount = 0;
 
 const _interactRay = new THREE.Raycaster();
-_interactRay.far = 10;
+_interactRay.far = 15;
 function updateInteractPrompt() {
   const prompt = document.getElementById('fp-interact-prompt');
   if (chatTargetId || !fpControls.isLocked) { prompt.style.display = 'none'; return; }
@@ -3547,7 +3547,7 @@ const fpMoveState = { forward: false, backward: false, left: false, right: false
 const fpVelocity = new THREE.Vector3();
 const fpDirection = new THREE.Vector3();
 const FP_SPEED = 12;
-const FP_HEIGHT = 1.8;
+const FP_HEIGHT = 0.9;
 let fpClock = new THREE.Clock();
 
 fpControls.addEventListener('lock', () => {
@@ -3627,7 +3627,7 @@ function fpInteract() {
 
   const ray = new THREE.Raycaster();
   ray.setFromCamera(new THREE.Vector2(0, 0), fpCamera);
-  ray.far = 10;
+  ray.far = 15;
 
   const agentObjs = [];
   for (const [, m] of agentMeshes) agentObjs.push(m);
