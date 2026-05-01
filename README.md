@@ -199,19 +199,36 @@ Every tick, each NPC agent runs:
 ```bash
 git clone https://github.com/Bonum/Soci.git
 cd Soci
-pip install -r requirements.txt
+pip install -e .
 ```
 
 ### Configure
 
+Copy the example env file and edit it:
+
 ```bash
-# Pick ONE provider (Gemini recommended — free tier is generous):
-export GEMINI_API_KEY=AIza...        # https://aistudio.google.com/apikey
-# or
-export GROQ_API_KEY=gsk_...          # https://console.groq.com
-# or
-export ANTHROPIC_API_KEY=sk-ant-...
-# or install Ollama and pull a model — no key needed
+cp .env.example .env
+```
+
+By default the **NN provider** is active — a local ONNX model, free and fast, no API key needed.
+To switch providers, uncomment the relevant lines in `.env`:
+
+```bash
+# Ollama (local, no key):
+LLM_PROVIDER=ollama
+OLLAMA_MODEL=llama3.1
+
+# Gemini (free tier — generous quota):
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=AIza...
+
+# Groq (free tier — fast):
+LLM_PROVIDER=groq
+GROQ_API_KEY=gsk_...
+
+# Anthropic Claude (paid — highest quality):
+LLM_PROVIDER=claude
+ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 ### Run
