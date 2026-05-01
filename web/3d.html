@@ -2273,7 +2273,7 @@ moonMesh.renderOrder = -1;
 moonMesh.visible = false;
 scene.add(moonMesh);
 const moonShadowGeo = new THREE.SphereGeometry(4.05, 32, 32);
-const moonShadowMat = new THREE.MeshBasicMaterial({ color: 0x0e1530, transparent: true, opacity: 0.92 });
+const moonShadowMat = new THREE.MeshBasicMaterial({ color: 0x0e1530, transparent: true, opacity: 0.95, depthWrite: false });
 const moonShadow = new THREE.Mesh(moonShadowGeo, moonShadowMat);
 moonShadow.renderOrder = -0.5;
 moonShadow.visible = false;
@@ -2327,10 +2327,11 @@ const clouds = [];
 for (let ci = 0; ci < 7; ci++) {
   const cg = new THREE.Group();
   const nPuffs = 3 + Math.floor(Math.random() * 4);
-  const cMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, metalness: 0, transparent: true, opacity: 0.8, flatShading: true });
+  const cMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, metalness: 0, transparent: true, opacity: 0.55, depthWrite: false, flatShading: true });
   for (let j = 0; j < nPuffs; j++) {
-    const pf = new THREE.Mesh(new THREE.SphereGeometry(1.2 + Math.random() * 1.8, 7, 5), cMat.clone());
-    pf.scale.y = 0.32;
+    const r = 1.5 + Math.random() * 2.2;
+    const pf = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), cMat.clone());
+    pf.scale.y = 0.25;
     pf.position.set((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 3);
     cg.add(pf);
   }
@@ -2429,7 +2430,7 @@ function updateWeather(weather) {
   }
 
   const fairVis = !isSunny && !(precipitating);
-  const fairOp = isCloudy ? 0.95 : 0.5;
+  const fairOp = isCloudy ? 0.7 : 0.45;
   clouds.forEach(c => {
     c.visible = fairVis || isCloudy;
     if (!isNight) c.children.forEach(p => { p.material.opacity = fairOp; });
@@ -2513,8 +2514,12 @@ function updateTimeOfDay(phase, hour) {
 
   // Cloud tint
   const cc = isNight ? 0x1a1a30 : (phase === 'evening' ? 0xe8a070 : (phase === 'dawn' ? 0xd8a080 : 0xffffff));
-  const co = isNight ? 0.25 : 0.8;
+  const co = isNight ? 0.18 : 0.5;
   clouds.forEach(c => c.children.forEach(p => { p.material.color.set(cc); p.material.opacity = co; }));
+
+  // Moon shadow matches sky so it blends naturally
+  const moonSkyColors = { night: 0x0e1530, evening: 0x1a1040, dawn: 0x2d1b4e, morning: 0x4a90c8, afternoon: 0x2878b8 };
+  moonShadowMat.color.set(moonSkyColors[phase] || 0x0e1530);
 
   // Lighting
   if (isNight) {
